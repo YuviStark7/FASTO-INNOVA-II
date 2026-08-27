@@ -94,6 +94,13 @@
   </aside>
 
   <div id="main">
+    <!-- The rotating farm photo. Two layers, so a new one can fade in over the
+         one already showing instead of cutting to it. Empty on purpose —
+         showBackdrop() in js/app.js fills them; before that runs, #main's own
+         background is what shows. -->
+    <div class="backdrop-layer" id="backdropA"></div>
+    <div class="backdrop-layer" id="backdropB"></div>
+
     <header id="topbar" class="glass-45">
       <div class="who">WELCOME, <b id="whoName">GUEST FARMER</b></div>
       <div class="spacer hide-mobile"></div>

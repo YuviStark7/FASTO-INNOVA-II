@@ -15,7 +15,13 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# The original 3440x1440 background PNGs, if you ever put them back in this
-# folder. The app loads the resized bg-1.jpg ... bg-6.jpg instead (1.45 MB
-# for all six, versus about 37 MB for the originals).
+# Background photos you drop in under their own names. These are copied to
+# bg-1.jpg ... bg-6.jpg, which is what the app actually loads, so committing
+# both would put the same 22 MB in the repository twice. Deleting them from
+# this folder is safe and changes nothing.
+assets/Backgrounds/Background *.jpg
 assets/Backgrounds/*.png
+
+# Superseded by hero-farm.jpg (same image, 758 KB instead of 4.94 MB).
+# Safe to delete from the folder.
+assets/hero-farm.png

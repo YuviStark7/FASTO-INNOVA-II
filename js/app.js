@@ -1108,17 +1108,53 @@ const BACKDROPS = [
   "assets/Backgrounds/bg-1.jpg", "assets/Backgrounds/bg-2.jpg", "assets/Backgrounds/bg-3.jpg",
   "assets/Backgrounds/bg-4.jpg", "assets/Backgrounds/bg-5.jpg", "assets/Backgrounds/bg-6.jpg"
 ];
-const BACKDROP_SCRIM = "linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%)";
 // Start somewhere random so two demos in a row don't open on the same photo.
 let backdropIdx = Math.floor(Math.random() * BACKDROPS.length);
+let backdropShowing = null;  // the layer element currently on top
+let backdropZ = 0;           // handed to each incoming layer, always climbing
 
+/* Puts BACKDROPS[backdropIdx] on screen, dissolving out of whatever is there.
+   The dark scrim and the fade itself live in css/app.css (.backdrop-layer);
+   all this does is decide which of the two layers is next and when it is safe
+   to reveal it.
+
+   Two details that matter more than they look:
+
+   · The fade only starts once the photo has actually arrived. Fading up an
+     empty layer would dissolve to nothing and then snap when the file lands,
+     which is worse than the hard cut this replaced. A cached photo reports
+     itself complete immediately and fades straight away, which is the normal
+     case — the next one is always fetched an entire screen-visit early.
+
+   · The incoming layer is reset to transparent BEFORE its photo is set. It is
+     underneath an opaque layer at that moment, so nothing shows; doing it the
+     other way round would flash the previous-but-one photo. */
 function showBackdrop() {
-  const main = $("main"); if (!main) return;
-  main.style.backgroundImage = BACKDROP_SCRIM + ", url('" + BACKDROPS[backdropIdx] + "')";
-  // Fetch the *next* one now, so the following visit swaps instantly instead
-  // of showing a bare dark frame while it downloads.
-  const nxt = new Image();
-  nxt.src = BACKDROPS[(backdropIdx + 1) % BACKDROPS.length];
+  const a = $("backdropA"), b = $("backdropB");
+  if (!a || !b) return;
+  const incoming = (backdropShowing === a) ? b : a;
+  const url = BACKDROPS[backdropIdx];
+
+  let revealed = false;
+  const reveal = () => {
+    if (revealed) return;               // load may fire after the cached-path call
+    revealed = true;
+    incoming.classList.remove("on");
+    incoming.style.backgroundImage = "url('" + url + "')";
+    incoming.style.zIndex = ++backdropZ;
+    void incoming.offsetWidth;          // settle at opacity 0 so the fade actually runs
+    incoming.classList.add("on");
+    backdropShowing = incoming;
+    // Fetch the one after this, so the next visit has it in hand.
+    const nxt = new Image();
+    nxt.src = BACKDROPS[(backdropIdx + 1) % BACKDROPS.length];
+  };
+
+  const img = new Image();
+  img.onload = reveal;
+  img.onerror = reveal;                 // a missing file must not strand the backdrop
+  img.src = url;
+  if (img.complete) reveal();           // already cached: no event is coming
 }
 function rotateBackdrop() {
   backdropIdx = (backdropIdx + 1) % BACKDROPS.length;

@@ -12,7 +12,7 @@
    align-items:center on purpose: a flex item centred by its container has its
    top cut off when it overflows, with no way to scroll back up to it. */
 #onboard{ height:100%; overflow-y:auto; display:flex; justify-content:center; padding:24px;
-  background:linear-gradient(rgba(10,6,6,.55), rgba(10,6,6,.8)), url('../assets/hero-farm.png') center/cover; }
+  background:linear-gradient(rgba(10,6,6,.55), rgba(10,6,6,.8)), url('../assets/hero-farm.jpg') center/cover; }
 .onboard-card{ width:100%; max-width:440px; margin:auto; background:#1c1414; border:1px solid var(--hairline); border-radius:var(--radius-xl); padding:28px; box-shadow:var(--shadow-1); }
 .brand-mark{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .brand-mark img{ width:26px; height:26px; }
@@ -54,9 +54,33 @@
 .status-item span.label{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 
 /* ---- main / hero frame (shared full-bleed photo behind all 3 screens) ---- */
+/* The photo itself no longer lives on this element — it lives on the two
+   .backdrop-layer children below, so one can fade in over the other. What is
+   left here is the still image the browser paints before any JavaScript has
+   run, which is all anyone sees for the first moment of a cold load. */
 #main{ flex:1; min-width:0; border-radius:var(--radius-xl); overflow:hidden; position:relative; height:calc(100vh - 44px);
-  background-image:linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%), url('../assets/hero-farm.png');
+  background-image:url('../assets/hero-farm.jpg');
   background-size:cover; background-position:center; display:flex; flex-direction:column; }
+
+/* ---- backdrop cross-fade ----
+   Two stacked photo layers. A new photo is put on whichever layer is hidden,
+   given a higher z-index, and faded up OVER the one already on screen — the
+   outgoing layer is never faded out. That distinction is the whole trick: two
+   layers dissolving in opposite directions are both semi-transparent halfway
+   through, so the dark frame shows between them and the swap flickers.
+   The scrim that keeps the glass panels readable is applied once, above both
+   layers, rather than being baked into each photo — otherwise it would be
+   laid down twice over the overlap and the picture would darken mid-fade. */
+.backdrop-layer{ position:absolute; inset:0; z-index:0; opacity:0; pointer-events:none;
+  background-size:cover; background-position:center;
+  transition:opacity 900ms ease-in-out; }
+.backdrop-layer.on{ opacity:1; }
+#main::after{ content:""; position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%); }
+#main > #topbar, #main > .screen{ position:relative; z-index:3; }
+/* Someone who has asked for less movement still gets the new photo, just without
+   the dissolve — the same treatment as the chat-rail pulse and the skeletons. */
+@media (prefers-reduced-motion: reduce){ .backdrop-layer{ transition:none; } }
 
 #topbar{ margin:20px 20px 0; border-radius:var(--radius-lg); padding:13px 18px; display:flex; align-items:center; gap:16px; }
 #topbar .who{ font-size:14px; font-weight:400; text-transform:uppercase; letter-spacing:.02em; }
