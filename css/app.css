@@ -1,0 +1,396 @@
+/* ============================================================
+   FASTO INNOVA — App layout (shell, dashboard, clients, chatbot)
+   ============================================================ */
+
+/* ================= ONBOARDING ================= */
+/* height:100% (not 100vh) + its own scroller, because body is overflow:hidden.
+   Without this the bottom of a tall card is simply unreachable: the mode card
+   with the Live-AI block open is ~690px, and any phone held in landscape is
+   shorter than the sign-in card too. 100vh would be wrong even then — on
+   mobile browsers it measures the *expanded* viewport, so the last rows sit
+   behind the URL bar. Centring is margin:auto on the card rather than
+   align-items:center on purpose: a flex item centred by its container has its
+   top cut off when it overflows, with no way to scroll back up to it. */
+#onboard{ height:100%; overflow-y:auto; display:flex; justify-content:center; padding:24px;
+  background:linear-gradient(rgba(10,6,6,.55), rgba(10,6,6,.8)), url('../assets/hero-farm.png') center/cover; }
+.onboard-card{ width:100%; max-width:440px; margin:auto; background:#1c1414; border:1px solid var(--hairline); border-radius:var(--radius-xl); padding:28px; box-shadow:var(--shadow-1); }
+.brand-mark{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.brand-mark img{ width:26px; height:26px; }
+.brand-word b{ font-weight:700; } .brand-word span{ font-weight:400; color:var(--ink-70); }
+.tag{ color:var(--ink-70); font-size:13px; margin-bottom:20px; }
+.mode-toggle{ display:flex; background:var(--white-15); border-radius:var(--radius-sm); padding:4px; gap:4px; margin-bottom:16px; }
+.mode-toggle button{ flex:1; border:none; background:transparent; color:var(--ink-70); padding:10px 8px; border-radius:8px; font-weight:700; font-size:12.5px; }
+.mode-toggle button.active{ background:var(--red); color:#fff; }
+.field{ margin-bottom:12px; }
+.field label{ display:block; font-size:12px; color:var(--ink-70); margin-bottom:6px; font-weight:700; }
+.field input,.field select{ width:100%; background:var(--white-15); border:1px solid transparent; border-radius:var(--radius-sm); padding:10px 12px; color:#fff; outline:none; }
+.field input::placeholder{ color:var(--ink-50); }
+.onboard-hint{ font-size:11.5px; color:var(--ink-50); margin:-4px 0 12px; line-height:1.5; }
+.onboard-hint a{ color:#e8a09f; }
+.onboard-note{ margin-top:18px; font-size:11.5px; color:var(--ink-50); line-height:1.6; border-top:1px solid var(--hairline); padding-top:14px; }
+
+/* ================= APP SHELL ================= */
+/* Fixed-height shell: #app is exactly one viewport tall and never grows.
+   Every screen scrolls INSIDE itself (see min-height:0 + overflow-y:auto
+   on the panels below) instead of pushing this shell taller. */
+#app{ display:none; }
+#app.ready{ display:flex; gap:22px; padding:22px; height:100vh; align-items:stretch; }
+
+/* ---- sidebar ---- */
+#sidebar{ width:195px; flex-shrink:0; background:var(--red); border-radius:var(--radius-xl); padding:16px 10px; display:flex; flex-direction:column; gap:6px; position:sticky; top:22px; height:calc(100vh - 44px); box-shadow:var(--shadow-2); }
+.side-brand{ display:flex; align-items:center; gap:9px; padding:8px 8px 18px; }
+.side-brand img{ width:20px; height:19px; }
+.side-brand .wordmark{ font-size:16px; letter-spacing:.01em; }
+.side-brand .wordmark b{ font-weight:700; } .side-brand .wordmark span{ font-weight:400; opacity:.85; }
+
+.nav-item{ display:flex; align-items:center; gap:12px; height:46px; padding:0 12px; border-radius:var(--radius-sm); color:#fff; opacity:.55; transition:opacity .15s ease, background .15s ease; }
+.nav-item .ic-svg{ opacity:.95; }
+.nav-item span.label{ font-size:12.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+.nav-item:hover{ opacity:.85; }
+.nav-item.active{ opacity:1; background:var(--pill-active); }
+
+.side-bottom{ margin-top:auto; padding-top:10px; }
+.status-item{ display:flex; align-items:center; gap:12px; height:46px; padding:0 12px; border-radius:var(--radius-sm); background:var(--pill-active); color:#fff; }
+.status-item span.label{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+
+/* ---- main / hero frame (shared full-bleed photo behind all 3 screens) ---- */
+#main{ flex:1; min-width:0; border-radius:var(--radius-xl); overflow:hidden; position:relative; height:calc(100vh - 44px);
+  background-image:linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%), url('../assets/hero-farm.png');
+  background-size:cover; background-position:center; display:flex; flex-direction:column; }
+
+#topbar{ margin:20px 20px 0; border-radius:var(--radius-lg); padding:13px 18px; display:flex; align-items:center; gap:16px; }
+#topbar .who{ font-size:14px; font-weight:400; text-transform:uppercase; letter-spacing:.02em; }
+#topbar .who b{ font-weight:700; }
+#topbar .header-avatar{ width:38px; height:38px; }
+.search-wrap{ display:flex; align-items:center; gap:8px; background:var(--white-15); border-radius:var(--radius-sm); padding:8px 12px; min-width:200px; }
+.search-wrap input{ background:transparent; border:none; outline:none; color:#fff; flex:1; font-size:12.5px; }
+.search-wrap input::placeholder{ color:var(--ink-50); }
+
+.screen{ display:none; flex:1; min-height:0; flex-direction:column; padding:18px 20px 20px; }
+.screen.active{ display:flex; }
+
+/* ================= DASHBOARD ================= */
+#dashboardScreen{ justify-content:flex-end; }
+.research-panel{ border-radius:var(--radius-lg); padding:18px 20px 8px; max-height:100%; overflow-y:auto; }
+.research-panel-head{ display:flex; align-items:center; margin-bottom:12px; }
+.research-panel-head .see-all{ margin-left:auto; font-size:11.5px; font-weight:700; color:var(--ink-50); background:none; border:none; letter-spacing:.03em; text-transform:uppercase; }
+.research-panel-head .see-all:hover{ color:#fff; }
+
+.rp-table{ width:100%; border-collapse:collapse; }
+.rp-table th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-50); font-weight:700; padding:0 10px 10px; }
+.rp-table td{ padding:12px 10px; border-top:1px solid var(--hairline); vertical-align:middle; font-size:13px; }
+.rp-conv b{ display:block; font-size:13px; } .rp-conv small{ color:var(--ink-50); font-size:11px; }
+.rp-price{ font-weight:700; cursor:pointer; } .rp-price:hover{ text-decoration:underline; }
+.rp-prog{ min-width:130px; }
+.rp-prog .prog-label{ font-size:10.5px; color:var(--ink-50); margin-top:5px; }
+
+/* ---- admin panels ---- */
+/* These live in CSS rather than inline on the section so the mobile rules
+   below can override them — an inline style would win over any stylesheet
+   rule short of !important. */
+.admin-panel-stats{ margin-bottom:14px; flex-shrink:0; }
+.admin-panel-main{ flex:1; min-height:0; }
+#adminStats{ padding:4px 10px 10px; flex-wrap:wrap; }
+
+/* ================= CLIENTS ================= */
+#clientsScreen{ min-height:0; }
+.clients-outer{ border-radius:var(--radius-lg); padding:16px; flex:1; display:flex; gap:14px; min-height:0; }
+.client-list-panel{ width:320px; flex-shrink:0; border-radius:var(--radius-lg); padding:8px; overflow-y:auto; }
+.client-item{ display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--radius-md); cursor:pointer; }
+.client-item:hover{ background:rgba(255,255,255,.06); }
+.client-item.active{ background:var(--pill-active); }
+.ci-top{ display:flex; align-items:center; gap:6px; }
+.ci-name{ font-size:13px; font-weight:700; }
+.ci-prev{ font-size:11.5px; color:var(--ink-50); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:210px; }
+
+.chat-box-panel{ flex:1; min-width:0; border-radius:var(--radius-lg); display:flex; flex-direction:column; min-height:0; }
+.thread-head{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--hairline); }
+.thread-body{ flex:1; min-height:0; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+.day-divider{ align-self:center; font-size:10.5px; color:var(--ink-50); background:rgba(255,255,255,.08); padding:4px 12px; border-radius:999px; margin:4px 0; }
+
+.bubble{ max-width:72%; padding:10px 14px; border-radius:16px; font-size:13px; line-height:1.5; }
+.bubble.out{ align-self:flex-end; background:var(--red); color:#fff; border-bottom-right-radius:4px; }
+.bubble.in{ align-self:flex-start; background:rgba(255,255,255,.14); border-bottom-left-radius:4px; }
+.bubble.meta{ align-self:center; background:none; color:var(--ink-50); font-size:11px; padding:2px; }
+.bubble-actions{ align-self:flex-end; display:flex; gap:8px; margin-top:-4px; }
+/* WhatsApp quick action — deliberately the same glass ghost button as its
+   neighbours; only the glyph is added, so no second visual language. */
+.bubble-actions .btn-wa{ gap:6px; }
+.wa-glyph{ width:14px; height:14px; fill:currentColor; flex-shrink:0; }
+
+.thread-input-row{ display:flex; align-items:center; gap:10px; padding:12px 16px; border-top:1px solid var(--hairline); }
+.thread-input-row .input-glass{ flex:1; }
+.round-icon-btn{ width:36px; height:36px; border-radius:50%; border:none; background:var(--white-15); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.round-icon-btn:hover{ background:rgba(255,255,255,.24); }
+
+/* ================= FASTO-AI CHATBOT ================= */
+/* padding-right reserves the rail's footprint (220 width + 20 offset) PLUS
+   a 24px gap so the transcript, suggestion chips AND the prompt bar stay
+   clear of it with visible breathing room — position:absolute children
+   measure top/right/bottom from this padding edge, so the rail itself
+   doesn't move, only the normal-flow content does. */
+#assistantScreen{ position:relative; min-height:0; padding-right:264px; }
+.chat-history-rail{ position:absolute; top:18px; right:20px; bottom:18px; width:220px; border-radius:var(--radius-lg); padding:14px 10px; display:flex; flex-direction:column; overflow:hidden; z-index:2; }
+.new-chat-btn{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:var(--radius-md); background:var(--pill-active); border:none; color:#fff; font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.02em; margin-bottom:10px; flex-shrink:0; }
+.new-chat-btn:hover{ background:rgba(255,255,255,.2); }
+.chat-rail-list{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; -webkit-mask-image:linear-gradient(to bottom, black 85%, transparent 100%); mask-image:linear-gradient(to bottom, black 85%, transparent 100%); }
+.chat-rail-item{ display:flex; align-items:center; gap:9px; padding:9px 8px; border-radius:var(--radius-sm); font-size:12px; color:var(--ink-70); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chat-rail-item .ic-svg{ opacity:.6; flex-shrink:0; }
+.chat-rail-item:hover{ background:rgba(255,255,255,.08); }
+.chat-rail-item.active{ background:var(--pill-active); color:#fff; }
+/* Reusing an empty chat instead of making another one: a short outline pulse
+   so the rail entry is visibly where "Start New Chat" went. */
+.chat-rail-item.flash{ animation:rail-flash 1.2s ease-out 1; }
+@keyframes rail-flash{
+  0%{ box-shadow:inset 0 0 0 1px rgba(255,255,255,.75), 0 0 0 0 rgba(255,255,255,.35); }
+  100%{ box-shadow:inset 0 0 0 1px rgba(255,255,255,0), 0 0 0 7px rgba(255,255,255,0); }
+}
+
+/* No justify-content:flex-end here on purpose — combined with overflow-y:auto
+   on a flex column, flex-end makes overflowing content unscrollable in some
+   browsers (a known flexbox gotcha). renderTranscript() already scrolls to
+   the bottom on every update, so flex-start + JS autoscroll gets the same
+   "latest message visible" result without breaking scroll. */
+.assist-transcript{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:8px 8px 16px 4px; }
+.assist-transcript .bubble{ box-shadow:var(--shadow-2); max-width:60%; }
+.typing-ind{ display:none; font-size:12px; color:var(--ink-50); padding:0 4px; }
+
+.chip-row{ display:flex; flex-wrap:wrap; gap:8px; padding:0 4px 10px; }
+.sugg-chip{ background:var(--white-15); border-radius:999px; padding:7px 13px; font-size:11.5px; color:var(--ink-70); cursor:pointer; }
+.sugg-chip:hover{ background:rgba(255,255,255,.24); color:#fff; }
+
+.prompt-bar{ margin-top:auto; border-radius:var(--radius-lg); padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow-1); }
+.prompt-bar input{ flex:1; background:transparent; border:none; outline:none; color:#fff; font-size:13.5px; }
+.prompt-bar input::placeholder{ color:var(--ink-50); }
+
+/* ================= MATCH VIEW ("why these buyers") ================= */
+#matchSheet{ position:fixed; inset:0; z-index:120; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#matchSheet.open{ display:flex; }
+.match-panel{ width:100%; max-width:720px; max-height:100%; border-radius:var(--radius-xl); border:1px solid var(--hairline);
+  box-shadow:var(--shadow-1); display:flex; flex-direction:column; overflow:hidden; }
+.match-panel-head{ display:flex; align-items:flex-start; gap:12px; padding:18px 20px 14px; border-bottom:1px solid var(--hairline); flex-shrink:0; }
+.match-panel-body{ flex:1; min-height:0; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:11px; }
+.match-panel-foot{ flex-shrink:0; padding:12px 20px 15px; border-top:1px solid var(--hairline); font-size:11px; color:var(--ink-50); line-height:1.55; }
+
+.match-profile{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+
+.match-card{ background:var(--glass-20); border:1px solid var(--hairline); border-radius:var(--radius-md); padding:13px 14px; }
+.mc-head{ display:flex; align-items:center; gap:10px; }
+.mc-rank{ width:24px; height:24px; border-radius:50%; background:var(--red); color:#fff; font-size:12px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.mc-pitch{ font-size:13px; line-height:1.55; margin-top:10px; }
+.mc-reasons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.reason-chip{ background:var(--white-15); border-radius:999px; padding:4px 10px; font-size:11px; color:var(--ink-70); }
+
+.sugg-card{ display:flex; align-items:flex-start; gap:10px; background:var(--red-soft); border:1px solid rgba(150,37,36,.38);
+  border-radius:var(--radius-md); padding:12px 14px; font-size:12.5px; line-height:1.55; }
+.sugg-num{ width:20px; height:20px; border-radius:50%; background:var(--red); color:#fff; font-size:11px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+
+/* trigger affordances */
+.match-cta{ display:flex; justify-content:center; padding-top:2px; }
+.rp-clickable{ cursor:pointer; }
+.rp-clickable:hover b{ text-decoration:underline; }
+
+/* ---------- loading states (sign-in → first paint) ----------
+   Two waits used to be invisible: the account check on the sign-in
+   button, and the gap after "Enter Fasto Innova" while the buyer
+   database, the farmer's saved chats and (for a new account) the
+   first chat row come back from Supabase — on a slow rural
+   connection that is several seconds of a dead screen.
+
+   The app shell now appears immediately and shows skeleton rows
+   instead. Everything here is delayed ~180ms before fading in, so a
+   fast connection never flashes a shimmer that is gone again in a
+   tenth of a second — the delay costs nothing, it only decides
+   whether the placeholder is ever seen. */
+.spinner{ width:13px; height:13px; border-radius:50%; flex-shrink:0; display:inline-block;
+  border:2px solid rgba(255,255,255,.28); border-top-color:#fff; animation:spin .7s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.skel-line{ height:11px; border-radius:6px; background:rgba(255,255,255,.08);
+  background-image:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.14) 50%, rgba(255,255,255,0) 100%);
+  background-size:220% 100%; background-repeat:no-repeat; animation:skel-shimmer 1.5s ease-in-out infinite; }
+.skel-line + .skel-line{ margin-top:7px; }
+.skel-line.sm{ height:8px; }
+.skel-line.bar{ height:6px; }
+.skel-line.w-40{ width:40%; } .skel-line.w-50{ width:50%; }
+.skel-line.w-60{ width:60%; } .skel-line.w-70{ width:70%; }
+@keyframes skel-shimmer{ 0%{ background-position:140% 50%; } 100%{ background-position:-40% 50%; } }
+@keyframes boot-fade-in{ from{ opacity:0; } to{ opacity:1; } }
+
+/* status chip in the Research Progress header — says which of the two
+   loads is running, so a long wait doesn't look like a frozen screen */
+.boot-chip{ display:none; margin-left:auto; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-50); white-space:nowrap; }
+#app.booting .boot-chip{ display:inline-flex; animation:boot-fade-in .25s ease .18s both; }
+
+/* skeleton rows are injected into the real table body, so they inherit the
+   column widths and the row rhythm of the rows that replace them */
+.rp-skel td{ opacity:.85; }
+#app.booting .rp-skel{ animation:boot-fade-in .3s ease .18s both; }
+#app.booting #researchEmpty{ display:none !important; }
+#app.booting #whoName{ display:inline-block; min-width:118px; height:11px; border-radius:6px; vertical-align:-1px; color:transparent;
+  background:rgba(255,255,255,.08);
+  background-image:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.14) 50%, rgba(255,255,255,0) 100%);
+  background-size:220% 100%; background-repeat:no-repeat;
+  animation:skel-shimmer 1.5s ease-in-out .18s infinite, boot-fade-in .25s ease .18s both; }
+
+/* nothing is clickable until the data it would act on exists — starting a
+   chat mid-load would have it overwritten the moment loadFarmerData() lands */
+#app.booting .screen,
+#app.booting .nav-item,
+#app.booting #topbar .icon-btn,
+#app.booting #topbar .search-wrap{ pointer-events:none; }
+#app.booting .nav-item{ opacity:.35; }
+#app.booting #topbar .icon-btn,
+#app.booting #topbar .search-wrap{ opacity:.45; }
+
+/* On a phone the research table collapses to one block per cell, so three
+   skeleton rows become a wall of ~21 grey bars. One row reads as "loading"
+   just as well and matches how a real row stacks there. */
+@media (max-width: 900px){
+  #app.booting .rp-skel:nth-child(n+2){ display:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .skel-line, #app.booting #whoName{ animation:none; }
+  #app.booting .boot-chip, #app.booting .rp-skel{ animation:none; }
+  .spinner{ animation-duration:2.4s; }
+  /* keep the marker, drop the pulse */
+  .chat-rail-item.flash{ animation:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,.6); }
+}
+
+/* ---------- "not saved" chip (topbar) ----------
+   Hidden until a background write to Supabase fails, then stays visible until
+   one succeeds again. Amber rather than red: nothing is lost in this session,
+   it just may not survive to the next one. */
+.sync-warn{ display:none; align-items:center; gap:7px; height:32px; padding:0 11px; border-radius:var(--radius-sm);
+  background:rgba(217,164,65,.16); border:1px solid rgba(217,164,65,.45); color:var(--warn);
+  font-family:var(--font); font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  cursor:pointer; white-space:nowrap; flex-shrink:0; }
+.sync-warn.show{ display:flex; }
+.sync-warn:hover{ background:rgba(217,164,65,.26); }
+.sync-warn-dot{ width:7px; height:7px; border-radius:50%; background:var(--warn); flex-shrink:0; }
+
+/* ================= LOGISTICS REQUEST =================
+   Shares the match sheet's panel chrome (#matchSheet rules above) so there is
+   one overlay language in the app, not two. Only the form inside is new. */
+#logisticsSheet{ position:fixed; inset:0; z-index:130; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#logisticsSheet.open{ display:flex; }
+#logisticsSheet .match-panel{ max-width:760px; }
+
+.logi-btn img{ opacity:.95; }
+.lg-intro{ font-size:12.5px; color:var(--ink-70); line-height:1.55; margin-bottom:4px; }
+
+.lg-section{ background:var(--glass-20); border:1px solid var(--hairline); border-radius:var(--radius-md); padding:13px 14px; }
+.lg-section-head{ display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+.lg-section-head .foot{ margin-left:auto; }
+.lg-section-head .pill{ margin-left:auto; }
+/* the half nobody has actually confirmed yet — tinted so it can't be mistaken
+   for the farmer's own verified details sitting right above it */
+.lg-demo{ background:rgba(217,164,65,.07); border-color:rgba(217,164,65,.28); }
+.lg-note{ font-size:11.5px; color:var(--ink-50); line-height:1.5; margin:-4px 0 11px; }
+
+.lg-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; }
+.lg-field{ display:flex; flex-direction:column; min-width:0; }
+.lg-field.wide{ grid-column:1 / -1; }
+.lg-field label{ font-size:11px; font-weight:700; color:var(--ink-70); margin-bottom:5px; letter-spacing:.02em; }
+.lg-req{ color:var(--warn); margin-left:3px; }
+.lg-field input,.lg-field textarea{ width:100%; background:var(--white-15); border:1px solid transparent;
+  border-radius:var(--radius-sm); padding:9px 11px; color:#fff; outline:none; font-size:13px; resize:vertical; }
+.lg-field input::placeholder,.lg-field textarea::placeholder{ color:var(--ink-50); }
+.lg-field input:focus,.lg-field textarea:focus{ border-color:rgba(255,255,255,.35); }
+/* the dark date picker indicator is invisible on this background */
+.lg-field input[type=date]::-webkit-calendar-picker-indicator{ filter:invert(1); opacity:.6; cursor:pointer; }
+
+.lg-confirms{ display:flex; flex-wrap:wrap; gap:10px 22px; padding:2px 2px 0; }
+.lg-check{ display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--ink-70); cursor:pointer; }
+.lg-check input{ width:17px; height:17px; accent-color:var(--red); flex-shrink:0; cursor:pointer; }
+.lg-check:hover{ color:#fff; }
+
+.lg-foot{ display:flex; align-items:center; gap:14px; }
+.lg-foot .btn{ flex-shrink:0; }
+.lg-foot span{ min-width:0; }
+
+/* ================= mobile ================= */
+@media (max-width: 900px){
+  /* iOS Safari zooms the entire page in when a focused field is smaller than
+     16px, and does not zoom back out — tapping Email on the sign-in card left
+     you zoomed and scrolled sideways. The fields inherit 14.5px from body. */
+  .field input,.field select{ font-size:16px; }
+  .mode-toggle button{ min-height:44px; }
+
+  #matchSheet, #logisticsSheet{ padding:10px; }
+  .match-panel{ max-width:100%; }
+  #logisticsSheet .match-panel{ max-width:100%; }
+  /* two columns of inputs at 360px is roughly 150px per field — one column,
+     and the footer button goes full width above its explanation */
+  .lg-grid{ grid-template-columns:1fr; }
+  .lg-field input,.lg-field textarea{ font-size:16px; }   /* no iOS zoom-on-focus */
+  .lg-foot{ flex-direction:column; align-items:stretch; gap:9px; }
+  .lg-foot .btn{ width:100%; justify-content:center; }
+  .match-panel-head{ padding:14px 16px 12px; }
+  .match-panel-body{ padding:14px 16px; }
+  .match-panel-foot{ padding:10px 16px 13px; }
+  .hide-mobile{ display:none !important; }
+  #app.ready{ padding:0; gap:0; flex-direction:column; }
+  #sidebar{ position:fixed; left:10px; right:10px; bottom:10px; top:auto; width:auto; min-height:0; flex-direction:row; align-items:center; padding:8px; border-radius:var(--radius-lg); z-index:50; }
+  #sidebar{ left:calc(10px + env(safe-area-inset-left)); right:calc(10px + env(safe-area-inset-right)); bottom:calc(10px + env(safe-area-inset-bottom)); }
+  .side-brand,.side-bottom{ display:none; }
+  /* min-width:0 matters now that an admin account shows a fourth item: without
+     it the labels refuse to shrink and push the bar wider than the screen. */
+  .nav-item{ flex:1; min-width:0; flex-direction:column; height:auto; padding:8px 4px; gap:4px; }
+  .nav-item span.label{ font-size:9px; letter-spacing:.02em; text-align:center; }
+  #main{ border-radius:0; height:100vh; margin:0; }
+  #topbar{ margin:12px 12px 0; gap:10px; }
+  /* Without min-width:0 a longer farm name wrapped the greeting onto a second
+     line and made the whole bar taller; nothing else in the row can shrink. */
+  #topbar .who{ font-size:12px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #app.booting #whoName{ min-width:80px; }
+  .screen{ padding:14px 12px 90px; }
+  /* viewport-fit=cover is declared in index.html, so on a phone with a home
+     indicator or a notch the app draws underneath them unless the insets are
+     added back. Written as a second declaration so a browser without env()
+     keeps the plain value above. */
+  .screen{ padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
+  .clients-outer{ flex-direction:column; }
+  .client-list-panel{ width:auto; max-height:220px; }
+  .chat-history-rail{ display:none; }
+  #assistantScreen{ padding-right:12px; }
+  .assist-transcript .bubble{ max-width:85%; }
+  .research-panel{ padding:14px; }
+  .rp-table thead{ display:none; }
+  .rp-table, .rp-table tbody, .rp-table tr, .rp-table td{ display:block; width:100%; }
+  /* Stacked cells each carried their own top border, so one farmer's row read
+     as five identical list items with no sign where one record ended and the
+     next began. Group on the row instead. */
+  .rp-table tr{ padding:12px 0; border-top:1px solid var(--hairline); }
+  .rp-table tbody tr:first-child{ border-top:none; padding-top:2px; }
+  .rp-table td{ border-top:none; padding:4px 10px; }
+  /* The column headers are gone once the table stacks, so a cell that isn't
+     self-explanatory on its own carries its own label. Only cells that opt in
+     via data-label get one — a value like "80 kg/wk" already says what it is. */
+  .rp-table td[data-label]::before{ content:attr(data-label); display:block;
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--ink-50); margin-bottom:3px; }
+
+  /* One scroller instead of two. The Admin table used to scroll inside a panel
+     roughly 350px tall while the page behind it stayed put, so a flick in the
+     wrong place moved nothing. The whole screen scrolls now. */
+  #adminScreen{ overflow-y:auto; }
+  .admin-panel-stats,.admin-panel-main{ flex:none; max-height:none; overflow:visible; }
+  .admin-panel-stats{ margin-bottom:12px; }
+}
+
+/* Four nav items (admin) on the narrowest phones — buy back a few pixels
+   rather than let "DASHBOARD" wrap onto two lines inside a 66px tab. */
+@media (max-width: 380px){
+  #sidebar{ gap:2px; padding:8px 6px; }
+  .nav-item{ padding:8px 2px; }
+  .nav-item span.label{ font-size:8.5px; letter-spacing:0; }
+  #onboard{ padding:16px 14px; }
+  #onboard{ padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
+  .onboard-card{ padding:22px 18px; }
+}

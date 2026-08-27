@@ -1,0 +1,21 @@
+# Files Git should leave alone.
+
+# `node_modules` here is not a real folder — it's a leftover shortcut
+# pointing at a temporary location that no longer exists. Git can't open
+# it, which is what produced:
+#     error: open("node_modules"): Function not implemented
+#     fatal: Unable to process path node_modules
+# Nothing in this app needs it: index.html loads plain HTML/CSS/JS with no
+# build step, and the three dev scripts (test_engine.js, test_data_layer.js,
+# qa_check.js) all run on plain `node` with nothing installed.
+node_modules
+
+# Windows / macOS folder clutter
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# The original 3440x1440 background PNGs, if you ever put them back in this
+# folder. The app loads the resized bg-1.jpg ... bg-6.jpg instead (1.45 MB
+# for all six, versus about 37 MB for the originals).
+assets/Backgrounds/*.png
