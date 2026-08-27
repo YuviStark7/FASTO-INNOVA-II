@@ -63,18 +63,30 @@
   background-size:cover; background-position:center; display:flex; flex-direction:column; }
 
 /* ---- backdrop cross-fade ----
-   Two stacked photo layers. A new photo is put on whichever layer is hidden,
-   given a higher z-index, and faded up OVER the one already on screen — the
-   outgoing layer is never faded out. That distinction is the whole trick: two
-   layers dissolving in opposite directions are both semi-transparent halfway
-   through, so the dark frame shows between them and the swap flickers.
+   Two stacked photo layers. A new photo goes on whichever layer is currently
+   transparent, which is then moved in front and faded up OVER the one already
+   on screen. The layer underneath is not faded out at the same time: two
+   layers dissolving in opposite directions are both part-transparent halfway
+   through, so the dark frame shows between them and the swap flickers. It is
+   hidden afterwards instead, once the new photo is fully opaque — see
+   showBackdrop() step 5, and note that forgetting it is what made every swap
+   after the first one instant.
+
+   The two layers own z-index 0 and 1 and never move between them. An earlier
+   version handed each incoming layer an ever-climbing z-index, which passed
+   the scrim on the third swap and the topbar and screens on the fourth, so
+   the photo covered the whole dashboard. Two layers only ever need two values.
+
    The scrim that keeps the glass panels readable is applied once, above both
    layers, rather than being baked into each photo — otherwise it would be
    laid down twice over the overlap and the picture would darken mid-fade. */
 .backdrop-layer{ position:absolute; inset:0; z-index:0; opacity:0; pointer-events:none;
   background-size:cover; background-position:center;
   transition:opacity 900ms ease-in-out; }
+.backdrop-layer.front{ z-index:1; }   /* still below #main::after (2) and the content (3) */
 .backdrop-layer.on{ opacity:1; }
+/* Used to snap an interrupted fade to its end state without animating it. */
+.backdrop-layer.instant{ transition:none; }
 #main::after{ content:""; position:absolute; inset:0; z-index:2; pointer-events:none;
   background:linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%); }
 #main > #topbar, #main > .screen{ position:relative; z-index:3; }

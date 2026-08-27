@@ -1110,43 +1110,79 @@ const BACKDROPS = [
 ];
 // Start somewhere random so two demos in a row don't open on the same photo.
 let backdropIdx = Math.floor(Math.random() * BACKDROPS.length);
-let backdropShowing = null;  // the layer element currently on top
-let backdropZ = 0;           // handed to each incoming layer, always climbing
+const BACKDROP_FADE_MS = 900; // must match the transition in css/app.css
+let backdropFront = null;     // the layer currently on screen
+let backdropTimer = null;     // hides the outgoing layer once the fade has finished
+
+/* Ends whatever fade is in flight, immediately and without animating, leaving
+   the pair in the only state a swap can start from: exactly one layer visible,
+   the other transparent and free to take the next photo.
+
+   Needed because someone can leave the Dashboard and come back inside the
+   900ms a fade takes. Without this the next swap would grab a layer that is
+   still half-way through its own transition, and the photo would appear at
+   whatever opacity it happened to be at — which is how the fade broke the
+   first time round. */
+function settleBackdrop() {
+  clearTimeout(backdropTimer);
+  const a = $("backdropA"), b = $("backdropB");
+  if (!a || !b || !backdropFront) return;
+  const other = backdropFront === a ? b : a;
+  backdropFront.classList.add("instant");
+  backdropFront.classList.add("on");
+  other.classList.remove("on");
+  void backdropFront.offsetWidth;       // apply both while the transition is off
+  backdropFront.classList.remove("instant");
+}
 
 /* Puts BACKDROPS[backdropIdx] on screen, dissolving out of whatever is there.
-   The dark scrim and the fade itself live in css/app.css (.backdrop-layer);
-   all this does is decide which of the two layers is next and when it is safe
-   to reveal it.
+   The scrim and the fade itself live in css/app.css; this decides which of the
+   two layers is next, and when it is safe to show it.
 
-   Two details that matter more than they look:
+   The order below is the whole thing, and each step is load-bearing:
 
-   · The fade only starts once the photo has actually arrived. Fading up an
-     empty layer would dissolve to nothing and then snap when the file lands,
-     which is worse than the hard cut this replaced. A cached photo reports
-     itself complete immediately and fades straight away, which is the normal
-     case — the next one is always fetched an entire screen-visit early.
+   1. Settle any fade still running, so exactly one layer is visible.
+   2. The incoming layer is the transparent one. Give it the photo WHILE it is
+      still transparent — it is invisible, so nothing flashes.
+   3. Move it in front (z-index 1, the other drops to 0). Still transparent, so
+      the picture on screen does not change yet.
+   4. Force the browser to apply all of that at opacity 0, then fade it up. Skip
+      this and the browser collapses steps 2-4 into one paint and there is no
+      transition to see — a cut, not a fade.
+   5. Once it is fully opaque, hide the layer underneath. That is what frees it
+      up for next time. Leaving it visible was the bug that made every swap
+      after the first one instant.
 
-   · The incoming layer is reset to transparent BEFORE its photo is set. It is
-     underneath an opaque layer at that moment, so nothing shows; doing it the
-     other way round would flash the previous-but-one photo. */
+   The fade also waits for the photo to arrive: fading up an empty layer
+   dissolves to nothing and then snaps when the file lands, which is worse than
+   the cut this replaced. Normally it is already cached, because the next photo
+   is fetched a whole screen-visit early. */
 function showBackdrop() {
   const a = $("backdropA"), b = $("backdropB");
   if (!a || !b) return;
-  const incoming = (backdropShowing === a) ? b : a;
   const url = BACKDROPS[backdropIdx];
 
   let revealed = false;
   const reveal = () => {
-    if (revealed) return;               // load may fire after the cached-path call
+    if (revealed) return;               // onload can still fire after the cached path
     revealed = true;
-    incoming.classList.remove("on");
-    incoming.style.backgroundImage = "url('" + url + "')";
-    incoming.style.zIndex = ++backdropZ;
-    void incoming.offsetWidth;          // settle at opacity 0 so the fade actually runs
+
+    settleBackdrop();                                     // 1
+    const outgoing = backdropFront;
+    const incoming = (outgoing === a) ? b : a;
+
+    incoming.style.backgroundImage = "url('" + url + "')"; // 2
+    incoming.classList.add("front");                       // 3
+    if (outgoing) outgoing.classList.remove("front");
+    void incoming.offsetWidth;                             // 4
     incoming.classList.add("on");
-    backdropShowing = incoming;
-    // Fetch the one after this, so the next visit has it in hand.
-    const nxt = new Image();
+    backdropFront = incoming;
+
+    if (outgoing) {                                        // 5
+      backdropTimer = setTimeout(() => outgoing.classList.remove("on"), BACKDROP_FADE_MS + 60);
+    }
+
+    const nxt = new Image();            // next visit's photo, fetched now
     nxt.src = BACKDROPS[(backdropIdx + 1) % BACKDROPS.length];
   };
 

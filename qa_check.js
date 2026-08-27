@@ -55,6 +55,51 @@ for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs]]) {
   catch (e) { console.log("✗ " + name + " SYNTAX ERROR: " + e.message); problems++; }
 }
 
+// CSS has no syntax error to throw — a browser silently discards whatever it
+// cannot parse and carries on, so a broken rule looks like a styling bug
+// rather than a mistake. This caught a real one on 2026-08-27: an edit left a
+// stray comment-close marker between two rules, and the browser swallowed the
+// .backdrop-layer rule that followed it as part of the garbage selector. Its
+// opacity:0 never applied, both photo layers sat fully opaque, and the
+// cross-fade stopped happening, with nothing anywhere reporting a problem.
+// (Written with line comments on purpose: a block comment describing stray
+// comment markers has to contain one, which ends the comment early — which is
+// exactly the mistake this check exists to catch, and it happened here too.)
+for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base.css"]]) {
+  const src = fs.readFileSync(path + file, "utf8");
+  const opens = (src.match(/\/\*/g) || []).length, closes = (src.match(/\*\//g) || []).length;
+  const stripped = src.replace(/\/\*[\s\S]*?\*\//g, "");
+  const strays = (stripped.match(/\/\*|\*\//g) || []).length;
+  let depth = 0, unbalanced = false;
+  for (const ch of stripped) { if (ch === "{") depth++; else if (ch === "}" && --depth < 0) { unbalanced = true; break; } }
+  const bad = opens !== closes || strays > 0 || unbalanced || depth !== 0;
+  console.log((bad ? "✗ " : "✓ ") + name + ": comments " + opens + " open / " + closes + " close" +
+    (strays ? ", " + strays + " STRAY marker(s) outside any comment" : "") +
+    ", braces " + (unbalanced || depth !== 0 ? "UNBALANCED" : "balanced"));
+  if (bad) problems++;
+}
+
+/* The cross-fade only works if the photo layers stay under the scrim, which
+   in turn stays under the content. These three numbers are meaningless apart
+   and easy to break one at a time, so they are checked together. */
+{
+  // Read from comment-STRIPPED css on purpose. A comment left unclosed swallows
+  // every rule after it until the next close marker, and the open/close counts
+  // still balance, so the marker check above can't see it — but the rules it ate
+  // are simply gone from here, which shows up as a missing z-index.
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  const z = sel => { const m = flat.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{[^}]*z-index:\\s*(\\d+)")); return m ? Number(m[1]) : null; };
+  const layer = z(".backdrop-layer"), front = z(".backdrop-layer.front"), scrim = z("#main::after"), content = z("#main > #topbar, #main > .screen");
+  const ok = layer === 0 && front === 1 && scrim === 2 && content === 3;
+  console.log((ok ? "✓ " : "✗ ") + "backdrop stacking: layers " + layer + "/" + front + " < scrim " + scrim + " < content " + content);
+  if (!ok) problems++;
+  const fadeCss = (flat.match(/\.backdrop-layer\{[^}]*transition:opacity (\d+)ms/) || [])[1];
+  const fadeJs = (js.match(/BACKDROP_FADE_MS\s*=\s*(\d+)/) || [])[1];
+  const matched = fadeCss && fadeJs && fadeCss === fadeJs;
+  console.log((matched ? "✓ " : "✗ ") + "fade length agrees: css " + fadeCss + "ms, js BACKDROP_FADE_MS " + fadeJs + "ms");
+  if (!matched) problems++;
+}
+
 // Every DataStore.X( call in app.js must exist in supabase-client.js
 const dsMethodsUsed = new Set();
 for (const m of js.matchAll(/DataStore\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) dsMethodsUsed.add(m[1]);
