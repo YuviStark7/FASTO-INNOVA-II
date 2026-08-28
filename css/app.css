@@ -334,10 +334,14 @@
 .lg-field.wide{ grid-column:1 / -1; }
 .lg-field label{ font-size:11px; font-weight:700; color:var(--ink-70); margin-bottom:5px; letter-spacing:.02em; }
 .lg-req{ color:var(--warn); margin-left:3px; }
-.lg-field input,.lg-field textarea{ width:100%; background:var(--white-15); border:1px solid transparent;
+.lg-field input,.lg-field textarea,.lg-field select{ width:100%; background:var(--white-15); border:1px solid transparent;
   border-radius:var(--radius-sm); padding:9px 11px; color:#fff; outline:none; font-size:13px; resize:vertical; }
 .lg-field input::placeholder,.lg-field textarea::placeholder{ color:var(--ink-50); }
-.lg-field input:focus,.lg-field textarea:focus{ border-color:rgba(255,255,255,.35); }
+.lg-field input:focus,.lg-field textarea:focus,.lg-field select:focus{ border-color:rgba(255,255,255,.35); }
+/* The dropdown list itself is drawn by the OS, not by the panel, so it does not
+   inherit any of this — left alone it is white text on a white popup on
+   Windows. The option rows get the onboarding card's solid colour. */
+.lg-field select option{ background:#1c1414; color:#fff; }
 /* the dark date picker indicator is invisible on this background */
 .lg-field input[type=date]::-webkit-calendar-picker-indicator{ filter:invert(1); opacity:.6; cursor:pointer; }
 
@@ -350,6 +354,44 @@
 .lg-foot .btn{ flex-shrink:0; }
 .lg-foot span{ min-width:0; }
 
+/* ================= EDIT CAPTURED PROFILE =================
+   Same overlay and panel chrome again (see #matchSheet). Above the logistics
+   sheet in the stack only so that opening one from the other can never leave
+   the wrong one on top. */
+#profileSheet{ position:fixed; inset:0; z-index:140; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#profileSheet.open{ display:flex; }
+#profileSheet .match-panel{ max-width:760px; }
+
+/* the pills row in the match sheet, now with the way in to this form */
+.match-profile-row{ display:flex; align-items:flex-start; gap:10px; margin-bottom:4px; }
+.match-profile-row .match-profile{ flex:1; min-width:0; margin-bottom:0; }
+.mp-edit{ flex-shrink:0; }
+.match-cta{ gap:8px; }
+
+/* one product per block, so a row can be added or removed at any width without
+   the three fields and a delete control fighting over one line */
+.pf-prod + .pf-prod{ margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.pf-prod-head{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.pf-remove{ margin-left:auto; background:none; border:none; padding:2px 4px; color:var(--ink-50);
+  font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.pf-remove:hover{ color:var(--danger); }
+.pf-prod .pf-prod-grid{ grid-template-columns:1.5fr 1fr .9fr; }   /* .pf-prod scopes it so it
+   outranks .lg-grid at every width rather than merely coming later in the file */
+.pf-noprod{ padding:2px 0 4px; }
+.pf-add{ margin-top:12px; }
+
+.pf-months{ display:flex; flex-wrap:wrap; gap:6px; }
+.pf-month{ background:var(--white-15); border:1px solid transparent; border-radius:999px; padding:6px 13px;
+  font-size:11.5px; font-weight:700; color:var(--ink-70); letter-spacing:.02em; }
+.pf-month:hover{ background:rgba(255,255,255,.24); color:#fff; }
+.pf-month.on{ background:var(--red); border-color:rgba(255,255,255,.18); color:#fff; }
+
+/* "saved, and here is what Fasto changed on the way through" — the same banner
+   element as an error, in the amber the app already uses for "nothing is lost,
+   but you should know" (see the "Not saved" chip). */
+.err-banner.pf-notice{ background:rgba(217,164,65,.16); border-color:rgba(217,164,65,.45); color:#f0c375; }
+
 /* ================= mobile ================= */
 @media (max-width: 900px){
   /* iOS Safari zooms the entire page in when a focused field is smaller than
@@ -358,13 +400,19 @@
   .field input,.field select{ font-size:16px; }
   .mode-toggle button{ min-height:44px; }
 
-  #matchSheet, #logisticsSheet{ padding:10px; }
+  #matchSheet, #logisticsSheet, #profileSheet{ padding:10px; }
   .match-panel{ max-width:100%; }
   #logisticsSheet .match-panel{ max-width:100%; }
+  #profileSheet .match-panel{ max-width:100%; }
   /* two columns of inputs at 360px is roughly 150px per field — one column,
      and the footer button goes full width above its explanation */
   .lg-grid{ grid-template-columns:1fr; }
-  .lg-field input,.lg-field textarea{ font-size:16px; }   /* no iOS zoom-on-focus */
+  /* the product row's own 3-column split has to give way too, or it keeps
+     overriding .lg-grid and leaves three ~100px fields side by side */
+  .pf-prod .pf-prod-grid{ grid-template-columns:1fr; }
+  .lg-field input,.lg-field textarea,.lg-field select{ font-size:16px; }   /* no iOS zoom-on-focus */
+  .pf-month{ min-height:38px; padding:6px 15px; }
+  .match-profile-row{ flex-wrap:wrap; }
   .lg-foot{ flex-direction:column; align-items:stretch; gap:9px; }
   .lg-foot .btn{ width:100%; justify-content:center; }
   .match-panel-head{ padding:14px 16px 12px; }

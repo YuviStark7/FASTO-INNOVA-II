@@ -370,10 +370,15 @@ function renderTranscript() {
     if (m.role === "sys") return `<div class="bubble meta">${esc(m.text)}</div>`;
     return `<div class="bubble ${m.role === "user" ? "out" : "in"}">${esc(m.text)}</div>`;
   }).join("");
-  // once matching is finished the transcript ends with a way into the match view
-  const cta = (chat.phase === "done" || (chat.profile && chat.candidates && chat.candidates.length))
-    ? `<div class="match-cta"><button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">Why these buyers?</button></div>`
-    : "";
+  // once matching is finished the transcript ends with a way into the match
+  // view, and — as soon as Brain 1 has captured anything at all — a way to
+  // correct what it captured without starting the interview over.
+  const acts = [];
+  if (chat.phase === "done" || (chat.profile && chat.candidates && chat.candidates.length)) {
+    acts.push(`<button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">Why these buyers?</button>`);
+  }
+  if (chat.profile) acts.push(`<button class="btn btn-ghost btn-sm" onclick="openProfileEdit('${chat.id}')">Edit details</button>`);
+  const cta = acts.length ? `<div class="match-cta">${acts.join("")}</div>` : "";
   el.innerHTML = bubbles + cta;
   el.scrollTop = el.scrollHeight;
 }
@@ -508,7 +513,10 @@ function matchRowsFor(chat) {
     chat.candidates = rankMatches(chat.profile, DB, new Date().getMonth() + 1).slice(0, 8);
   }
   const byId = {}; chat.candidates.forEach(c => byId[c.id] = c);
-  const fromRecs = (chat.recs && chat.recs.ranked) || [];
+  // recsStale: the farmer edited the profile after Brain 2 wrote these, so the
+  // sentences describe a farm that no longer exists. The scores below them have
+  // been recomputed and are current; the prose can't be, so it is not shown.
+  const fromRecs = (!chat.recsStale && chat.recs && chat.recs.ranked) || [];
   const rows = fromRecs.length
     ? fromRecs.map(r => ({ cand: byId[r.buyer_id], pitch: r.pitch_reason })).filter(x => x.cand)
     : chat.candidates.map(c => ({ cand: c, pitch: "" }));
@@ -529,13 +537,16 @@ function openMatchView(chatId) {
     ? chat.title + " · top " + rows.length + " of " + poolSize + " verified Cassino entries"
     : chat.title;
 
-  const profileBits = !p ? "" : `<div class="match-profile">
+  const profileBits = !p ? "" : `<div class="match-profile-row">
+    <div class="match-profile">
       ${p.village ? `<span class="pill pill-muted">${esc(p.village)}</span>` : ""}
       ${isFinite(Number(p.distance_km_from_cassino)) ? `<span class="pill pill-muted">${Math.round(Number(p.distance_km_from_cassino))} km from Cassino</span>` : ""}
       <span class="pill pill-muted">${Math.round(totalKg(p))} kg/week</span>
       <span class="pill ${p.organic === "yes" ? "pill-accent" : "pill-muted"}">${p.organic === "yes" ? "Organic" : p.organic === "partial" ? "Partly organic" : "Not certified organic"}</span>
       ${(p.products || []).map(pr => `<span class="pill pill-blue">${esc(pr.name)} · ${Math.round(Number(pr.kg_per_week))} kg</span>`).join("")}
-    </div>`;
+    </div>
+    <button class="btn btn-ghost btn-sm mp-edit" onclick="openProfileEdit('${chat.id}', true)">Edit details</button>
+  </div>`;
 
   const cards = rows.map((r, i) => {
     const c = r.cand;
@@ -556,11 +567,13 @@ function openMatchView(chatId) {
     </div>`;
   }).join("");
 
-  const suggs = (chat.recs && chat.recs.creative_suggestions) || [];
+  const suggs = (!chat.recsStale && chat.recs && chat.recs.creative_suggestions) || [];
   let tail = "";
   if (suggs.length) {
     tail = `<div class="eyebrow" style="margin-top:6px">Ideas worth trying</div>` +
       suggs.map((s, i) => `<div class="sugg-card"><span class="sugg-num">${i + 1}</span><span>${esc(s)}</span></div>`).join("");
+  } else if (chat.recsStale) {
+    tail = `<div class="foot" style="margin-top:6px">You changed these details after Fasto wrote its notes on them. The scores and reasons above have been worked out again from the new numbers; the written notes were about the old ones, so they aren't shown.</div>`;
   } else if (!chat.recs) {
     tail = `<div class="foot" style="margin-top:6px">Brain 2's written notes and ideas belong to the conversation that produced them and aren't saved yet, so an older chat shows the scoring reasons only.</div>`;
   }
@@ -732,6 +745,7 @@ function renderThread() {
       <div class="day-divider">Today</div>
       <div class="bubble meta">Drafted by Brain 2 · real message, not simulated</div>
       ${c.flagged ? '<div class="bubble meta" style="color:var(--warn)">⚠ Guardian adjusted a claim in this draft</div>' : ""}
+      ${c.profileEdited ? '<div class="bubble meta" style="color:var(--warn)">⚠ You corrected your farm details after this was written — check the figures before you send it</div>' : ""}
       <div class="bubble out">${esc(c.message_it)}</div>
       <div class="bubble-actions">
         ${c.status === "sent" ? "" : `<button class="btn btn-ghost btn-sm" onclick="markSent('${c.id}')">Mark as sent</button>`}
@@ -839,7 +853,12 @@ function logisticsPrefill(client) {
 
 function lgField(id, label, value, opts) {
   opts = opts || {};
-  const tag = opts.rows
+  // opts.options turns the field into a <select> — [value, label] pairs. Used by
+  // the profile editor for category / organic, where a free-text box would let
+  // the farmer type something the Guardian would then silently rewrite.
+  const tag = opts.options
+    ? `<select id="${id}">${opts.options.map(o => `<option value="${escAttr(o[0])}"${o[0] === value ? " selected" : ""}>${esc(o[1])}</option>`).join("")}</select>`
+    : opts.rows
     ? `<textarea id="${id}" rows="${opts.rows}" placeholder="${escAttr(opts.ph || "")}"></textarea>`
     : `<input type="${opts.type || "text"}" id="${id}" value="${escAttr(value || "")}" placeholder="${escAttr(opts.ph || "")}" autocomplete="off">`;
   return `<div class="lg-field${opts.wide ? " wide" : ""}">
@@ -1013,6 +1032,321 @@ async function submitLogistics() {
   } finally {
     btn.disabled = false; btn.textContent = "Send to logistics partner";
   }
+}
+
+/* ================= EDIT A CAPTURED PROFILE =================
+   Brain 1 captures the profile once, mid-conversation, from what the farmer
+   happened to say. Anything it got slightly wrong — the village, a quantity,
+   a month — was permanent until now: there was no way to correct it short of
+   starting the whole interview again.
+
+   This is a form over the same fields, saved with the same DataStore methods
+   the capture path already uses (updateChat / saveProducts / updateFarmerName),
+   so it needs no new table and no new column.
+
+   Two things follow from an edit and are the reason this is more than a form:
+
+   1. Brain 2's SCORES are deterministic, so they are simply recomputed from
+      the new numbers — free, and always right. Brain 2's written SENTENCES
+      are not: they were composed from the old figures and there is no way to
+      regenerate them without another model call. They are marked stale and
+      hidden rather than shown as if they still described the farm.
+   2. The outreach draft sitting in Clients was written from the old numbers
+      too, and it is the one thing here that gets sent to a real buyer. It is
+      never rewritten silently — the thread carries a warning instead, so the
+      farmer reads it before sending.
+   ------------------------------------------------------------------------ */
+
+const PROFILE_FIELDS = ["farmer_name", "village", "distance_km_from_cassino", "organic", "available_months", "products"];
+// Changing any of these changes what the engine scores on, so the ranking has
+// to be recomputed and Brain 2's written notes no longer describe this farm.
+const PROFILE_SCORING_FIELDS = ["distance_km_from_cassino", "organic", "available_months", "products"];
+// Changing any of these changes something the outreach draft actually says.
+const PROFILE_DRAFT_FIELDS = ["farmer_name", "village", "organic", "available_months", "products"];
+const PROFILE_FIELD_LABEL = {
+  farmer_name: "your name", village: "your village", distance_km_from_cassino: "the distance from Cassino",
+  organic: "your organic status", available_months: "your available months", products: "your products"
+};
+
+/* Compares one field of two profiles. Normalising first matters more than it
+   looks: Postgres hands numeric columns back as strings, so a distance that
+   came from the database is "6" and the same distance typed into the form is
+   6 — compared raw, simply opening this form and pressing Save would look
+   like a change and rewrite every row. */
+function profileFieldValue(profile, field) {
+  const v = profile ? profile[field] : null;
+  if (field === "products") {
+    return JSON.stringify((v || []).map(p => [String(p.name == null ? "" : p.name).trim(), p.category, Number(p.kg_per_week) || 0]));
+  }
+  if (field === "available_months") return JSON.stringify((v || []).slice().sort((a, b) => a - b));
+  if (field === "distance_km_from_cassino") return (v == null || v === "") ? "" : String(Number(v));
+  return String(v == null ? "" : v).trim();
+}
+function changedProfileFields(before, after) {
+  return PROFILE_FIELDS.filter(f => profileFieldValue(before, f) !== profileFieldValue(after, f));
+}
+function humanList(items) {
+  if (items.length <= 1) return items[0] || "";
+  return items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
+
+/* The whole edit, minus the DOM — deliberately split the same way
+   buildLogisticsPayload() is, so validation, the re-score and the exact set of
+   Supabase writes can be tested without a browser. Returns
+   { ok, errors, warnings, changed, rescored, staleDrafts, saved }. */
+function applyProfileEdit(chat, raw) {
+  const fail = errors => ({ ok: false, errors: errors, warnings: [], changed: [], rescored: false, staleDrafts: 0, saved: false });
+  if (!chat) return fail(["This conversation is no longer open."]);
+
+  /* Guardian's own messages name a product by index ("product 0") when the
+     name is blank, which is unreadable in a form the farmer is looking at.
+     These two cases get asked for in plain words first; everything else —
+     unknown categories, absurd quantities, a missing village, an unclear
+     organic status — is left to the Guardian, which is the only thing on this
+     project allowed to decide what a valid profile is. */
+  const asked = [];
+  (raw.products || []).forEach((p, i) => {
+    const named = String(p.name == null ? "" : p.name).trim();
+    if (!named) asked.push("Product " + (i + 1) + " still needs a name.");
+    else if (!isFinite(Number(p.kg_per_week)) || Number(p.kg_per_week) <= 0) asked.push("How many kg per week of " + named + "?");
+  });
+  if (asked.length) return fail(asked);
+
+  const v = guardianValidateProfile(raw);
+  v.warnings.forEach(w => addLog("warn", "Guardian · profile edit: " + w));
+  if (!v.ok) {
+    v.errors.forEach(e => addLog("block", "Guardian · profile edit REJECTED: " + e));
+    return { ok: false, errors: v.errors, warnings: v.warnings, changed: [], rescored: false, staleDrafts: 0, saved: false };
+  }
+
+  const before = chat.profile || {};
+  const after = v.profile;
+  const changed = changedProfileFields(before, after);
+  if (!changed.length) return { ok: true, errors: [], warnings: v.warnings, changed: [], rescored: false, staleDrafts: 0, saved: false };
+
+  chat.profile = after;
+  chat.title = chatTitle(chat);
+  chat.ts = Date.now();
+
+  // The engine is pure and cheap, so the ranking is rebuilt from the new
+  // numbers rather than left describing a farm that no longer exists.
+  const rescored = changed.some(f => PROFILE_SCORING_FIELDS.indexOf(f) !== -1);
+  if (rescored) {
+    chat.candidates = rankMatches(after, DB, new Date().getMonth() + 1).slice(0, 8);
+    if (chat.recs) chat.recsStale = true;
+    addLog("info", "Brain 2 · re-scored after a profile edit, top score " + (chat.candidates[0] ? chat.candidates[0].score : 0) + "/100");
+  }
+
+  // Drafts already written from the old figures. Flagged, never rewritten:
+  // rewording a message the farmer may already have sent, without being asked,
+  // would be worse than leaving it visibly out of date.
+  let staleDrafts = 0;
+  if (changed.some(f => PROFILE_DRAFT_FIELDS.indexOf(f) !== -1)) {
+    state.clients.forEach(c => { if (c.chatId === chat.id && c.status !== "sent") { c.profileEdited = true; staleDrafts++; } });
+  }
+
+  if (!isLocalId(chat.id)) {
+    bgSave(DataStore.updateChat(chat.id, {
+      title: chat.title,
+      farmer_name: after.farmer_name || null,
+      village: after.village || null,
+      distance_km_from_cassino: after.distance_km_from_cassino == null ? null : after.distance_km_from_cassino,
+      organic: after.organic || null,
+      available_months: after.available_months || []
+    }), "your farm profile");
+    // saveProducts is a delete-then-insert, so it is only run when the products
+    // actually changed — correcting a village should not take the product list
+    // out and put it back.
+    if (changed.indexOf("products") !== -1) bgSave(DataStore.saveProducts(chat.id, after.products), "your product list");
+  }
+  // The account's display name is per-farmer, not per-chat, so it is written
+  // whether or not this particular chat reached the database. Clearing the name
+  // in one conversation deliberately does NOT wipe it from the account.
+  if (changed.indexOf("farmer_name") !== -1 && after.farmer_name && state.farmerId && !isLocalId(state.farmerId)) {
+    state.farmerProfile = Object.assign({}, state.farmerProfile, { farmer_name: after.farmer_name });
+    bgSave(DataStore.updateFarmerName(state.farmerId, after.farmer_name), "your name");
+  }
+
+  return { ok: true, errors: [], warnings: v.warnings, changed: changed, rescored: rescored, staleDrafts: staleDrafts, saved: true };
+}
+
+/* ---------- the form ---------- */
+let profileChatId = null;
+let profileReopenMatch = false;   // opened from the match sheet, so go back to it on save
+let profileDraftProducts = [];    // the product rows, which can be added to and removed
+let profileDraftMonths = [];
+
+const pfVal = (id, fallback) => { const el = $(id); return el ? String(el.value == null ? "" : el.value).trim() : fallback; };
+
+function renderProfileProducts() {
+  const el = $("pfProducts"); if (!el) return;
+  if (!profileDraftProducts.length) {
+    el.innerHTML = `<div class="foot pf-noprod">Nothing left to sell here — add at least one product, or there is nothing for Fasto to match you on.</div>`;
+    return;
+  }
+  el.innerHTML = profileDraftProducts.map((pr, i) => `
+    <div class="pf-prod">
+      <div class="pf-prod-head">
+        <span class="eyebrow">Product ${i + 1}</span>
+        <button type="button" class="pf-remove" onclick="removeProfileProduct(${i})">Remove</button>
+      </div>
+      <div class="lg-grid pf-prod-grid">
+        ${lgField("pfPName" + i, "What is it", pr.name || "", { req: true, ph: "e.g. Pomodori" })}
+        ${lgField("pfPCat" + i, "Category", pr.category || "verdure", { options: CATEGORIES.map(c => [c, CAT_LABEL[c] || c]) })}
+        ${lgField("pfPKg" + i, "Kg per week", pr.kg_per_week === "" || pr.kg_per_week == null ? "" : String(pr.kg_per_week), { req: true, type: "number", ph: "e.g. 80" })}
+      </div>
+    </div>`).join("");
+}
+
+// Whatever is typed into the rows right now, before they are rebuilt — adding
+// or removing a row must not throw away edits made to the others.
+function syncProfileProducts() {
+  profileDraftProducts = profileDraftProducts.map((pr, i) => ({
+    name: pfVal("pfPName" + i, pr.name || ""),
+    category: pfVal("pfPCat" + i, pr.category || "verdure"),
+    kg_per_week: pfVal("pfPKg" + i, pr.kg_per_week == null ? "" : String(pr.kg_per_week))
+  }));
+}
+function addProfileProduct() {
+  syncProfileProducts();
+  profileDraftProducts.push({ name: "", category: "verdure", kg_per_week: "" });
+  renderProfileProducts();
+  const el = $("pfPName" + (profileDraftProducts.length - 1)); if (el && el.focus) el.focus();
+}
+function removeProfileProduct(i) {
+  syncProfileProducts();
+  profileDraftProducts.splice(i, 1);
+  renderProfileProducts();
+}
+
+function renderProfileMonths() {
+  const el = $("pfMonths"); if (!el) return;
+  el.innerHTML = MONTH_NAMES.map((m, i) => {
+    const n = i + 1;
+    const on = profileDraftMonths.indexOf(n) !== -1;
+    return `<button type="button" class="pf-month${on ? " on" : ""}" aria-pressed="${on}" onclick="toggleProfileMonth(${n})">${esc(m.slice(0, 3))}</button>`;
+  }).join("");
+}
+function toggleProfileMonth(n) {
+  const i = profileDraftMonths.indexOf(n);
+  if (i === -1) profileDraftMonths.push(n); else profileDraftMonths.splice(i, 1);
+  renderProfileMonths();
+}
+
+function readProfileForm() {
+  syncProfileProducts();
+  const raw = {
+    farmer_name: pfVal("pfName", ""),
+    village: pfVal("pfVillage", ""),
+    organic: pfVal("pfOrganic", "no"),
+    available_months: profileDraftMonths.slice().sort((a, b) => a - b),
+    products: profileDraftProducts.map(p => ({
+      name: p.name,
+      category: p.category,
+      kg_per_week: p.kg_per_week === "" ? NaN : Number(String(p.kg_per_week).replace(",", "."))
+    }))
+  };
+  // Left OFF the object entirely when blank, rather than sent as null:
+  // Number(null) is 0, so a null would be stored as a farm 0 km from Cassino
+  // and quietly score better on distance. Absent means "unclear", which the
+  // Guardian answers with its 8 km assumption AND a visible warning.
+  const dist = pfVal("pfDist", "");
+  if (dist !== "") raw.distance_km_from_cassino = Number(String(dist).replace(",", "."));
+  return raw;
+}
+
+function showProfileNotice(msg, kind) {
+  const el = $("pfErr"); if (!el) return;
+  el.textContent = msg;
+  // add/remove rather than toggle(name, force): the two-argument form is the
+  // one thing in this file a stand-in DOM is most likely to get wrong, and
+  // there is nothing to gain by depending on it.
+  if (kind === "notice") el.classList.add("pf-notice"); else el.classList.remove("pf-notice");
+  el.style.display = "block";
+}
+
+function openProfileEdit(chatId, fromMatchView) {
+  const chat = state.chats.find(c => c.id === chatId);
+  const sheet = $("profileSheet");
+  if (!chat || !chat.profile || !sheet) return;
+  profileChatId = chatId;
+  profileReopenMatch = !!fromMatchView;
+  if (fromMatchView) closeMatchView();
+
+  const p = chat.profile;
+  profileDraftProducts = (p.products || []).map(pr => ({ name: pr.name, category: pr.category, kg_per_week: pr.kg_per_week }));
+  profileDraftMonths = (p.available_months || []).slice();
+
+  const sub = $("profileSubtitle");
+  if (sub) sub.textContent = chat.title + " · taken from your conversation with Fasto";
+
+  $("profileBody").innerHTML = `
+    <div class="lg-intro">This is what Fasto understood from your conversation. Correct anything that isn't right — your matches are re-scored from it as soon as you save.</div>
+
+    <div class="lg-section">
+      <div class="lg-section-head"><span class="eyebrow">Your farm</span></div>
+      <div class="lg-grid">
+        ${lgField("pfName", "Your name", p.farmer_name || "", { ph: "Leave blank to stay anonymous" })}
+        ${lgField("pfVillage", "Village or area", p.village || "", { req: true, ph: "e.g. Sant'Elia Fiumerapido" })}
+        ${lgField("pfDist", "Distance from Cassino (km)", p.distance_km_from_cassino == null ? "" : String(Number(p.distance_km_from_cassino)), { type: "number", ph: "roughly" })}
+        ${lgField("pfOrganic", "Organic certification", p.organic || "no", { options: [["yes", "Yes, certified"], ["partial", "Partly certified"], ["no", "No certification"]] })}
+      </div>
+    </div>
+
+    <div class="lg-section">
+      <div class="lg-section-head"><span class="eyebrow">What you grow</span><span class="foot">Quantities are per week</span></div>
+      <div id="pfProducts"></div>
+      <button type="button" class="btn btn-ghost btn-sm pf-add" onclick="addProfileProduct()">Add a product</button>
+    </div>
+
+    <div class="lg-section">
+      <div class="lg-section-head"><span class="eyebrow">Months you can supply</span><span class="foot">All off = all year round</span></div>
+      <div class="pf-months" id="pfMonths"></div>
+    </div>
+
+    <div class="err-banner" id="pfErr"></div>`;
+
+  renderProfileProducts();
+  renderProfileMonths();
+  const btn = $("profileSaveBtn");
+  if (btn) { btn.disabled = false; btn.textContent = "Save changes"; }
+  sheet.classList.add("open");
+}
+
+function closeProfileEdit() { const s = $("profileSheet"); if (s) s.classList.remove("open"); }
+
+function saveProfileEdit() {
+  const chat = state.chats.find(c => c.id === profileChatId);
+  const el = $("pfErr"); if (el) el.style.display = "none";
+  if (!chat) { showProfileNotice("This conversation is no longer open.", "error"); return; }
+
+  const res = applyProfileEdit(chat, readProfileForm());
+  if (!res.ok) { showProfileNotice(res.errors.join(" "), "error"); return; }
+
+  if (chat.id === state.activeChatId) updateHeaderIdentity();
+  renderChatRail(); renderTranscript(); renderDashboard(); renderChats();
+
+  /* The Guardian changed one of the farmer's own numbers on the way through
+     (a distance it couldn't read, a quantity too large to be a small farm).
+     Saying so in a toast that fades would be the one place this app hides a
+     correction it made, so the sheet stays open, redrawn from what was
+     actually stored, with the adjustment written above the fields. */
+  if (res.warnings.length) {
+    openProfileEdit(chat.id, profileReopenMatch);
+    showProfileNotice("Saved. Fasto adjusted " + (res.warnings.length === 1 ? "one thing" : res.warnings.length + " things") +
+      " on the way through: " + res.warnings.join(" · "), "notice");
+    return;
+  }
+
+  closeProfileEdit();
+  if (!res.changed.length) toast("Nothing to change — these details are already what Fasto has.");
+  else {
+    let msg = "Updated " + humanList(res.changed.map(f => PROFILE_FIELD_LABEL[f])) + ".";
+    if (res.rescored) msg += " Matches re-scored.";
+    if (res.staleDrafts) msg += " Your outreach draft still has the old wording — check it before sending.";
+    toast(msg);
+  }
+  if (profileReopenMatch) openMatchView(chat.id);
 }
 
 /* ---------- dormant: WhatsApp hand-off ----------
@@ -1432,6 +1766,14 @@ function boot() {
   $("logisticsSubmit").onclick = () => submitLogistics();
   $("logisticsSheet").addEventListener("click", e => { if (e.target === $("logisticsSheet")) closeLogistics(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeLogistics(); });
+
+  // Profile editor: the same three ways out as the logistics sheet, and for the
+  // same reason — never on a stray click inside the panel, which would throw
+  // away a half-corrected form.
+  $("profileCloseBtn").onclick = () => closeProfileEdit();
+  $("profileSaveBtn").onclick = () => saveProfileEdit();
+  $("profileSheet").addEventListener("click", e => { if (e.target === $("profileSheet")) closeProfileEdit(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeProfileEdit(); });
 
   renderDashboard();
 }

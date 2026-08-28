@@ -152,7 +152,9 @@ function loadApp(root) {
   const files = ["js/supabase-client.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
 ;globalThis.__t = { state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
-  saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS };`;
+  saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
+  applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
+  addProfileProduct, removeProfileProduct, toggleProfileMonth };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs };
 }
@@ -512,6 +514,306 @@ console.log("== Test 2: saveProducts and saveMatches ==");
   check("...but a message in a real chat is written once, with its text",
     sb.chains.length === 1 && sb.chains[0].table === "messages" && sb.chains[0].ops[0].args[0].text === "hello");
   check("...and it is on screen immediately either way, saved or not", realChat.messages.length === 1);
+
+  /* ============================================================
+     6. Editing a captured profile (ROADMAP item 8)
+     ------------------------------------------------------------
+     applyProfileEdit() is split from the form the same way
+     buildLogisticsPayload() is split from the fetch, so what it decides can be
+     tested without a browser: which Supabase writes it makes, which it
+     deliberately does NOT make, and what it does to a ranking and to an
+     outreach draft that were produced from the old numbers.
+
+     The line to keep in mind (see ROADMAP, 2026-08-27): this file drives a
+     stand-in DOM, so it can prove what the code does with the data and
+     nothing at all about what any of it looks like.
+     ============================================================ */
+  console.log("== Test 6: editing a captured profile ==");
+
+  const BASE = {
+    farmer_name: "Marco", village: "Sant'Elia Fiumerapido", distance_km_from_cassino: 6,
+    organic: "no", available_months: [6, 7, 8, 9, 10],
+    products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }]
+  };
+  const copy = o => JSON.parse(JSON.stringify(o));
+  const withEdit = patch => Object.assign(copy(BASE), patch);
+  const tick = () => new Promise(r => setTimeout(r, 15));   // let the awaited writes land
+  const tables = () => sb.chains.map(c => c.table);
+  const chainFor = t => sb.chains.filter(c => c.table === t);
+  const opArgs = (chain, op) => (chain.ops.find(o => o.op === op) || { args: [] }).args;
+
+  function editSetup(opts) {
+    opts = opts || {};
+    sb.reset();
+    sb.router = () => ({ data: null, error: null });
+    app.state.farmerId = UID;
+    app.state.farmerProfile = { id: UID, farmer_name: "Marco" };
+    app.state.activeChatId = null;
+    app.state.clients = opts.clients || [];
+    const chat = {
+      id: opts.chatId || CHAT, title: "Marco", phase: "done", pct: 100, messages: [],
+      profile: copy(opts.profile || BASE), candidates: opts.candidates || [], recs: opts.recs || null, ts: 0
+    };
+    app.state.chats = [chat];
+    return chat;
+  }
+
+  /* --- the no-op. Opening this form and pressing Save without touching
+     anything must not rewrite a single row: saveProducts is a delete followed
+     by an insert, so a pointless "save" is a real window in which a chat can
+     lose its products to a dropped connection. --- */
+  let chat = editSetup({});
+  let r = app.applyProfileEdit(chat, copy(BASE));
+  await tick();
+  check("saving an untouched profile writes nothing at all",
+    r.ok && r.changed.length === 0 && r.saved === false && sb.chains.length === 0, JSON.stringify(tables()));
+
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({
+    distance_km_from_cassino: "6", products: [{ name: "pomodori", category: "pomodori", kg_per_week: "80" }]
+  }));
+  await tick();
+  check("...still nothing when the same numbers arrive as the strings Postgres hands back",
+    r.changed.length === 0 && sb.chains.length === 0, JSON.stringify(r.changed));
+
+  /* --- what counts as "changed" at all. Postgres hands numeric columns back
+     as strings, and "6.0" and 6 are the same distance; so are the same months
+     listed in another order. Compared raw, simply opening this form and
+     pressing Save would rewrite every row. --- */
+  check("the same months in a different order are not a change",
+    app.changedProfileFields({ available_months: [10, 6, 7, 8, 9] }, { available_months: [6, 7, 8, 9, 10] }).length === 0);
+  check("a distance that came back from Postgres as \"6.0\" is not a change from 6",
+    app.changedProfileFields({ distance_km_from_cassino: "6.0" }, { distance_km_from_cassino: 6 }).length === 0);
+  check("a product name with a stray space, and a quantity as a string, are not a change",
+    app.changedProfileFields(
+      { products: [{ name: "pomodori ", category: "pomodori", kg_per_week: "80" }] },
+      { products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] }).length === 0);
+  check("...but a real correction still is",
+    eq(app.changedProfileFields(
+      { products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] },
+      { products: [{ name: "pomodori", category: "pomodori", kg_per_week: 120 }] }), ["products"]));
+  check("...and so is a village",
+    eq(app.changedProfileFields({ village: "Terelle" }, { village: "Cervaro" }), ["village"]));
+
+  /* --- a village correction is the cheapest possible edit and must stay that
+     way: one row updated, the product list left where it is. --- */
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ village: "Cervaro" }));
+  await tick();
+  check("correcting only the village updates the chat row and does not touch the products",
+    eq(tables(), ["chats"]), JSON.stringify(tables()));
+  check("...with the new village in the patch, alongside the recomputed title",
+    opArgs(chainFor("chats")[0], "update")[0].village === "Cervaro" && "title" in opArgs(chainFor("chats")[0], "update")[0],
+    JSON.stringify(opArgs(chainFor("chats")[0], "update")[0]));
+  check("...and it is not treated as a re-score, because distance is what the engine reads",
+    r.rescored === false && eq(r.changed, ["village"]));
+
+  /* --- a quantity correction: chat row, then the products replaced. --- */
+  chat = editSetup({ candidates: [] });
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 120 }] }));
+  await tick();
+  check("correcting a quantity updates the chat row and replaces the product list",
+    eq(tables(), ["chats", "products", "products"]) && eq(chainFor("products").map(c => c.ops[0].op), ["delete", "insert"]),
+    JSON.stringify(tables()));
+  check("...and the inserted row carries the corrected quantity, not the old one",
+    opArgs(chainFor("products")[1], "insert")[0][0].kg_per_week === 120,
+    JSON.stringify(opArgs(chainFor("products")[1], "insert")[0]));
+  check("...and the ranking is worked out again from the new numbers",
+    r.rescored === true && chat.candidates.length > 0 && typeof chat.candidates[0].score === "number");
+
+  /* --- what the Guardian refuses never reaches the database, and never
+     touches the profile already on screen either. --- */
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ products: [] }));
+  await tick();
+  check("a profile with every product removed is refused, and nothing is written",
+    !r.ok && /no products/i.test(r.errors.join(" ")) && sb.chains.length === 0, JSON.stringify(r.errors));
+  check("...and the profile the farmer can still see is the one that was there before",
+    chat.profile.products.length === 1 && chat.profile.products[0].kg_per_week === 80);
+
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "", category: "verdure", kg_per_week: 10 }] }));
+  check("a product with no name is asked for by number, not by the Guardian's \"product 0\"",
+    !r.ok && r.errors[0] === "Product 1 still needs a name.", JSON.stringify(r.errors));
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 0 }] }));
+  check("a product with no quantity is asked for by name",
+    !r.ok && r.errors[0] === "How many kg per week of pomodori?", JSON.stringify(r.errors));
+
+  /* --- where the Guardian changes a number rather than refusing it, the
+     changed number is what gets stored, and the farmer is told. --- */
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 9000 }] }));
+  await tick();
+  check("a quantity too large for a small farm is capped, and the cap is what is saved",
+    r.ok && chat.profile.products[0].kg_per_week === 5000 &&
+    opArgs(chainFor("products")[1], "insert")[0][0].kg_per_week === 5000);
+  check("...and the farmer is told, rather than finding a different number later",
+    r.warnings.length === 1 && /5000/.test(r.warnings[0]), JSON.stringify(r.warnings));
+
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "qualcosa", category: "fantasia", kg_per_week: 10 }] }));
+  await tick();
+  check("a category the engine doesn't know is mapped before it is stored, never after",
+    opArgs(chainFor("products")[1], "insert")[0][0].category === "verdure" && r.warnings.length === 1);
+
+  /* --- a blank distance box. Number(null) is 0, so a null here would store a
+     farm sitting in the middle of Cassino and quietly improve its score. --- */
+  chat = editSetup({});
+  const noDist = copy(BASE); delete noDist.distance_km_from_cassino;
+  r = app.applyProfileEdit(chat, noDist);
+  await tick();
+  check("a distance left blank becomes the Guardian's stated assumption, not 0 km",
+    chat.profile.distance_km_from_cassino === 8 && /distance/i.test(r.warnings.join(" ")), JSON.stringify(r.warnings));
+
+  /* --- the account's display name is per-farmer; the chat's is per-conversation. --- */
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ farmer_name: "Marco Rossi" }));
+  await tick();
+  check("changing the name writes it to the account as well as to the chat",
+    tables().indexOf("farmers") !== -1 && eq(opArgs(chainFor("farmers")[0], "update"), [{ farmer_name: "Marco Rossi" }]),
+    JSON.stringify(tables()));
+  check("...and the copy the logistics form reads is updated in the same breath",
+    app.state.farmerProfile.farmer_name === "Marco Rossi");
+  check("...but a name is not something the engine scores on, so nothing is re-ranked",
+    r.rescored === false);
+
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ farmer_name: "" }));
+  await tick();
+  check("clearing the name in one conversation does not wipe it from the account",
+    tables().indexOf("farmers") === -1 && app.state.farmerProfile.farmer_name === "Marco", JSON.stringify(tables()));
+  check("...it only clears it on that chat", opArgs(chainFor("chats")[0], "update")[0].farmer_name === null);
+
+  /* --- the outreach draft is the one thing here a real buyer ever reads. --- */
+  const clients = [
+    { id: "o1", chatId: CHAT, status: "draft", message_it: "…80 kg…" },
+    { id: "o2", chatId: CHAT, status: "sent", message_it: "…80 kg…" },
+    { id: "o3", chatId: "another-chat", status: "draft", message_it: "…" }
+  ];
+  chat = editSetup({ clients: clients });
+  r = app.applyProfileEdit(chat, withEdit({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 120 }] }));
+  await tick();
+  check("an unsent draft from this chat is flagged as written before the correction",
+    clients[0].profileEdited === true && r.staleDrafts === 1);
+  check("...a draft already sent is not — the farmer cannot unsend it, so a warning would only confuse",
+    !clients[1].profileEdited);
+  check("...and another conversation's draft is left alone", !clients[2].profileEdited);
+  check("...and the draft's words are never rewritten behind the farmer's back",
+    clients[0].message_it === "…80 kg…");
+
+  /* --- Brain 2's prose vs Brain 2's scores. --- */
+  const recs = { ranked: [{ buyer_id: "b1", pitch_reason: "buys 80 kg of tomatoes a week" }], creative_suggestions: ["passata"], outreach: null };
+  chat = editSetup({ recs: copy(recs) });
+  app.applyProfileEdit(chat, withEdit({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 120 }] }));
+  await tick();
+  check("written notes composed from the old figures are marked stale, not deleted",
+    chat.recsStale === true && chat.recs.ranked.length === 1);
+  chat = editSetup({ recs: copy(recs) });
+  app.applyProfileEdit(chat, withEdit({ farmer_name: "Marco Rossi" }));
+  await tick();
+  check("...but a change the notes don't depend on leaves them alone", !chat.recsStale);
+
+  /* --- a chat that never reached the database. --- */
+  chat = editSetup({ chatId: "local1756282800000abcd" });
+  r = app.applyProfileEdit(chat, withEdit({ farmer_name: "Nuovo", products: [{ name: "pomodori", category: "pomodori", kg_per_week: 120 }] }));
+  await tick();
+  check("a chat with a client-only id is edited on screen but never written to Postgres",
+    eq(tables(), ["farmers"]) && chat.profile.products[0].kg_per_week === 120, JSON.stringify(tables()));
+
+  chat = editSetup({});
+  r = app.applyProfileEdit(chat, withEdit({ available_months: [1, 2] }));
+  await tick();
+  const patch = opArgs(chainFor("chats")[0], "update")[0];
+  check("the chat patch carries every profile column the capture path writes",
+    eq(patch.available_months, [1, 2]) && patch.organic === "no" && patch.village === BASE.village &&
+    patch.distance_km_from_cassino === 6 && patch.farmer_name === "Marco",
+    JSON.stringify(patch));
+  check("...and changing the months counts as a re-score, because seasonality is scored",
+    r.rescored === true && eq(r.changed, ["available_months"]));
+
+  /* ------------------------------------------------------------
+     The form itself. The stand-in DOM answers null for any id it hasn't been
+     given, so the fields are registered here by hand — which is the honest
+     limit of this: it tests what the form READS, never how it looks.
+     ------------------------------------------------------------ */
+  console.log("== Test 6b: what the form reads back ==");
+  ["profileSheet", "profileBody", "profileSubtitle", "profileSaveBtn", "pfProducts", "pfMonths", "pfErr", "whoName"]
+    .forEach(id => { els[id] = fakeEl(id); });
+  const formFields = ["pfName", "pfVillage", "pfDist", "pfOrganic", "pfPName0", "pfPCat0", "pfPKg0"];
+  function fillForm(values) {
+    formFields.forEach(id => { els[id] = els[id] || fakeEl(id); els[id].value = ""; });
+    Object.keys(values).forEach(id => { els[id] = els[id] || fakeEl(id); els[id].value = values[id]; });
+  }
+
+  chat = editSetup({});
+  app.openProfileEdit(CHAT);
+  check("opening the form marks the sheet open", els.profileSheet.has("open"));
+  fillForm({ pfName: "Marco", pfVillage: "Sant'Elia Fiumerapido", pfDist: "", pfOrganic: "no",
+    pfPName0: "pomodori", pfPCat0: "pomodori", pfPKg0: "80" });
+  let raw = app.readProfileForm();
+  check("a blank distance box is left OFF the profile entirely — null would read as 0 km",
+    !("distance_km_from_cassino" in raw), JSON.stringify(raw));
+  check("the months come from the chips, in order", eq(raw.available_months, [6, 7, 8, 9, 10]));
+  els.pfDist.value = "12";
+  check("a distance that was typed comes through as a number", app.readProfileForm().distance_km_from_cassino === 12);
+
+  app.openProfileEdit(CHAT);
+  fillForm({ pfName: "Marco", pfVillage: "Sant'Elia Fiumerapido", pfDist: "6", pfOrganic: "no",
+    pfPName0: "pomodorini", pfPCat0: "pomodori", pfPKg0: "80" });
+  app.addProfileProduct();
+  raw = app.readProfileForm();
+  check("adding a second product keeps what was already typed into the first",
+    raw.products.length === 2 && raw.products[0].name === "pomodorini", JSON.stringify(raw.products));
+  app.removeProfileProduct(0);
+  check("...and removing a row removes that row", app.readProfileForm().products.length === 1);
+
+  app.openProfileEdit(CHAT);
+  app.toggleProfileMonth(6);
+  app.toggleProfileMonth(1);
+  check("a month chip switches its own month off and on, and nothing else",
+    eq(app.readProfileForm().available_months, [1, 7, 8, 9, 10]), JSON.stringify(app.readProfileForm().available_months));
+
+  /* --- and the save button, all the way through to the writes --- */
+  console.log("== Test 6c: the Save button, end to end ==");
+  chat = editSetup({ clients: [{ id: "o1", chatId: CHAT, status: "draft", message_it: "…" }] });
+  app.openProfileEdit(CHAT);
+  fillForm({ pfName: "Marco", pfVillage: "Cervaro", pfDist: "6", pfOrganic: "no",
+    pfPName0: "pomodori", pfPCat0: "pomodori", pfPKg0: "120" });
+  sb.reset(); sb.router = () => ({ data: null, error: null });
+  els.toast.textContent = "";
+  app.saveProfileEdit();
+  await tick();
+  check("Save writes the chat row and the products, and closes the sheet",
+    eq(tables(), ["chats", "products", "products"]) && !els.profileSheet.has("open"), JSON.stringify(tables()));
+  check("...and says in plain words what changed and what it means for the draft",
+    /village/.test(els.toast.textContent) && /products/.test(els.toast.textContent) &&
+    /re-scored/.test(els.toast.textContent) && /before sending/.test(els.toast.textContent), els.toast.textContent);
+
+  /* When the Guardian changed one of the farmer's own numbers, the sheet stays
+     open with the adjustment written above the fields — a toast that fades
+     would be the one place this app hides a correction it made. */
+  chat = editSetup({});
+  app.openProfileEdit(CHAT);
+  fillForm({ pfName: "Marco", pfVillage: "Sant'Elia Fiumerapido", pfDist: "6", pfOrganic: "no",
+    pfPName0: "pomodori", pfPCat0: "pomodori", pfPKg0: "9000" });
+  app.saveProfileEdit();
+  await tick();
+  check("an adjusted number keeps the sheet open instead of fading away in a toast",
+    els.profileSheet.has("open") && els.pfErr.has("pf-notice") && /^Saved\./.test(els.pfErr.textContent),
+    els.pfErr.textContent);
+  check("...and what was stored is the adjusted number", chat.profile.products[0].kg_per_week === 5000);
+
+  chat = editSetup({});
+  app.openProfileEdit(CHAT);
+  fillForm({ pfName: "Marco", pfVillage: "Sant'Elia Fiumerapido", pfDist: "6", pfOrganic: "no",
+    pfPName0: "", pfPCat0: "pomodori", pfPKg0: "80" });
+  sb.reset();
+  app.saveProfileEdit();
+  await tick();
+  check("a form that can't be saved says so in the panel and writes nothing",
+    els.profileSheet.has("open") && !els.pfErr.has("pf-notice") &&
+    els.pfErr.textContent === "Product 1 still needs a name." && sb.chains.length === 0,
+    els.pfErr.textContent);
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

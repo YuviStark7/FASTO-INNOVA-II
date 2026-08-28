@@ -63,7 +63,7 @@ js/supabase-client.js     accounts + database access (DataStore) — the only fi
 assets/                    images/icons exported from the Figma file
 manifest.json               PWA metadata (name, theme color)
 test_engine.js               dev only — the matching engine (19 tests)
-test_data_layer.js            dev only — everything between the app and the database (70 tests)
+test_data_layer.js            dev only — everything between the app and the database (117 tests)
 qa_check.js                    dev only — static checks: missing assets, dead handlers, syntax
 ```
 
@@ -73,7 +73,7 @@ Three scripts, none of which ship with the app or need anything installed — pl
 
 ```
 node test_engine.js        →  19 passed, 0 failed
-node test_data_layer.js    →  70 passed, 0 failed
+node test_data_layer.js    →  117 passed, 0 failed
 node qa_check.js           →  QA: PASS
 ```
 

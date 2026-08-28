@@ -217,6 +217,28 @@
   </div>
 </div>
 
+<!-- ---------- EDIT CAPTURED PROFILE ----------
+     Third body-level sheet, same chrome and same reasons as the two above.
+     Opened from a finished chat or from the match sheet; the body is built in
+     app.js because every field is filled from what Brain 1 captured in that
+     conversation, and the product rows can be added to and removed. -->
+<div id="profileSheet">
+  <div class="match-panel glass-45">
+    <div class="match-panel-head">
+      <div style="min-width:0;flex:1">
+        <span class="title-md">Your farm details</span>
+        <div class="foot" id="profileSubtitle"></div>
+      </div>
+      <button class="icon-btn" id="profileCloseBtn" title="Close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="match-panel-body" id="profileBody"></div>
+    <div class="match-panel-foot lg-foot">
+      <button class="btn btn-primary" id="profileSaveBtn">Save changes</button>
+      <span>Saved to your account and used to work your matches out again. Nothing here is sent to a buyer.</span>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
