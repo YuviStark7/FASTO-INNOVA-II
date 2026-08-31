@@ -10,10 +10,12 @@
    are dev tooling kept here for reuse.
    ============================================================ */
 const fs = require("fs");
-const path = process.argv[2] || __dirname;
+const path = require("path").resolve(process.argv[2] || __dirname);  // resolved: the i18n/core requires below need an absolute path
 const html = fs.readFileSync(path + "/index.html", "utf8");
 const js = fs.readFileSync(path + "/js/app.js", "utf8");
 const sbjs = fs.readFileSync(path + "/js/supabase-client.js", "utf8");
+const i18njs = fs.readFileSync(path + "/js/i18n.js", "utf8");
+const corejs = fs.readFileSync(path + "/js/core.js", "utf8");
 const css = fs.readFileSync(path + "/css/app.css", "utf8") + fs.readFileSync(path + "/css/base.css", "utf8");
 
 let problems = 0;
@@ -34,8 +36,70 @@ console.log(JSON.stringify([...idsUsedInJs].filter(id => !idsInHtml.has(id))));
 const onclickFns = new Set();
 for (const re of [js, html]) for (const m of re.matchAll(/onclick="([a-zA-Z_][a-zA-Z0-9_]*)\(/g)) onclickFns.add(m[1]);
 const definedFns = new Set();
-for (const m of js.matchAll(/(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) definedFns.add(m[1]);
+for (const src of [js, i18njs]) for (const m of src.matchAll(/(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) definedFns.add(m[1]);
 report("onclick handlers referencing undefined functions", [...onclickFns].filter(f => !definedFns.has(f)));
+
+/* ============================================================
+   TRANSLATION CHECKS (ROADMAP item 10)
+   Four things that fail silently in a browser and are therefore worth a
+   script: a key that exists in one language and not the other (falls back to
+   English with nothing said), a key used but never defined (renders as the key
+   itself), the static English in index.html drifting away from the dictionary
+   that replaces it, and — the one that matters most — js/core.js changing a
+   sentence that js/i18n.js still thinks it knows how to translate.
+   ============================================================ */
+const i18n = require(path + "/js/i18n.js");
+{
+  const en = Object.keys(i18n.STRINGS.en), it = Object.keys(i18n.STRINGS.it);
+  report("keys in English but missing from Italian", en.filter(k => it.indexOf(k) === -1));
+  report("keys in Italian but missing from English", it.filter(k => en.indexOf(k) === -1));
+
+  // Every key asked for, from either the markup or the code.
+  const used = new Set();
+  for (const m of html.matchAll(/data-i18n(?:-html|-ph|-title|-aria)?="([^"]+)"/g)) used.add(m[1]);
+  // A literal ending in "." is the prefix half of T("phase." + p) and is
+  // covered by the `built` list below, not a key in its own right.
+  for (const m of js.matchAll(/\bT\(\s*"([^"]+)"/g)) if (!m[1].endsWith(".")) used.add(m[1]);
+  // ...plus the ones built from a prefix and a variable, which the regex above
+  // can't see. Each is listed with the suffixes it can take.
+  const built = [
+    ["cat.", require(path + "/js/core.js").CATEGORIES],
+    ["month.", Array.from({ length: 12 }, (_, i) => String(i + 1))],
+    ["phase.", ["interview", "matching", "done"]],
+    ["band.", ["low", "medium", "high"]],
+    ["profile.fld.", (js.match(/const PROFILE_FIELDS = \[([^\]]+)\]/) || [, ""])[1].split(",").map(x => x.trim().replace(/"/g, "")).filter(Boolean)],
+    ["admin.stage.", ["started", "profile", "drafted", "sent"]],
+    ["admin.hint.", ["started", "profile", "drafted", "sent"]],
+    ["", (js.match(/const OFFLINE_SCRIPT_KEYS = \[([^\]]+)\]/) || [, ""])[1].split(",").map(x => x.trim().replace(/"/g, "")).filter(Boolean)]
+  ];
+  for (const [prefix, suffixes] of built) for (const sfx of suffixes) used.add(prefix + sfx);
+  report("i18n keys used but not defined", [...used].filter(k => !(k in i18n.STRINGS.en)));
+
+  // The English left in index.html is what a browser with JS off would show,
+  // and what a reader of the file assumes is true. Only the plain-text ones are
+  // compared; the two innerHTML strings carry markup and are skipped.
+  const decode = s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+  const drifted = [];
+  for (const m of html.matchAll(/<(\w+)[^>]*\sdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/g)) {
+    const [, , key, text] = m;
+    if (decode(text) !== decode(i18n.STRINGS.en[key] || "")) drifted.push(key);
+  }
+  report("static English in index.html out of step with the en dictionary", drifted);
+}
+
+/* The engine's own sentences. js/core.js is the tested engine and is not
+   touched by the translation work, so its reasons and Guardian warnings are
+   recognised and rewritten at the boundary by ENGINE_PATTERNS in js/i18n.js.
+   That is exactly the arrangement that rots quietly: change a word in core.js
+   and the Italian UI silently starts showing English again. So every string
+   core.js pushes has to be claimed by a pattern. */
+{
+  const pushed = [];
+  for (const m of corejs.matchAll(/(?:reasons|warnings|errors)\.push\(\s*"((?:[^"\\]|\\.)*)"/g)) pushed.push(m[1]);
+  const unclaimed = pushed.filter(lit => !i18n.ENGINE_PATTERNS.some(p => p.re.test(lit) || p.re.source.slice(1).indexOf(lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) === 0));
+  console.log("engine sentences found in core.js: " + pushed.length);
+  report("core.js strings no ENGINE_PATTERNS entry claims", unclaimed);
+}
 
 const assetRefs = new Set();
 for (const m of html.matchAll(/(?:src|href)="(assets\/[^"]+)"/g)) assetRefs.add(m[1]);
@@ -50,7 +114,7 @@ console.log("<div> open=" + openDiv + " close=" + closeDiv + " balanced=" + (ope
 console.log("<section> open=" + openSec + " close=" + closeSec + " balanced=" + (openSec === closeSec));
 if (openDiv !== closeDiv || openSec !== closeSec) problems++;
 
-for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs]]) {
+for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs], ["i18n.js", i18njs]]) {
   try { new Function(src); console.log("✓ " + name + ": syntax OK"); }
   catch (e) { console.log("✗ " + name + " SYNTAX ERROR: " + e.message); problems++; }
 }

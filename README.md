@@ -15,7 +15,15 @@ Visual design is a direct implementation of the Figma file *DOLCE MERAVGLIA* (Da
 - **Dashboard** — Research Progress table: your last conversations, targeted product, quantity pledged, an assumed price per kg (click it to adjust), and how far each one has progressed.
 - **Clients** — every buyer Brain 2 has matched you with, and the real outreach message Brain 2 drafted for them (Italian + English). Nothing here is simulated — a message only appears once a real match has been found. "Mark as sent" and "Copy" are manual, on purpose: this prototype never sends anything on its own.
 - **Fasto-AI** — the interview itself, with a history rail on the right so you can start fresh chats or revisit old ones.
-- **Admin** (R&S account only) — every farmer, every conversation and every outreach draft across the whole app, for internship reporting.
+- **Admin** (R&S account only) — a funnel showing where conversations stop (started → farm profile captured → buyers matched and a draft written → outreach sent), over a table of every conversation across the whole app. Click a funnel stage to filter the table to it. Every bar counts *conversations*, never drafts: one finished conversation produces a draft per matched buyer, so mixing the two would show more at the bottom of the funnel than at the top. The draft totals are given separately, beside it.
+
+## Italiano or English
+
+There is an **IT / EN** switch on the sign-in card and, once you are inside, in the top bar on the right — the same place on a phone, where the sidebar shrinks to a row of icons.
+
+The app opens in whatever language your browser is set to (Italian phone → Italian) and remembers your choice on that device afterwards. It is a display preference and nothing more: switching never writes anything to your account, and never changes a product category, an organic status or a chat title that has already been saved.
+
+Two things stay put on purpose. Brain 2's written notes and its **outreach draft** are left exactly as they were composed — the draft is deliberately an Italian message plus an English translation, and it is the one thing a real buyer ever reads. And the logistics request emailed to the partner keeps its English field names, because that partner receives requests from every farmer and one inbox should not change language per sender; it carries a line naming the farmer's language instead, so they know how to reply. In the offline demo the scripted conversation *does* follow the switch, because that is Fasto standing in for Brain 1, which always mirrors the language you write in.
 
 ## Running it
 
@@ -56,15 +64,16 @@ No terminal, no git commands — everything above is point-and-click on github.c
 index.html          app shell — onboarding + sidebar/header + the 3 screens
 css/base.css         design tokens, resets, buttons/pills/inputs/avatars
 css/app.css           shell layout, dashboard/clients/chatbot layouts, mobile
-js/data.js             the 36-buyer + 3-channel Cassino database, price assumptions
-js/core.js              Brain 2 (matching engine) + Brain 3 (Guardian) — pure functions, unit-tested
-js/app.js                state, screens, Brain 1 orchestration (Claude API calls)
-js/supabase-client.js     accounts + database access (DataStore) — the only file that talks to Supabase
-assets/                    images/icons exported from the Figma file
-manifest.json               PWA metadata (name, theme color)
-test_engine.js               dev only — the matching engine (19 tests)
-test_data_layer.js            dev only — everything between the app and the database (117 tests)
-qa_check.js                    dev only — static checks: missing assets, dead handlers, syntax
+js/i18n.js             the IT/EN dictionary + T() — every visible string in the app
+js/data.js              the 36-buyer + 3-channel Cassino database, price assumptions
+js/core.js               Brain 2 (matching engine) + Brain 3 (Guardian) — pure functions, unit-tested
+js/app.js                 state, screens, Brain 1 orchestration (Claude API calls)
+js/supabase-client.js      accounts + database access (DataStore) — the only file that talks to Supabase
+assets/                     images/icons exported from the Figma file
+manifest.json                PWA metadata (name, theme color)
+test_engine.js                dev only — the matching engine (19 tests)
+test_data_layer.js             dev only — app ↔ database, and the language layer (203 tests)
+qa_check.js                     dev only — static checks: assets, dead handlers, syntax, translations
 ```
 
 ## Checking nothing broke
@@ -73,7 +82,7 @@ Three scripts, none of which ship with the app or need anything installed — pl
 
 ```
 node test_engine.js        →  19 passed, 0 failed
-node test_data_layer.js    →  117 passed, 0 failed
+node test_data_layer.js    →  203 passed, 0 failed
 node qa_check.js           →  QA: PASS
 ```
 

@@ -14,7 +14,14 @@
    ============================================================ */
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const CAT_LABEL = { verdure:"vegetables", pomodori:"tomatoes", frutta:"fruit", legumi:"legumes", olio:"oil", vino:"wine", uova:"eggs", formaggi:"cheese", carne:"meat", erbe:"herbs", castagne:"chestnuts", miele:"honey", conserve:"preserves" };
+/* Every visible string in this file goes through T() in js/i18n.js.
+   THE ONE RULE TO KEEP: nothing that is looked up at load time may hold a
+   translated string. A `const LABELS = { done: T("phase.done") }` at the top of
+   this file would freeze whatever language the page opened in and never change
+   again, and the mistake is invisible until someone presses the toggle. So
+   anything that used to be a table of English words — the category labels, the
+   month names, the funnel stages, the offline script — is a FUNCTION now, read
+   at render time. */
 
 let state = {
   apiKey: "", model: "claude-haiku-4-5-20251001", offline: true,
@@ -26,7 +33,8 @@ let state = {
   glog: [],
   screen: "dashboard",
   activeClientId: null,
-  showAllResearch: false
+  showAllResearch: false,
+  adminStage: "started"   // which funnel stage the Admin table is filtered to
 };
 
 /* ---------- Prompts / tool schemas (Brain 1 + Brain 2) ---------- */
@@ -92,6 +100,66 @@ function showErr(msg) { const b = $("errBanner"); if (!b) return; b.textContent 
 function clearErr() { const b = $("errBanner"); if (b) b.style.display = "none"; }
 function isLocalId(id) { return String(id).startsWith("local"); } // true when a DB write failed and we fell back to a client-only id
 
+/* ================= LANGUAGE SWITCH =================
+   The dictionary and T() live in js/i18n.js. This is the part that has to know
+   about the app: what to redraw, and — more importantly — what NOT to redraw.
+
+   Nothing here writes to Supabase. The language is a display preference kept
+   in localStorage, so switching it never touches a farmer's row; the stored
+   product categories, organic status and chat titles are untouched by design.
+   ------------------------------------------------------------------------- */
+
+// Things that must be redrawn on a switch but live inside a closure — the
+// sign-in button's label is built by boot()'s own authLabel().
+const langListeners = [];
+function onLangChange(fn) { langListeners.push(fn); }
+
+/* The sidebar mode pill is written here and NOWHERE else, deliberately. It
+   carries an interpolated model name when live, which a data-i18n attribute
+   cannot hold — and worse, an attribute has to name ONE key, so whichever was
+   chosen would be wrong half the time: `data-i18n="pill.offline"` on a live
+   session had applyI18n() quietly relabel it "Offline demo" on every language
+   switch, telling the farmer their API key wasn't being used. */
+function paintModePill() {
+  const el = $("modePill"); if (!el) return;
+  el.textContent = state.offline ? T("pill.offline")
+    : T("pill.live", { model: state.model.includes("haiku") ? "Haiku 4.5" : "Sonnet 5" });
+}
+
+function setLang(lang) {
+  if (!setLangValue(lang)) return;      // unknown code, or already the current one
+  applyI18n(document);                  // static markup + <html lang>
+  paintLangToggles();
+  langListeners.forEach(fn => { try { fn(); } catch (e) { console.error("language switch hook failed", e); } });
+
+  const app = $("app");
+  if (!app || !app.classList.contains("ready")) return;   // still on the onboarding cards
+
+  /* Mid-boot the shell is showing skeleton rows and loadFarmerData() is about
+     to REPLACE state.chats wholesale. Re-rendering here would swap the
+     placeholders for an empty table and then have that overwritten a moment
+     later. The toggle is already pointer-events:none while #app.booting — this
+     is the belt to that brace, and the same reasoning as every other control
+     that is switched off during the boot sequence. */
+  if (app.classList.contains("booting")) return;
+
+  updateHeaderIdentity();
+  paintModePill();
+  renderDashboard();
+  renderChats();
+  renderChatRail();
+  renderTranscript();
+  if (state.screen === "admin") paintAdmin();
+
+  /* The three sheets are deliberately NOT rebuilt. Two of them are forms, and
+     redrawing one would throw away a half-typed logistics request or a
+     half-corrected profile — the same thing the sheets already refuse to do on
+     a stray backdrop click. Nothing has to guard against it: #matchSheet,
+     #logisticsSheet and #profileSheet are fixed, inset:0 and z-index 120/130/
+     140, so while any of them is open the topbar toggle is underneath them and
+     cannot be clicked at all. */
+}
+
 /* ---------- background-save failures ----------
    Most Supabase writes here are deliberately fire-and-forget: the screen
    updates straight away and the write happens behind it, so the app never
@@ -144,9 +212,7 @@ function flushSaveFailures() {
   if (!items.length) return;
   if (Date.now() - saveState.lastToast < SAVE_REPEAT_MS) return; // told recently; the header chip carries it from here
   saveState.lastToast = Date.now();
-  const what = items.length === 1 ? items[0]
-    : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
-  toast("Couldn't save " + what + " to your account — fine for now, but it may not be here next time.");
+  toast(T("save.couldnt", { what: humanList(items.map(T)) }));
 }
 
 // A write got through, so whatever was wrong has cleared up. Only stand down once
@@ -171,9 +237,7 @@ function bgSave(promise, what) {
 
 // The header chip is clickable: it repeats what happened, whenever they look at it.
 function explainSyncWarn() {
-  toast(saveState.failures === 1
-    ? "1 change couldn't be saved to your account. It's still here for this session, but it may not be next time."
-    : saveState.failures + " changes couldn't be saved to your account. They're still here for this session, but may not be next time.");
+  toast(saveState.failures === 1 ? T("save.one") : T("save.many", { n: saveState.failures }));
 }
 
 function addLog(level, msg) {
@@ -242,7 +306,7 @@ async function loadFarmerData(uid) {
         products: (prods || []).map(p => ({ name: p.name, category: p.category, kg_per_week: Number(p.kg_per_week) }))
       } : null,
       candidates: [], recs: null,
-      offlineStep: (msgs || []).length, offlineReady: (msgs || []).length >= OFFLINE_SCRIPT.length,
+      offlineStep: (msgs || []).length, offlineReady: (msgs || []).length >= OFFLINE_SCRIPT_KEYS.length,
       ts: new Date(row.created_at).getTime()
     });
   }
@@ -266,22 +330,28 @@ async function newChatObj() {
     return { id: data.id, title: data.title, phase: data.phase, pct: data.pct, ts: new Date(data.created_at).getTime(),
       messages: [], apiMessages: [], profile: null, candidates: [], recs: null, offlineStep: 0, offlineReady: false };
   } catch (e) {
-    saveFailedWithOwnMessage("this new chat", e, "Couldn't save this chat to your account — it will only last this session.");
-    return { id: "local" + Date.now() + Math.random().toString(36).slice(2, 6), title: "New chat", phase: "interview", pct: 0, ts: Date.now(),
+    saveFailedWithOwnMessage("save.newChat", e, T("save.newChatMsg"));
+    return { id: "local" + Date.now() + Math.random().toString(36).slice(2, 6), title: T("assist.newChatTitle"), phase: "interview", pct: 0, ts: Date.now(),
       messages: [], apiMessages: [], profile: null, candidates: [], recs: null, offlineStep: 0, offlineReady: false };
   }
 }
 function activeChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
+/* The title is stored in the database, so a chat created in one language keeps
+   that wording when the app is reopened in the other. Rebuilding every stored
+   title on a language switch would rewrite rows on a display preference, which
+   is a much worse trade than one stale label in a list. */
 function chatTitle(chat) {
   if (chat.profile && chat.profile.farmer_name) return chat.profile.farmer_name;
-  if (chat.profile) { const top = topProductCategory(chat.profile); if (top) return "Chat · " + (CAT_LABEL[top] || top); }
-  return "New chat";
+  if (chat.profile) { const top = topProductCategory(chat.profile); if (top) return T("assist.chatCat", { cat: catLabel(top) || top }); }
+  return T("assist.newChatTitle");
 }
 
+/* Offline mode is the one place the "Fasto answers in your language" promise
+   was broken: there is no Brain 1 to mirror anyone, only a fixed script. So
+   the greeting and the script below DO follow the UI language, while anything
+   a real Brain wrote is left exactly as it came out. */
 function greetingText() {
-  return state.offline
-    ? "Buongiorno! (Offline demo) I'm the Fasto Innova assistant. Press a sample chip or say hello to begin."
-    : "Buongiorno! I'm the Fasto Innova assistant. I help small farmers around Cassino find the right local buyers — no forms, just a chat. What's your name, and what do you grow?";
+  return state.offline ? T("assist.greetOffline") : T("assist.greetLive");
 }
 
 /* ---------- duplicate / idle chat guard ----------
@@ -317,8 +387,7 @@ async function startNewChat() {
     if (!spare.messages.length) addMsg(spare, "ai", greetingText());
     flashChatRailItem(spare.id);
     // Say something, or a button that quietly does nothing reads as broken.
-    toast(wasOpen ? "This chat is still empty — just type below to begin."
-                  : "Opened your empty chat instead of starting another one.");
+    toast(wasOpen ? T("assist.stillEmpty") : T("assist.openedEmpty"));
     const input = $("userInput"); if (input) input.focus();
     return spare;
   }
@@ -360,7 +429,7 @@ function flashChatRailItem(id) {
 function addMsg(chat, role, text) {
   chat.messages.push({ role, text, ts: Date.now() });
   if (chat.id === state.activeChatId) renderTranscript();
-  if (!isLocalId(chat.id)) bgSave(DataStore.addMessage(chat.id, role, text), "this message");
+  if (!isLocalId(chat.id)) bgSave(DataStore.addMessage(chat.id, role, text), "save.message");
 }
 function renderTranscript() {
   const chat = activeChat();
@@ -375,9 +444,9 @@ function renderTranscript() {
   // correct what it captured without starting the interview over.
   const acts = [];
   if (chat.phase === "done" || (chat.profile && chat.candidates && chat.candidates.length)) {
-    acts.push(`<button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">Why these buyers?</button>`);
+    acts.push(`<button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">${esc(T("assist.why"))}</button>`);
   }
-  if (chat.profile) acts.push(`<button class="btn btn-ghost btn-sm" onclick="openProfileEdit('${chat.id}')">Edit details</button>`);
+  if (chat.profile) acts.push(`<button class="btn btn-ghost btn-sm" onclick="openProfileEdit('${chat.id}')">${esc(T("assist.editDetails"))}</button>`);
   const cta = acts.length ? `<div class="match-cta">${acts.join("")}</div>` : "";
   el.innerHTML = bubbles + cta;
   el.scrollTop = el.scrollHeight;
@@ -392,7 +461,7 @@ async function sendUserMessage(text) {
   const findings = guardianScanText(text);
   findings.forEach(f => addLog(f.level, "Guardian · input scan: " + f.msg));
   if (findings.some(f => f.level === "block")) {
-    addMsg(chat, "sys", "Message blocked by the Guardian for safety. Please rephrase.");
+    addMsg(chat, "sys", T("assist.blocked"));
     return;
   }
   if (!findings.length) addLog("ok", "Guardian · input scan: clean");
@@ -433,7 +502,7 @@ async function onProfileCaptured(raw, chat) {
 
   if (!v.ok) {
     v.errors.forEach(er => addLog("block", "Guardian · REJECTED: " + er));
-    addMsg(chat, "sys", "The Guardian rejected the profile: " + v.errors.join("; "));
+    addMsg(chat, "sys", T("assist.guardianRejected", { errors: v.errors.map(engineText).join("; ") }));
     return;
   }
   addLog("ok", "Guardian · profile valid (" + v.profile.products.length + " products, " + totalKg(v.profile) + " kg/week) → forwarded to Brain 2");
@@ -449,9 +518,9 @@ async function onProfileCaptured(raw, chat) {
       farmer_name: v.profile.farmer_name || null, village: v.profile.village || null,
       distance_km_from_cassino: v.profile.distance_km_from_cassino ?? null,
       organic: v.profile.organic || null, available_months: v.profile.available_months || []
-    }), "your farm profile");
-    bgSave(DataStore.saveProducts(chat.id, v.profile.products), "your product list");
-    if (v.profile.farmer_name) bgSave(DataStore.updateFarmerName(state.farmerId, v.profile.farmer_name), "your name");
+    }), "save.profile");
+    bgSave(DataStore.saveProducts(chat.id, v.profile.products), "save.products");
+    if (v.profile.farmer_name) bgSave(DataStore.updateFarmerName(state.farmerId, v.profile.farmer_name), "save.name");
   }
 
   const month = new Date().getMonth() + 1;
@@ -461,7 +530,7 @@ async function onProfileCaptured(raw, chat) {
 
   if (state.offline) { await finishWithRecs(offlineRecs(chat), chat); return; }
 
-  addMsg(chat, "sys", "Brain 2 is analysing " + ranked.length + " verified Cassino buyers…");
+  addMsg(chat, "sys", T("assist.brain2Analysing", { n: ranked.length }));
   setTyping(true);
   try {
     const payload = { farmer_profile: chat.profile, current_month: month,
@@ -474,7 +543,7 @@ async function onProfileCaptured(raw, chat) {
     const check = guardianVerifyRecs(tu.input, chat.candidates.map(c => c.id), chat.profile);
     check.issues.forEach(i => addLog(i.level, "Guardian · " + i.msg));
     await finishWithRecs(check.verified, chat);
-    addMsg(chat, "ai", "Done! I found the best matches for you — check Clients for the outreach draft.");
+    addMsg(chat, "ai", T("assist.finished"));
   } catch (e) {
     setTyping(false);
     showErr(e.message);
@@ -486,8 +555,8 @@ async function finishWithRecs(recs, chat) {
   chat.recs = recs;
   chat.phase = "done"; chat.pct = 100;
   if (!isLocalId(chat.id)) {
-    bgSave(DataStore.updateChat(chat.id, { phase: "done", pct: 100 }), "this chat's progress");
-    if (recs.ranked && recs.ranked.length) bgSave(DataStore.saveMatches(chat.id, recs.ranked), "your buyer matches");
+    bgSave(DataStore.updateChat(chat.id, { phase: "done", pct: 100 }), "save.progress");
+    if (recs.ranked && recs.ranked.length) bgSave(DataStore.saveMatches(chat.id, recs.ranked), "save.matches");
   }
   await addClientFromRecs(recs, chat);
   renderDashboard();
@@ -534,18 +603,18 @@ function openMatchView(chatId) {
 
   // textContent, so no escaping needed here (unlike the innerHTML below)
   $("matchSubtitle").textContent = rows.length
-    ? chat.title + " · top " + rows.length + " of " + poolSize + " verified Cassino entries"
+    ? T("match.subtitle", { title: chat.title, n: rows.length, pool: poolSize })
     : chat.title;
 
   const profileBits = !p ? "" : `<div class="match-profile-row">
     <div class="match-profile">
       ${p.village ? `<span class="pill pill-muted">${esc(p.village)}</span>` : ""}
-      ${isFinite(Number(p.distance_km_from_cassino)) ? `<span class="pill pill-muted">${Math.round(Number(p.distance_km_from_cassino))} km from Cassino</span>` : ""}
-      <span class="pill pill-muted">${Math.round(totalKg(p))} kg/week</span>
-      <span class="pill ${p.organic === "yes" ? "pill-accent" : "pill-muted"}">${p.organic === "yes" ? "Organic" : p.organic === "partial" ? "Partly organic" : "Not certified organic"}</span>
+      ${isFinite(Number(p.distance_km_from_cassino)) ? `<span class="pill pill-muted">${esc(T("match.kmFrom", { n: Math.round(Number(p.distance_km_from_cassino)) }))}</span>` : ""}
+      <span class="pill pill-muted">${esc(T("match.kgWeek", { n: Math.round(totalKg(p)) }))}</span>
+      <span class="pill ${p.organic === "yes" ? "pill-accent" : "pill-muted"}">${esc(p.organic === "yes" ? T("match.organic") : p.organic === "partial" ? T("match.partlyOrganic") : T("match.notOrganic"))}</span>
       ${(p.products || []).map(pr => `<span class="pill pill-blue">${esc(pr.name)} · ${Math.round(Number(pr.kg_per_week))} kg</span>`).join("")}
     </div>
-    <button class="btn btn-ghost btn-sm mp-edit" onclick="openProfileEdit('${chat.id}', true)">Edit details</button>
+    <button class="btn btn-ghost btn-sm mp-edit" onclick="openProfileEdit('${chat.id}', true)">${esc(T("assist.editDetails"))}</button>
   </div>`;
 
   const cards = rows.map((r, i) => {
@@ -559,28 +628,28 @@ function openMatchView(chatId) {
           <div class="title-sm">${esc(c.name)}</div>
           <div class="foot">${where}${km}</div>
         </div>
-        ${c.is_channel ? `<span class="pill pill-blue">Channel</span>` : ""}
+        ${c.is_channel ? `<span class="pill pill-blue">${esc(T("match.channel"))}</span>` : ""}
         <span class="pill ${scorePillClass(c.score)}">${c.score}/100</span>
       </div>
       ${r.pitch ? `<div class="mc-pitch">${esc(r.pitch)}</div>` : ""}
-      <div class="mc-reasons">${(c.reasons || []).map(x => `<span class="reason-chip">${esc(x)}</span>`).join("")}</div>
+      <div class="mc-reasons">${(c.reasons || []).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("")}</div>
     </div>`;
   }).join("");
 
   const suggs = (!chat.recsStale && chat.recs && chat.recs.creative_suggestions) || [];
   let tail = "";
   if (suggs.length) {
-    tail = `<div class="eyebrow" style="margin-top:6px">Ideas worth trying</div>` +
+    tail = `<div class="eyebrow" style="margin-top:6px">${esc(T("match.ideas"))}</div>` +
       suggs.map((s, i) => `<div class="sugg-card"><span class="sugg-num">${i + 1}</span><span>${esc(s)}</span></div>`).join("");
   } else if (chat.recsStale) {
-    tail = `<div class="foot" style="margin-top:6px">You changed these details after Fasto wrote its notes on them. The scores and reasons above have been worked out again from the new numbers; the written notes were about the old ones, so they aren't shown.</div>`;
+    tail = `<div class="foot" style="margin-top:6px">${esc(T("match.stale"))}</div>`;
   } else if (!chat.recs) {
-    tail = `<div class="foot" style="margin-top:6px">Brain 2's written notes and ideas belong to the conversation that produced them and aren't saved yet, so an older chat shows the scoring reasons only.</div>`;
+    tail = `<div class="foot" style="margin-top:6px">${esc(T("match.noNotes"))}</div>`;
   }
 
   $("matchBody").innerHTML = rows.length
-    ? profileBits + `<div class="eyebrow">Best matches</div>` + cards + tail
-    : `<div class="empty-state">This conversation hasn't produced any matches yet.</div>`;
+    ? profileBits + `<div class="eyebrow">${esc(T("match.best"))}</div>` + cards + tail
+    : `<div class="empty-state">${esc(T("match.none"))}</div>`;
 
   sheet.classList.add("open");
 }
@@ -595,7 +664,7 @@ async function addClientFromRecs(recs, chat) {
   if (existing) {
     existing.message_it = recs.outreach.message_it; existing.message_en = recs.outreach.message_en; existing.flagged = !!recs.outreach.flagged_claim;
     if (!isLocalId(existing.id)) {
-      bgSave(DataStore.updateOutreach(existing.id, { message_it: existing.message_it, message_en: existing.message_en, flagged: existing.flagged }), "the updated outreach draft");
+      bgSave(DataStore.updateOutreach(existing.id, { message_it: existing.message_it, message_en: existing.message_en, flagged: existing.flagged }), "save.outreachUpdate");
     }
     return;
   }
@@ -605,7 +674,7 @@ async function addClientFromRecs(recs, chat) {
       const { data, error } = await DataStore.createOutreach(state.farmerId, chat.id, c.id, recs.outreach.message_it, recs.outreach.message_en, !!recs.outreach.flagged_claim);
       if (error) throw error;
       outreachId = data.id;
-    } catch (e) { saveFailedWithOwnMessage("the outreach draft", e, "Couldn't save the outreach draft to your account — it will only last this session."); }
+    } catch (e) { saveFailedWithOwnMessage("save.outreach", e, T("save.outreachMsg")); }
   }
   state.clients.unshift({
     id: outreachId, buyerId: c.id, chatId: chat.id, name: c.name, type: c.type, zone: c.zone,
@@ -617,15 +686,15 @@ async function addClientFromRecs(recs, chat) {
 function markSent(id) {
   const c = state.clients.find(x => x.id === id); if (!c) return;
   c.status = "sent"; c.sentTs = Date.now();
-  toast("Marked as sent to " + c.name);
+  toast(T("clients.markedSent", { name: c.name }));
   renderChats(); renderDashboard();
-  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString() }), "the \"sent\" mark on this draft");
+  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString() }), "save.sentMark");
 }
 
 /* ---------- Header identity ---------- */
 function updateHeaderIdentity() {
   const chat = activeChat();
-  const name = (chat && chat.profile && chat.profile.farmer_name) || "Guest Farmer";
+  const name = (chat && chat.profile && chat.profile.farmer_name) || T("top.guest");
   $("whoName").textContent = name.toUpperCase();
 }
 
@@ -657,19 +726,19 @@ function showResearchSkeleton(rows) {
 }
 
 /* ================= RENDERERS ================= */
-function phaseLabel(p) { return { interview: "Interviewing", matching: "Matching", done: "Outreach ready" }[p] || p; }
+function phaseLabel(p) { return ["interview", "matching", "done"].indexOf(p) === -1 ? p : T("phase." + p); }
 function progClass(pct) { return pct >= 70 ? "" : pct >= 30 ? "warn" : "danger"; }
 function relDate(ts) {
   const d = new Date(ts), now = new Date();
-  if (d.toDateString() === now.toDateString()) return "Today";
+  if (d.toDateString() === now.toDateString()) return T("date.today");
   const y = new Date(now); y.setDate(now.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  if (d.toDateString() === y.toDateString()) return T("date.yesterday");
+  return d.toLocaleDateString(T("date.locale"), { day: "2-digit", month: "short" });
 }
 function adjustPrice(cat) {
   if (!cat) return;
   const cur = PRICE_ASSUMPTIONS[cat] || 3;
-  const v = window.prompt("Assumed price for " + (CAT_LABEL[cat] || cat) + " (EUR/kg):", cur.toFixed(2));
+  const v = window.prompt(T("dash.pricePrompt", { cat: catLabel(cat) || cat }), cur.toFixed(2));
   if (v === null) return;
   const n = parseFloat(v.replace(",", "."));
   if (isFinite(n) && n > 0) { PRICE_ASSUMPTIONS[cat] = n; renderDashboard(); }
@@ -686,9 +755,9 @@ function renderDashboard() {
     const price = PRICE_ASSUMPTIONS[top] || 3;
     const done = c.phase === "done";
     return `<tr>
-      <td class="rp-conv ${done ? "rp-clickable" : ""}" ${done ? `onclick="openMatchView('${c.id}')" title="See why these buyers were chosen"` : ""}><b>${esc(c.title)}</b><small>${esc(relDate(c.ts))}</small></td>
-      <td>${esc(CAT_LABEL[top] || top || "—")}</td>
-      <td>${prod ? Math.round(prod.kg_per_week) + " kg/wk" : "—"}</td>
+      <td class="rp-conv ${done ? "rp-clickable" : ""}" ${done ? `onclick="openMatchView('${c.id}')" title="${escAttr(T("dash.whyTitle"))}"` : ""}><b>${esc(c.title)}</b><small>${esc(relDate(c.ts))}</small></td>
+      <td>${esc(catLabel(top) || top || "—")}</td>
+      <td>${prod ? esc(T("dash.kgWk", { n: Math.round(prod.kg_per_week) })) : "—"}</td>
       <td class="rp-price" onclick="adjustPrice('${top}')">€${price.toFixed(2)}/kg</td>
       <td class="rp-prog">
         <div class="progress-track"><div class="progress-fill ${progClass(c.pct)}" style="width:${c.pct}%"></div></div>
@@ -699,7 +768,7 @@ function renderDashboard() {
   $("researchEmpty").style.display = shown.length ? "none" : "block";
   const seeAll = $("researchSeeAll");
   seeAll.style.display = rows.length > 3 ? "inline-flex" : "none";
-  seeAll.textContent = state.showAllResearch ? "Show latest 3" : "See all (" + rows.length + ")";
+  seeAll.textContent = state.showAllResearch ? T("dash.showLatest") : T("dash.seeAllN", { n: rows.length });
 }
 
 function avatarHTML(name, idx) {
@@ -710,15 +779,15 @@ function renderChats() {
   if (!$("clientsScreen")) return;
   const list = $("clientList");
   if (!state.clients.length) {
-    list.innerHTML = `<div class="empty-state">No matched buyers yet.<br>Talk to Fasto-AI to get your first match.</div>`;
-    $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">Select a conversation</div>`;
+    list.innerHTML = `<div class="empty-state">${esc(T("clients.emptyList"))}<br>${esc(T("clients.emptyListHint"))}</div>`;
+    $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`;
     return;
   }
   list.innerHTML = state.clients.map((c, i) => `
     <div class="client-item ${c.id === state.activeClientId ? "active" : ""}" onclick="selectClient('${c.id}')">
       ${avatarHTML(c.name, i)}
       <div style="min-width:0;flex:1">
-        <div class="ci-top"><span class="ci-name">${esc(c.name)}</span>${c.status === "sent" ? '<span class="pill pill-accent" style="margin-left:auto">Sent</span>' : '<span class="pill pill-amber" style="margin-left:auto">Draft</span>'}</div>
+        <div class="ci-top"><span class="ci-name">${esc(c.name)}</span>${c.status === "sent" ? `<span class="pill pill-accent" style="margin-left:auto">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber" style="margin-left:auto">${esc(T("clients.draft"))}</span>`}</div>
         <div class="ci-prev">${esc(c.message_it.slice(0, 46))}…</div>
       </div>
     </div>`).join("");
@@ -730,7 +799,7 @@ function selectClient(id) { state.activeClientId = id; renderChats(); }
 function renderThread() {
   const c = state.clients.find(x => x.id === state.activeClientId);
   const pane = $("threadPane");
-  if (!c) { pane.innerHTML = `<div class="empty-state" style="margin:auto">Select a conversation</div>`; return; }
+  if (!c) { pane.innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`; return; }
   const idx = state.clients.indexOf(c);
   pane.innerHTML = `
     <div class="thread-head">
@@ -739,27 +808,27 @@ function renderThread() {
         <div class="title-sm">${esc(c.name)}</div>
         <div class="foot">${esc(c.zone)} · ${esc((c.type || "").replace(/_/g, " "))}</div>
       </div>
-      ${c.status === "sent" ? '<span class="pill pill-accent">Sent</span>' : '<span class="pill pill-amber">Draft</span>'}
+      ${c.status === "sent" ? `<span class="pill pill-accent">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber">${esc(T("clients.draft"))}</span>`}
     </div>
     <div class="thread-body" id="threadBody">
-      <div class="day-divider">Today</div>
-      <div class="bubble meta">Drafted by Brain 2 · real message, not simulated</div>
-      ${c.flagged ? '<div class="bubble meta" style="color:var(--warn)">⚠ Guardian adjusted a claim in this draft</div>' : ""}
-      ${c.profileEdited ? '<div class="bubble meta" style="color:var(--warn)">⚠ You corrected your farm details after this was written — check the figures before you send it</div>' : ""}
+      <div class="day-divider">${esc(T("date.today"))}</div>
+      <div class="bubble meta">${esc(T("clients.draftedBy"))}</div>
+      ${c.flagged ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.flagged"))}</div>` : ""}
+      ${c.profileEdited ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.profileEdited"))}</div>` : ""}
       <div class="bubble out">${esc(c.message_it)}</div>
       <div class="bubble-actions">
-        ${c.status === "sent" ? "" : `<button class="btn btn-ghost btn-sm" onclick="markSent('${c.id}')">Mark as sent</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="copyClientMsg('${c.id}')">Copy Italian</button>
+        ${c.status === "sent" ? "" : `<button class="btn btn-ghost btn-sm" onclick="markSent('${c.id}')">${esc(T("clients.markSent"))}</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="copyClientMsg('${c.id}')">${esc(T("clients.copyIt"))}</button>
       </div>
-      <div class="bubble meta">English translation</div>
+      <div class="bubble meta">${esc(T("clients.englishTranslation"))}</div>
       <div class="bubble in">${esc(c.message_en)}</div>
       ${(c.extra || []).map(m => `<div class="bubble out">${esc(m.text)}</div>`).join("")}
     </div>
     <div class="thread-input-row">
-      <button class="round-icon-btn" title="Attach (not needed for this demo)"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
-      <input type="text" class="input-glass" id="clientInput" placeholder="Type your message here">
-      <button class="round-icon-btn" id="clientSendBtn" title="Send"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
-      <button class="round-icon-btn logi-btn" id="clientLogisticsBtn" title="Set up logistics for this deal" aria-label="Set up logistics"><img class="ic-svg sm" src="assets/icon-truck.svg" alt=""></button>
+      <button class="round-icon-btn" title="${escAttr(T("clients.attachTitle"))}"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
+      <input type="text" class="input-glass" id="clientInput" placeholder="${escAttr(T("clients.typeHere"))}">
+      <button class="round-icon-btn" id="clientSendBtn" title="${escAttr(T("clients.sendTitle"))}"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
+      <button class="round-icon-btn logi-btn" id="clientLogisticsBtn" title="${escAttr(T("clients.logiTitle"))}" aria-label="${escAttr(T("clients.logiAria"))}"><img class="ic-svg sm" src="assets/icon-truck.svg" alt=""></button>
     </div>`;
   const body = $("threadBody"); body.scrollTop = body.scrollHeight;
   $("clientSendBtn").onclick = () => sendClientNote(c.id);
@@ -776,7 +845,7 @@ function sendClientNote(id) {
   input.value = "";
   renderThread();
 }
-function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if (c) { navigator.clipboard.writeText(c.message_it); toast("Copied"); } }
+function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if (c) { navigator.clipboard.writeText(c.message_it); toast(T("clients.copied")); } }
 
 
 /* ================= LOGISTICS HAND-OFF =================
@@ -801,10 +870,12 @@ function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if 
 const LOGISTICS_EMAIL = "yuvraj11argal@gmail.com";
 const FORMSUBMIT_URL = "https://formsubmit.co/ajax/" + LOGISTICS_EMAIL;
 
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+/* monthNames() lives in js/i18n.js and is a function, not a table: read at
+   render time so the month strip and this label follow the current language
+   instead of whichever one the page happened to open in. */
 function monthsLabel(arr) {
   if (!arr || !arr.length) return "";
-  return arr.slice().sort((a, b) => a - b).map(m => MONTH_NAMES[m - 1]).filter(Boolean).join(", ");
+  return arr.slice().sort((a, b) => a - b).map(m => monthName(m)).filter(Boolean).join(", ");
 }
 
 // esc() leaves quotes alone, which is fine inside element text but would break
@@ -836,7 +907,7 @@ function logisticsPrefill(client) {
     buyer,
     shipment: {
       product: prod ? prod.name : "",
-      quantity: prod ? Math.round(prod.kg_per_week) + " kg per week" : "",
+      quantity: prod ? T("logi.qtyValue", { n: Math.round(prod.kg_per_week) }) : "",
       months: monthsLabel(prof.available_months),
       organic: prof.organic || "unknown"
     },
@@ -878,55 +949,55 @@ function openLogistics(clientId) {
   const d = logisticsPrefill(c);
   logisticsDemoSnapshot = Object.assign({}, d.buyerSide);
 
-  $("logisticsSubtitle").textContent = "Your farm → " + c.name + (c.zone ? " · " + c.zone : "");
+  $("logisticsSubtitle").textContent = T("logi.subtitle", { buyer: c.name }) + (c.zone ? " · " + c.zone : "");
   $("logisticsBody").innerHTML = `
-    <div class="lg-intro">Fasto's logistics partner arranges pickup and delivery — nobody needs a van. Check the details, then both sides confirm and it goes straight to the partner.</div>
+    <div class="lg-intro">${esc(T("logi.intro"))}</div>
 
     <div class="lg-section">
-      <div class="lg-section-head"><span class="eyebrow">What is moving</span><span class="foot">From your conversation</span></div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("logi.whatMoving"))}</span><span class="foot">${esc(T("logi.fromChat"))}</span></div>
       <div class="lg-grid">
-        ${lgField("lgProduct", "Product", d.shipment.product, { req: true, ph: "e.g. Tomatoes" })}
-        ${lgField("lgQty", "Quantity", d.shipment.quantity, { req: true, ph: "e.g. 80 kg per week" })}
-        ${lgField("lgMonths", "Available months", d.shipment.months, { ph: "e.g. June, July, August" })}
-        ${lgField("lgFirstPickup", "First pickup", "", { type: "date" })}
+        ${lgField("lgProduct", T("logi.product"), d.shipment.product, { req: true, ph: T("logi.productPh") })}
+        ${lgField("lgQty", T("logi.qty"), d.shipment.quantity, { req: true, ph: T("logi.qtyPh") })}
+        ${lgField("lgMonths", T("logi.months"), d.shipment.months, { ph: T("logi.monthsPh") })}
+        ${lgField("lgFirstPickup", T("logi.firstPickup"), "", { type: "date" })}
       </div>
     </div>
 
     <div class="lg-section">
-      <div class="lg-section-head"><span class="eyebrow">Pickup — your details</span><span class="foot">Saved for next time</span></div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("logi.pickupHead"))}</span><span class="foot">${esc(T("logi.savedNextTime"))}</span></div>
       <div class="lg-grid">
-        ${lgField("lgFCompany", "Farm / company name", d.farmer.company, { req: true })}
-        ${lgField("lgFContact", "Contact name", d.farmer.contact, { req: true })}
-        ${lgField("lgFVat", "Partita IVA", d.farmer.vat, { ph: "Leave blank if you don't have one" })}
-        ${lgField("lgFPhone", "Phone", d.farmer.phone, { req: true, type: "tel", ph: "+39 …" })}
-        ${lgField("lgFAddress", "Pickup address", d.farmer.address, { req: true, wide: true, ph: "Street, town, province" })}
+        ${lgField("lgFCompany", T("logi.farmName"), d.farmer.company, { req: true })}
+        ${lgField("lgFContact", T("logi.contactName"), d.farmer.contact, { req: true })}
+        ${lgField("lgFVat", T("logi.vat"), d.farmer.vat, { ph: T("logi.vatPh") })}
+        ${lgField("lgFPhone", T("logi.phone"), d.farmer.phone, { req: true, type: "tel", ph: "+39 …" })}
+        ${lgField("lgFAddress", T("logi.pickupAddress"), d.farmer.address, { req: true, wide: true, ph: T("logi.addressPh") })}
       </div>
     </div>
 
     <div class="lg-section lg-demo">
-      <div class="lg-section-head"><span class="eyebrow">Delivery — buyer's details</span><span class="pill pill-amber">Demo data</span></div>
-      <div class="lg-note">Buyers don't have Fasto accounts yet, so this half starts as placeholder text. Overwrite anything you've actually agreed with them — the email flags which fields are still placeholders.</div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("logi.deliveryHead"))}</span><span class="pill pill-amber">${esc(T("logi.demoData"))}</span></div>
+      <div class="lg-note">${esc(T("logi.demoNote"))}</div>
       <div class="lg-grid">
-        ${lgField("lgBCompany", "Business name", d.buyerSide.company, { req: true })}
-        ${lgField("lgBContact", "Contact name", d.buyerSide.contact, { req: true })}
-        ${lgField("lgBVat", "Partita IVA", d.buyerSide.vat)}
-        ${lgField("lgBPhone", "Phone", d.buyerSide.phone, { req: true, type: "tel" })}
-        ${lgField("lgBAddress", "Delivery address", d.buyerSide.address, { req: true, wide: true })}
+        ${lgField("lgBCompany", T("logi.businessName"), d.buyerSide.company, { req: true })}
+        ${lgField("lgBContact", T("logi.contactName"), d.buyerSide.contact, { req: true })}
+        ${lgField("lgBVat", T("logi.vat"), d.buyerSide.vat)}
+        ${lgField("lgBPhone", T("logi.phone"), d.buyerSide.phone, { req: true, type: "tel" })}
+        ${lgField("lgBAddress", T("logi.deliveryAddress"), d.buyerSide.address, { req: true, wide: true })}
       </div>
     </div>
 
     <div class="lg-section">
-      <div class="lg-grid">${lgField("lgNotes", "Notes for the driver", "", { rows: 2, wide: true, ph: "Access, cold chain, best time of day…" })}</div>
+      <div class="lg-grid">${lgField("lgNotes", T("logi.driverNotes"), "", { rows: 2, wide: true, ph: T("logi.driverNotesPh") })}</div>
     </div>
 
     <div class="lg-confirms">
-      <label class="lg-check"><input type="checkbox" id="lgConfirmF"><span>The farmer confirms these details</span></label>
-      <label class="lg-check"><input type="checkbox" id="lgConfirmB"><span>The buyer confirms these details</span></label>
+      <label class="lg-check"><input type="checkbox" id="lgConfirmF"><span>${esc(T("logi.confirmF"))}</span></label>
+      <label class="lg-check"><input type="checkbox" id="lgConfirmB"><span>${esc(T("logi.confirmB"))}</span></label>
     </div>
     <div class="err-banner" id="lgErr"></div>`;
 
   const btn = $("logisticsSubmit");
-  btn.disabled = false; btn.textContent = "Send to logistics partner";
+  btn.disabled = false; btn.textContent = T("logi.submit");
   $("logisticsSheet").classList.add("open");
 }
 
@@ -938,16 +1009,16 @@ const lgVal = id => { const el = $(id); return el ? String(el.value || "").trim(
    { ok:false, message } or { ok:true, payload } ready to POST. */
 function buildLogisticsPayload() {
   const required = [
-    ["lgProduct", "the product"], ["lgQty", "the quantity"],
-    ["lgFCompany", "your farm name"], ["lgFContact", "your contact name"],
-    ["lgFPhone", "your phone number"], ["lgFAddress", "your pickup address"],
-    ["lgBCompany", "the buyer's business name"], ["lgBContact", "the buyer's contact name"],
-    ["lgBPhone", "the buyer's phone"], ["lgBAddress", "the delivery address"]
+    ["lgProduct", "logi.needProduct"], ["lgQty", "logi.needQty"],
+    ["lgFCompany", "logi.needFarmName"], ["lgFContact", "logi.needContact"],
+    ["lgFPhone", "logi.needPhone"], ["lgFAddress", "logi.needAddress"],
+    ["lgBCompany", "logi.needBBusiness"], ["lgBContact", "logi.needBContact"],
+    ["lgBPhone", "logi.needBPhone"], ["lgBAddress", "logi.needBAddress"]
   ];
-  const missing = required.filter(([id]) => !lgVal(id)).map(([, label]) => label);
-  if (missing.length) return { ok: false, message: "Still needed: " + missing.join(", ") + "." };
+  const missing = required.filter(([id]) => !lgVal(id)).map(([, key]) => T(key));
+  if (missing.length) return { ok: false, message: T("logi.missing", { list: missing.join(", ") }) };
   if (!$("lgConfirmF").checked || !$("lgConfirmB").checked) {
-    return { ok: false, message: "Both sides have to confirm before this goes to the logistics partner." };
+    return { ok: false, message: T("logi.bothConfirm") };
   }
 
   const client = state.clients.find(x => x.id === logisticsClientId) || {};
@@ -957,6 +1028,13 @@ function buildLogisticsPayload() {
     .filter(([id, key]) => lgVal(id) === (logisticsDemoSnapshot[key] || ""))
     .map(([id]) => ({ lgBCompany: "business name", lgBContact: "contact name", lgBVat: "IVA", lgBPhone: "phone", lgBAddress: "address" })[id]);
 
+  /* The field names below stay English whatever the app is set to. This is
+     the one thing here that is not read by the farmer: it is a report to the
+     logistics partner, who receives requests from every farmer on the platform
+     and should not have to work out that "Indirizzo di ritiro" and "Pickup
+     address" are the same row. The values are of course whatever was typed.
+     The farmer's UI language is recorded instead, so the partner knows which
+     language to answer in. */
   return { ok: true, payload: {
     _subject: "Fasto Innova — logistics request: " + lgVal("lgProduct") + " → " + (client.name || "buyer"),
     _template: "table",
@@ -979,6 +1057,7 @@ function buildLogisticsPayload() {
     "Notes for the driver": lgVal("lgNotes") || "—",
     "Buyer fields still placeholder": stillDemo.length ? stillDemo.join(", ") : "none — all edited by the farmer",
     "Mode": state.offline ? "Offline demo" : "Live AI",
+    "Farmer's app language": currentLang() === "it" ? "Italiano" : "English",
     "Fasto chat": client.chatId || "—"
   } };
 }
@@ -992,7 +1071,7 @@ async function submitLogistics() {
   if (!built.ok) { show(built.message); return; }
 
   const btn = $("logisticsSubmit");
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Sending…';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>' + esc(T("logi.sending"));
 
   // Saved whatever happens to the email: the farmer typed them, and next time
   // this form should already know them.
@@ -1002,7 +1081,7 @@ async function submitLogistics() {
       vat_number: lgVal("lgFVat"), address: lgVal("lgFAddress"), phone: lgVal("lgFPhone")
     };
     state.farmerProfile = Object.assign({}, state.farmerProfile, patch);
-    bgSave(DataStore.updateFarmerDetails(state.farmerId, patch), "your business details");
+    bgSave(DataStore.updateFarmerDetails(state.farmerId, patch), "save.business");
   }
 
   try {
@@ -1015,22 +1094,22 @@ async function submitLogistics() {
     if (!res.ok || String(out.success) !== "true") throw new Error(out.message || ("the mail service answered " + res.status));
 
     const c = state.clients.find(x => x.id === logisticsClientId);
-    if (c) { c.extra = c.extra || []; c.extra.push({ text: "Logistics request sent to Fasto's partner — " + lgVal("lgProduct") + ", " + lgVal("lgQty") + ".", ts: Date.now() }); }
+    if (c) { c.extra = c.extra || []; c.extra.push({ text: T("logi.sentNote", { product: lgVal("lgProduct"), qty: lgVal("lgQty") }), ts: Date.now() }); }
     closeLogistics();
     renderThread();
-    toast("Sent to the logistics partner. They'll be in touch to arrange pickup.");
+    toast(T("logi.sentToast"));
   } catch (e) {
     console.error("logistics submit failed", e);
     const msg = String((e && e.message) || e);
     // FormSubmit's one-time activation is the likeliest first failure, and the
     // generic wording gives no clue what to do about it.
     if (/activat|confirm/i.test(msg)) {
-      show("This inbox still has to be activated once: FormSubmit has emailed " + LOGISTICS_EMAIL + " a confirmation link. Click it, then send again.");
+      show(T("logi.activation", { email: LOGISTICS_EMAIL }));
     } else {
-      show("Couldn't reach the logistics partner (" + msg + "). Your details were saved — try again in a moment.");
+      show(T("logi.failed", { error: msg }));
     }
   } finally {
-    btn.disabled = false; btn.textContent = "Send to logistics partner";
+    btn.disabled = false; btn.textContent = T("logi.submit");
   }
 }
 
@@ -1063,10 +1142,9 @@ const PROFILE_FIELDS = ["farmer_name", "village", "distance_km_from_cassino", "o
 const PROFILE_SCORING_FIELDS = ["distance_km_from_cassino", "organic", "available_months", "products"];
 // Changing any of these changes something the outreach draft actually says.
 const PROFILE_DRAFT_FIELDS = ["farmer_name", "village", "organic", "available_months", "products"];
-const PROFILE_FIELD_LABEL = {
-  farmer_name: "your name", village: "your village", distance_km_from_cassino: "the distance from Cassino",
-  organic: "your organic status", available_months: "your available months", products: "your products"
-};
+// A function, not a table: a table built at load time would freeze whichever
+// language the page opened in. Same reason as adminStages() and offlineScript().
+function profileFieldLabel(field) { return T("profile.fld." + field); }
 
 /* Compares one field of two profiles. Normalising first matters more than it
    looks: Postgres hands numeric columns back as strings, so a distance that
@@ -1087,7 +1165,7 @@ function changedProfileFields(before, after) {
 }
 function humanList(items) {
   if (items.length <= 1) return items[0] || "";
-  return items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+  return items.slice(0, -1).join(", ") + " " + T("list.and") + " " + items[items.length - 1];
 }
 
 /* The whole edit, minus the DOM — deliberately split the same way
@@ -1096,7 +1174,7 @@ function humanList(items) {
    { ok, errors, warnings, changed, rescored, staleDrafts, saved }. */
 function applyProfileEdit(chat, raw) {
   const fail = errors => ({ ok: false, errors: errors, warnings: [], changed: [], rescored: false, staleDrafts: 0, saved: false });
-  if (!chat) return fail(["This conversation is no longer open."]);
+  if (!chat) return fail([T("profile.gone")]);
 
   /* Guardian's own messages name a product by index ("product 0") when the
      name is blank, which is unreadable in a form the farmer is looking at.
@@ -1107,8 +1185,8 @@ function applyProfileEdit(chat, raw) {
   const asked = [];
   (raw.products || []).forEach((p, i) => {
     const named = String(p.name == null ? "" : p.name).trim();
-    if (!named) asked.push("Product " + (i + 1) + " still needs a name.");
-    else if (!isFinite(Number(p.kg_per_week)) || Number(p.kg_per_week) <= 0) asked.push("How many kg per week of " + named + "?");
+    if (!named) asked.push(T("profile.needName", { n: i + 1 }));
+    else if (!isFinite(Number(p.kg_per_week)) || Number(p.kg_per_week) <= 0) asked.push(T("profile.needKg", { name: named }));
   });
   if (asked.length) return fail(asked);
 
@@ -1153,18 +1231,18 @@ function applyProfileEdit(chat, raw) {
       distance_km_from_cassino: after.distance_km_from_cassino == null ? null : after.distance_km_from_cassino,
       organic: after.organic || null,
       available_months: after.available_months || []
-    }), "your farm profile");
+    }), "save.profile");
     // saveProducts is a delete-then-insert, so it is only run when the products
     // actually changed — correcting a village should not take the product list
     // out and put it back.
-    if (changed.indexOf("products") !== -1) bgSave(DataStore.saveProducts(chat.id, after.products), "your product list");
+    if (changed.indexOf("products") !== -1) bgSave(DataStore.saveProducts(chat.id, after.products), "save.products");
   }
   // The account's display name is per-farmer, not per-chat, so it is written
   // whether or not this particular chat reached the database. Clearing the name
   // in one conversation deliberately does NOT wipe it from the account.
   if (changed.indexOf("farmer_name") !== -1 && after.farmer_name && state.farmerId && !isLocalId(state.farmerId)) {
     state.farmerProfile = Object.assign({}, state.farmerProfile, { farmer_name: after.farmer_name });
-    bgSave(DataStore.updateFarmerName(state.farmerId, after.farmer_name), "your name");
+    bgSave(DataStore.updateFarmerName(state.farmerId, after.farmer_name), "save.name");
   }
 
   return { ok: true, errors: [], warnings: v.warnings, changed: changed, rescored: rescored, staleDrafts: staleDrafts, saved: true };
@@ -1181,19 +1259,22 @@ const pfVal = (id, fallback) => { const el = $(id); return el ? String(el.value 
 function renderProfileProducts() {
   const el = $("pfProducts"); if (!el) return;
   if (!profileDraftProducts.length) {
-    el.innerHTML = `<div class="foot pf-noprod">Nothing left to sell here — add at least one product, or there is nothing for Fasto to match you on.</div>`;
+    el.innerHTML = `<div class="foot pf-noprod">${esc(T("profile.noProducts"))}</div>`;
     return;
   }
   el.innerHTML = profileDraftProducts.map((pr, i) => `
     <div class="pf-prod">
       <div class="pf-prod-head">
-        <span class="eyebrow">Product ${i + 1}</span>
-        <button type="button" class="pf-remove" onclick="removeProfileProduct(${i})">Remove</button>
+        <span class="eyebrow">${esc(T("profile.productN", { n: i + 1 }))}</span>
+        <button type="button" class="pf-remove" onclick="removeProfileProduct(${i})">${esc(T("profile.remove"))}</button>
       </div>
       <div class="lg-grid pf-prod-grid">
-        ${lgField("pfPName" + i, "What is it", pr.name || "", { req: true, ph: "e.g. Pomodori" })}
-        ${lgField("pfPCat" + i, "Category", pr.category || "verdure", { options: CATEGORIES.map(c => [c, CAT_LABEL[c] || c]) })}
-        ${lgField("pfPKg" + i, "Kg per week", pr.kg_per_week === "" || pr.kg_per_week == null ? "" : String(pr.kg_per_week), { req: true, type: "number", ph: "e.g. 80" })}
+        ${lgField("pfPName" + i, T("profile.whatIsIt"), pr.name || "", { req: true, ph: T("profile.whatIsItPh") })}
+        ${/* the OPTION VALUE stays the Italian key the database and the engine
+             agree on — only its label is translated. Getting this the wrong way
+             round would write "vegetables" into a products row. */ ""}
+        ${lgField("pfPCat" + i, T("profile.category"), pr.category || "verdure", { options: CATEGORIES.map(c => [c, catLabel(c) || c]) })}
+        ${lgField("pfPKg" + i, T("profile.kgWeek"), pr.kg_per_week === "" || pr.kg_per_week == null ? "" : String(pr.kg_per_week), { req: true, type: "number", ph: T("profile.kgWeekPh") })}
       </div>
     </div>`).join("");
 }
@@ -1221,7 +1302,7 @@ function removeProfileProduct(i) {
 
 function renderProfileMonths() {
   const el = $("pfMonths"); if (!el) return;
-  el.innerHTML = MONTH_NAMES.map((m, i) => {
+  el.innerHTML = monthNames().map((m, i) => {
     const n = i + 1;
     const on = profileDraftMonths.indexOf(n) !== -1;
     return `<button type="button" class="pf-month${on ? " on" : ""}" aria-pressed="${on}" onclick="toggleProfileMonth(${n})">${esc(m.slice(0, 3))}</button>`;
@@ -1278,29 +1359,30 @@ function openProfileEdit(chatId, fromMatchView) {
   profileDraftMonths = (p.available_months || []).slice();
 
   const sub = $("profileSubtitle");
-  if (sub) sub.textContent = chat.title + " · taken from your conversation with Fasto";
+  if (sub) sub.textContent = T("profile.subtitle", { title: chat.title });
 
   $("profileBody").innerHTML = `
-    <div class="lg-intro">This is what Fasto understood from your conversation. Correct anything that isn't right — your matches are re-scored from it as soon as you save.</div>
+    <div class="lg-intro">${esc(T("profile.intro"))}</div>
 
     <div class="lg-section">
-      <div class="lg-section-head"><span class="eyebrow">Your farm</span></div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("profile.yourFarm"))}</span></div>
       <div class="lg-grid">
-        ${lgField("pfName", "Your name", p.farmer_name || "", { ph: "Leave blank to stay anonymous" })}
-        ${lgField("pfVillage", "Village or area", p.village || "", { req: true, ph: "e.g. Sant'Elia Fiumerapido" })}
-        ${lgField("pfDist", "Distance from Cassino (km)", p.distance_km_from_cassino == null ? "" : String(Number(p.distance_km_from_cassino)), { type: "number", ph: "roughly" })}
-        ${lgField("pfOrganic", "Organic certification", p.organic || "no", { options: [["yes", "Yes, certified"], ["partial", "Partly certified"], ["no", "No certification"]] })}
+        ${lgField("pfName", T("profile.name"), p.farmer_name || "", { ph: T("profile.namePh") })}
+        ${lgField("pfVillage", T("profile.village"), p.village || "", { req: true, ph: T("profile.villagePh") })}
+        ${lgField("pfDist", T("profile.distance"), p.distance_km_from_cassino == null ? "" : String(Number(p.distance_km_from_cassino)), { type: "number", ph: T("profile.distancePh") })}
+        ${/* like the category select: the stored value is yes/partial/no, only the label moves */ ""}
+        ${lgField("pfOrganic", T("profile.organic"), p.organic || "no", { options: [["yes", T("profile.organicYes")], ["partial", T("profile.organicPartial")], ["no", T("profile.organicNo")]] })}
       </div>
     </div>
 
     <div class="lg-section">
-      <div class="lg-section-head"><span class="eyebrow">What you grow</span><span class="foot">Quantities are per week</span></div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("profile.whatYouGrow"))}</span><span class="foot">${esc(T("profile.perWeek"))}</span></div>
       <div id="pfProducts"></div>
-      <button type="button" class="btn btn-ghost btn-sm pf-add" onclick="addProfileProduct()">Add a product</button>
+      <button type="button" class="btn btn-ghost btn-sm pf-add" onclick="addProfileProduct()">${esc(T("profile.addProduct"))}</button>
     </div>
 
     <div class="lg-section">
-      <div class="lg-section-head"><span class="eyebrow">Months you can supply</span><span class="foot">All off = all year round</span></div>
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("profile.monthsHead"))}</span><span class="foot">${esc(T("profile.monthsHint"))}</span></div>
       <div class="pf-months" id="pfMonths"></div>
     </div>
 
@@ -1309,7 +1391,7 @@ function openProfileEdit(chatId, fromMatchView) {
   renderProfileProducts();
   renderProfileMonths();
   const btn = $("profileSaveBtn");
-  if (btn) { btn.disabled = false; btn.textContent = "Save changes"; }
+  if (btn) { btn.disabled = false; btn.textContent = T("profile.save"); }
   sheet.classList.add("open");
 }
 
@@ -1318,10 +1400,12 @@ function closeProfileEdit() { const s = $("profileSheet"); if (s) s.classList.re
 function saveProfileEdit() {
   const chat = state.chats.find(c => c.id === profileChatId);
   const el = $("pfErr"); if (el) el.style.display = "none";
-  if (!chat) { showProfileNotice("This conversation is no longer open.", "error"); return; }
+  if (!chat) { showProfileNotice(T("profile.gone"), "error"); return; }
 
   const res = applyProfileEdit(chat, readProfileForm());
-  if (!res.ok) { showProfileNotice(res.errors.join(" "), "error"); return; }
+  // Some of these came straight from the Guardian in js/core.js, so they go
+  // through engineText() on the way to the farmer's eyes.
+  if (!res.ok) { showProfileNotice(res.errors.map(engineText).join(" "), "error"); return; }
 
   if (chat.id === state.activeChatId) updateHeaderIdentity();
   renderChatRail(); renderTranscript(); renderDashboard(); renderChats();
@@ -1333,17 +1417,19 @@ function saveProfileEdit() {
      actually stored, with the adjustment written above the fields. */
   if (res.warnings.length) {
     openProfileEdit(chat.id, profileReopenMatch);
-    showProfileNotice("Saved. Fasto adjusted " + (res.warnings.length === 1 ? "one thing" : res.warnings.length + " things") +
-      " on the way through: " + res.warnings.join(" · "), "notice");
+    const list = res.warnings.map(engineText).join(" · ");
+    showProfileNotice(res.warnings.length === 1
+      ? T("profile.adjustedOne", { list: list })
+      : T("profile.adjustedMany", { n: res.warnings.length, list: list }), "notice");
     return;
   }
 
   closeProfileEdit();
-  if (!res.changed.length) toast("Nothing to change — these details are already what Fasto has.");
+  if (!res.changed.length) toast(T("profile.nothingChanged"));
   else {
-    let msg = "Updated " + humanList(res.changed.map(f => PROFILE_FIELD_LABEL[f])) + ".";
-    if (res.rescored) msg += " Matches re-scored.";
-    if (res.staleDrafts) msg += " Your outreach draft still has the old wording — check it before sending.";
+    let msg = T("profile.updated", { list: humanList(res.changed.map(profileFieldLabel)) });
+    if (res.rescored) msg += T("profile.rescored");
+    if (res.staleDrafts) msg += T("profile.staleDraft");
     toast(msg);
   }
   if (profileReopenMatch) openMatchView(chat.id);
@@ -1384,46 +1470,171 @@ function openWhatsApp(id) {
             : "WhatsApp opened — pick " + c.name + " from your contacts, the message is already written.");
 }
 
-/* ---------- Admin (visible only when the signed-in farmer is flagged is_admin) ---------- */
+/* ================= ADMIN (visible only when the signed-in farmer is is_admin) =================
+
+   The funnel answers one question: of everyone who started talking to Fasto,
+   how many got as far as a message a real buyer can read?
+
+   It counts CONVERSATIONS at every stage and never drafts. One finished
+   conversation produces an outreach draft per matched buyer, so a funnel that
+   starts in chats and ends in drafts can be wider at the bottom than at the
+   top — "3 conversations → 12 sent" reads as a 400% conversion rate, which is
+   worse than showing nothing. The raw draft totals are still worth knowing, so
+   they sit beside the funnel instead, where their unit is spelled out.
+
+   Read-only: three selects that already existed, no schema change.           */
+
+/* The keys are the contract — adminStageSets() below returns a set of the same
+   name for each one, and dropping either half renders a blank funnel. The
+   labels are looked up per call rather than stored, so a language switch
+   repaints the funnel instead of leaving it in the language it was drawn in. */
+const ADMIN_STAGE_KEYS = ["started", "profile", "drafted", "sent"];
+function adminStages() {
+  return ADMIN_STAGE_KEYS.map(k => ({ key: k, label: T("admin.stage." + k), hint: T("admin.hint." + k) }));
+}
+
+/* Which conversations reached each stage. Pure — no DOM, no network — so the
+   numbers can be tested on their own.
+
+   Later stages are folded up into the earlier ones rather than counted
+   independently. A chat holding an outreach draft must have finished its
+   interview, because the draft is written from the captured profile — but the
+   phase column is a fire-and-forget write, so it can fail while the outreach
+   row itself lands, leaving a conversation that plainly reached stage 3 and
+   reads as stage 1. Folding upwards keeps every stage a subset of the one
+   above it, which is the only condition under which the percentages mean
+   anything at all. */
+function adminStageSets(chats, outreach) {
+  const byId = new Map((chats || []).map(c => [c.id, c]));
+  const started = new Set(byId.keys());
+  const drafted = new Set(), sent = new Set();
+  let orphanDrafts = 0;
+  (outreach || []).forEach(o => {
+    // A draft pointing at a conversation this query didn't return can't be
+    // placed in the funnel. Counted and shown rather than dropped: a number
+    // quietly disappearing is how a broken join goes unnoticed for months.
+    if (!o.chat_id || !byId.has(o.chat_id)) { orphanDrafts++; return; }
+    drafted.add(o.chat_id);
+    if (o.status === "sent") sent.add(o.chat_id);   // ⊆ drafted by construction
+  });
+  const profile = new Set(drafted);
+  (chats || []).forEach(c => { if (c.phase === "matching" || c.phase === "done") profile.add(c.id); });
+  return { started, profile, drafted, sent, orphanDrafts };
+}
+
+/* Turns those sets into the rows the funnel draws: how many, what share of
+   everyone who started, and how many fell away since the stage above. */
+function adminFunnel(chats, outreach) {
+  const sets = adminStageSets(chats, outreach);
+  const top = sets.started.size;
+  let prev = null;
+  const stages = adminStages().map(s => {
+    const count = sets[s.key].size;
+    const row = {
+      key: s.key, label: s.label, hint: s.hint, count,
+      pctOfStart: top ? Math.round(count / top * 100) : 0,
+      prev,
+      fromPrev: prev ? Math.round(count / prev * 100) : null,
+      dropped: prev === null ? null : prev - count
+    };
+    prev = count;
+    return row;
+  });
+  return {
+    stages, sets,
+    drafts: (outreach || []).length,
+    draftsSent: (outreach || []).filter(o => o.status === "sent").length,
+    orphanDrafts: sets.orphanDrafts
+  };
+}
+
+// Last loaded admin data, so clicking a funnel stage re-filters the table
+// without three more round trips to Supabase.
+let adminCache = null;
+
 async function renderAdmin() {
   if (!$("adminScreen") || !state.isAdmin) return;
   const [{ data: farmers, error: e1 }, { data: chats, error: e2 }, { data: outreach, error: e3 }] = await Promise.all([
     DataStore.listAllFarmers(), DataStore.listAllChats(), DataStore.listAllOutreach()
   ]);
-  if (e1 || e2 || e3) { console.error("admin load failed", e1, e2, e3); toast("Couldn't load admin overview."); return; }
+  if (e1 || e2 || e3) { console.error("admin load failed", e1, e2, e3); toast(T("admin.loadFailed")); return; }
+  adminCache = { farmers: farmers || [], chats: chats || [], outreach: outreach || [] };
+  paintAdmin();
+}
 
-  const farmerById = {}; (farmers || []).forEach(f => farmerById[f.id] = f);
-  const outreachByChat = {};
-  (outreach || []).forEach(o => { if (o.chat_id) (outreachByChat[o.chat_id] = outreachByChat[o.chat_id] || []).push(o); });
-  const sentCount = (outreach || []).filter(o => o.status === "sent").length;
+/* Clicking a stage filters the table under the funnel to the conversations in
+   it; clicking the selected one again clears the filter. Without this the
+   funnel can say "4 stopped at the interview" while the table below has no way
+   to show you which four. */
+function setAdminStage(key) {
+  state.adminStage = state.adminStage === key ? "started" : key;
+  paintAdmin();
+}
 
-  $("adminStats").innerHTML = [
-    `<span class="pill pill-blue">${(farmers || []).length} farmers</span>`,
-    `<span class="pill pill-accent">${(chats || []).length} conversations</span>`,
-    `<span class="pill pill-amber">${(outreach || []).length} outreach drafts</span>`,
-    `<span class="pill pill-accent">${sentCount} sent</span>`
+function paintAdmin() {
+  if (!adminCache || !$("adminFunnel")) return;
+  const { farmers, chats, outreach } = adminCache;
+  const f = adminFunnel(chats, outreach);
+  const active = ADMIN_STAGE_KEYS.indexOf(state.adminStage) !== -1 ? state.adminStage : "started";
+
+  $("adminFunnel").innerHTML = f.stages.map((s, i) => {
+    const gap = i === 0 ? "" : `<div class="fn-gap">${
+      !s.prev ? "—"
+        : s.dropped > 0 ? T("admin.dropped", { n: s.dropped, pct: s.fromPrev })
+        : T("admin.allCarried", { n: s.prev })
+    }</div>`;
+    // Never quite 0, so a stage nobody has reached is still a visible,
+    // clickable row rather than a label floating over nothing.
+    const w = Math.max(s.pctOfStart, 1.5);
+    return gap + `<button type="button" class="fn-stage${s.key === active ? " active" : ""}"
+      aria-pressed="${s.key === active}" title="${esc(s.hint)}" onclick="setAdminStage('${s.key}')">
+      <span class="fn-head">
+        <span class="fn-label">${esc(s.label)}</span>
+        <span class="fn-count">${s.count}</span>
+        <span class="fn-pct">${s.pctOfStart}%</span>
+      </span>
+      <span class="fn-track"><span class="fn-fill" style="width:${w}%"></span></span>
+    </button>`;
+  }).join("");
+
+  // Everything here is counted in something other than conversations, which is
+  // exactly why it sits outside the funnel rather than as a fifth bar in it.
+  $("adminAside").innerHTML = [
+    `<span class="pill pill-blue">${esc(T(farmers.length === 1 ? "admin.farmers" : "admin.farmersPl", { n: farmers.length }))}</span>`,
+    `<span class="pill pill-muted">${esc(T(f.drafts === 1 ? "admin.drafts" : "admin.draftsPl", { n: f.drafts, sent: f.draftsSent }))}</span>`,
+    f.orphanDrafts ? `<span class="pill pill-amber">${esc(T(f.orphanDrafts === 1 ? "admin.orphan" : "admin.orphanPl", { n: f.orphanDrafts }))}</span>` : ""
   ].join("");
 
-  const rows = (chats || []).filter(c => c.village || c.organic || c.farmer_name);
+  const farmerById = {}; farmers.forEach(x => farmerById[x.id] = x);
+  const outreachByChat = {};
+  outreach.forEach(o => { if (o.chat_id) (outreachByChat[o.chat_id] = outreachByChat[o.chat_id] || []).push(o); });
+
+  const inStage = f.sets[active];
+  const rows = chats.filter(c => inStage.has(c.id));
+  const def = adminStages().find(s => s.key === active);
+  $("adminTableTitle").textContent = T("admin.titleN", { label: active === "started" ? T("admin.everyConv") : def.label, n: rows.length });
+  $("adminClearFilter").style.display = active === "started" ? "none" : "inline-flex";
+
   $("adminBody").innerHTML = rows.map(c => {
     const farmer = farmerById[c.farmer_id];
-    const displayName = (farmer && farmer.farmer_name) || c.farmer_name || "Unnamed farmer";
+    const displayName = (farmer && farmer.farmer_name) || c.farmer_name || T("admin.unnamed");
     const outs = outreachByChat[c.id] || [];
     const outLabel = outs.length ? outs.map(o => o.status).join(", ") : "—";
     // data-label is what the cell calls itself once the table stacks into
     // single-column blocks on a phone and the column headers are hidden —
     // "Terelle" and "draft, sent" mean nothing on their own. Ignored on desktop.
     return `<tr>
-      <td data-label="Farmer"><b>${esc(displayName)}</b></td>
-      <td class="rp-conv" data-label="Conversation"><b>${esc(c.title)}</b><small>${esc(relDate(new Date(c.created_at).getTime()))}</small></td>
-      <td data-label="Location">${esc(c.village || "—")}</td>
-      <td class="rp-prog" data-label="Progress">
+      <td data-label="${escAttr(T("admin.colFarmer"))}"><b>${esc(displayName)}</b></td>
+      <td class="rp-conv" data-label="${escAttr(T("admin.colConversation"))}"><b>${esc(c.title)}</b><small>${esc(relDate(new Date(c.created_at).getTime()))}</small></td>
+      <td data-label="${escAttr(T("admin.colLocation"))}">${esc(c.village || "—")}</td>
+      <td class="rp-prog" data-label="${escAttr(T("admin.colProgress"))}">
         <div class="progress-track"><div class="progress-fill ${progClass(c.pct)}" style="width:${c.pct}%"></div></div>
         <div class="prog-label">${esc(phaseLabel(c.phase))} · ${c.pct}%</div>
       </td>
-      <td data-label="Outreach">${esc(outLabel)}</td>
+      <td data-label="${escAttr(T("admin.colOutreach"))}">${esc(outLabel)}</td>
     </tr>`;
   }).join("");
+  $("adminEmpty").textContent = !chats.length ? T("admin.empty") : T("admin.emptyStage");
   $("adminEmpty").style.display = rows.length ? "none" : "block";
 }
 
@@ -1544,27 +1755,35 @@ function switchScreen(name) {
 }
 
 /* ================= Offline scripted demo ================= */
-const OFFLINE_SCRIPT = [
-  "Buongiorno! I'm the Fasto Innova assistant. First — what's your name?",
-  "Nice to meet you! Now tell me — what do you grow on your farm?",
-  "Lovely! And roughly how many kilograms per week can you offer, for each product?",
-  "Great. Which months of the year is your produce available, and where is your farm (village and rough distance from Cassino)?",
-  "Last question: do you have an organic certification — yes, no, or partially?",
-  "Perfect, let me summarise: tomatoes ~80 kg/week and zucchine ~40 kg/week, June–October, near Sant'Elia Fiumerapido (~6 km), no organic certification. Shall I search for matches?"
-];
+/* A function, not an array of English sentences: this is the app standing in
+   for Brain 1, and Brain 1 is supposed to answer in the farmer's language.
+   Its LENGTH is load-bearing — offlineStep and offlineReady are compared
+   against it and offlineStep is persisted as the message count — so both
+   translations must have the same number of lines, which qa_check.js checks. */
+const OFFLINE_SCRIPT_KEYS = ["offline.q1", "offline.q2", "offline.q3", "offline.q4", "offline.q5", "offline.q6"];
+function offlineScript() { return OFFLINE_SCRIPT_KEYS.map(k => T(k)); }
 const OFFLINE_PROFILE = { farmer_name: "Marco", village: "Sant'Elia Fiumerapido", distance_km_from_cassino: 6, organic: "no", available_months: [6,7,8,9,10],
   products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }, { name: "zucchine", category: "verdure", kg_per_week: 40 }] };
 
 function offlineTurn(chat) {
+  const script = offlineScript();
   const step = chat.offlineStep++;
-  if (step < OFFLINE_SCRIPT.length) {
-    setTimeout(() => { addMsg(chat, "ai", OFFLINE_SCRIPT[step]); addLog("info", "Brain 1 · scripted reply (offline mode)"); }, 450);
-    if (step === OFFLINE_SCRIPT.length - 1) chat.offlineReady = true;
+  if (step < script.length) {
+    setTimeout(() => { addMsg(chat, "ai", script[step]); addLog("info", "Brain 1 · scripted reply (offline mode)"); }, 450);
+    if (step === script.length - 1) chat.offlineReady = true;
   }
-  if (chat.offlineReady && step === OFFLINE_SCRIPT.length) {
+  if (chat.offlineReady && step === script.length) {
     setTimeout(() => onProfileCaptured(OFFLINE_PROFILE, chat), 550);
   }
 }
+/* Deliberately NOT translated, and the reason is the same rule that made the
+   script above translated: the offline stand-in does whatever the real Brain
+   would have done. Brain 1's own instructions say "mirror the user's
+   language", so its script follows the UI. Brain 2 has no such promise — its
+   pitch lines are built from the buyer database's `notes` field, which is
+   data, and its outreach is deliberately an Italian message plus an English
+   translation, whoever is reading. Translating the offline copy of that would
+   make the demo say something the live app never says. */
 function offlineRecs(chat) {
   const top = chat.candidates.slice(0, 5);
   return {
@@ -1582,6 +1801,17 @@ function offlineRecs(chat) {
 
 /* ================= BOOT ================= */
 function boot() {
+  /* Language first, before anything is measured or drawn: applyI18n() fills in
+     every data-i18n attribute in index.html and sets <html lang>. */
+  applyI18n(document);
+  paintLangToggles();
+  // One delegated handler covers all three toggles (both onboarding cards and
+  // the topbar), so adding a fourth needs no wiring.
+  document.addEventListener("click", e => {
+    const btn = e.target && e.target.closest ? e.target.closest("[data-set-lang]") : null;
+    if (btn) setLang(btn.getAttribute("data-set-lang"));
+  });
+
   const saved = localStorage.getItem("fasto_key");
   if (saved) $("apikey").value = saved;
 
@@ -1593,9 +1823,10 @@ function boot() {
     $("authTabUp").classList.toggle("active", next === "up");
     // don't overwrite a spinner that's mid-request — setAuthBusy(false) relabels
     if (!$("authSubmitBtn").disabled) $("authSubmitBtn").textContent = authLabel();
-    $("authHint").textContent = next === "up"
-      ? "Already have an account? Switch to Sign in above."
-      : "New here? Switch to Sign up above — it only takes an email and a password.";
+    // data-i18n is updated too, or a later language switch would put the wrong
+     // one back: applyI18n() reads the attribute, not what is on screen.
+    $("authHint").setAttribute("data-i18n", next === "up" ? "auth.hintUp" : "auth.hintIn");
+    $("authHint").textContent = T(next === "up" ? "auth.hintUp" : "auth.hintIn");
     // Phone password managers key off this: left on "current-password" while
     // signing UP, iOS and Android offer to fill an old password instead of
     // suggesting a new one, and never offer to save the new account.
@@ -1604,8 +1835,13 @@ function boot() {
   }
   $("authTabIn").onclick = () => setAuthMode("in");
   $("authTabUp").onclick = () => setAuthMode("up");
+  // The submit button's label depends on which tab is selected, so it can't be
+  // a plain data-i18n attribute. Don't touch it mid-request: setAuthBusy(false)
+  // relabels it when the request finishes.
+  $("authSubmitBtn").textContent = authLabel();
+  onLangChange(() => { if (!$("authSubmitBtn").disabled) $("authSubmitBtn").textContent = authLabel(); });
 
-  function authLabel() { return authMode === "up" ? "Create account" : "Sign in"; }
+  function authLabel() { return T(authMode === "up" ? "auth.submitUp" : "auth.submitIn"); }
   // A disabled button with its normal label just looks broken; say what it's waiting on.
   function setAuthBusy(on, busyText) {
     const b = $("authSubmitBtn");
@@ -1620,21 +1856,21 @@ function boot() {
     const email = $("authEmail").value.trim();
     const password = $("authPassword").value;
     const errBox = $("authErr"); errBox.style.display = "none";
-    if (!email || !password) { errBox.textContent = "Enter an email and a password."; errBox.style.display = "block"; return; }
-    if (password.length < 6) { errBox.textContent = "Password must be at least 6 characters."; errBox.style.display = "block"; return; }
-    setAuthBusy(true, authMode === "up" ? "Creating your account…" : "Signing you in…");
+    if (!email || !password) { errBox.textContent = T("auth.needBoth"); errBox.style.display = "block"; return; }
+    if (password.length < 6) { errBox.textContent = T("auth.tooShort"); errBox.style.display = "block"; return; }
+    setAuthBusy(true, T(authMode === "up" ? "auth.creating" : "auth.signingIn"));
     try {
       const { data, error } = authMode === "up" ? await DataStore.signUp(email, password) : await DataStore.signIn(email, password);
       if (error) throw error;
       if (!data.session) {
-        errBox.textContent = "Check your email to confirm your account, then sign in.";
+        errBox.textContent = T("auth.confirmEmail");
         errBox.style.display = "block";
       } else {
         state.farmerId = data.user.id;
         goToModeCard();
       }
     } catch (e) {
-      errBox.textContent = e.message || "Something went wrong.";
+      errBox.textContent = e.message || T("auth.generic");
       errBox.style.display = "block";
     }
     setAuthBusy(false);
@@ -1647,7 +1883,7 @@ function boot() {
   // the form still has to unlock, or a network blip locks people out entirely.
   let authUnlocked = false;
   function unlockAuth() { if (!authUnlocked) { authUnlocked = true; setAuthBusy(false); } }
-  setAuthBusy(true, "Checking your account…");
+  setAuthBusy(true, T("auth.checking"));
   const authFailsafe = setTimeout(unlockAuth, 4000);
   DataStore.getSession().then(session => {
     if (session && session.user) { state.farmerId = session.user.id; goToModeCard(); }
@@ -1664,7 +1900,7 @@ function boot() {
     state.offline = (mode === "offline");
     state.apiKey = $("apikey").value.trim();
     state.model = $("model").value;
-    if (!state.offline && !state.apiKey.startsWith("sk-ant")) { alert("Paste a valid Anthropic API key (starts with sk-ant), or switch to Offline mode."); return; }
+    if (!state.offline && !state.apiKey.startsWith("sk-ant")) { alert(T("mode.badKey")); return; }
     if (!state.offline && $("remember").checked) localStorage.setItem("fasto_key", state.apiKey);
 
     if (entering) return;
@@ -1681,7 +1917,7 @@ function boot() {
     $("onboard").style.display = "none";
     $("app").classList.add("ready", "booting");
     showBackdrop();                                   // first photo of the session; rotates on each return to Dashboard
-    $("modePill").textContent = state.offline ? "Offline demo" : ("Live · " + (state.model.includes("haiku") ? "Haiku 4.5" : "Sonnet 5"));
+    paintModePill();
     switchScreen("dashboard");
     showResearchSkeleton(3);
 
@@ -1690,13 +1926,13 @@ function boot() {
     // with missing data, because nothing in it can be clicked.
     try {
       try {
-        bootStatus("Loading the Cassino buyer database…");
+        bootStatus(T("boot.buyers"));
         await loadBuyers();
-        bootStatus("Loading your saved chats…");
+        bootStatus(T("boot.chats"));
         await loadFarmerData(state.farmerId);
       } catch (e) {
         console.error("Failed to load account data", e);
-        toast("Couldn't load your saved data — starting fresh.");
+        toast(T("boot.loadFailed"));
       }
 
       addLog("ok", "Guardian armed. Database loaded: " + DB.buyers.length + " buyers + " + DB.channels.length + " channels (Cassino).");
@@ -1704,10 +1940,10 @@ function boot() {
       $("adminNavItem").style.display = state.isAdmin ? "flex" : "none";
 
       if (state.chats.length) { state.activeChatId = state.chats[0].id; updateHeaderIdentity(); renderChatRail(); renderTranscript(); }
-      else { bootStatus("Setting up your first conversation…"); await startNewChat(); }
+      else { bootStatus(T("boot.firstChat")); await startNewChat(); }
     } catch (e) {
       console.error("Failed to finish opening the app", e);
-      toast("Something went wrong opening your account — you can still use the app, but some of it may be empty.");
+      toast(T("boot.openFailed"));
     } finally {
       $("app").classList.remove("booting");
       entering = false;
@@ -1737,11 +1973,11 @@ function boot() {
   });
 
   // Notification bell -> jump to clients
-  $("bellBtn").onclick = () => { switchScreen("clients"); toast(state.clients.filter(c => c.status === "draft").length + " draft(s) ready to send"); };
+  $("bellBtn").onclick = () => { switchScreen("clients"); toast(T("top.draftsReady", { n: state.clients.filter(c => c.status === "draft").length })); };
 
   // Avatar -> sign out (data stays in the account; this just clears the local view)
   $("profileBtn").onclick = async () => {
-    if (!confirm("Sign out and restart? Your saved data stays in your account for next time.")) return;
+    if (!confirm(T("top.signOutConfirm"))) return;
     let signedOut = true;
     try { const r = await DataStore.signOut(); if (r && r.error) throw r.error; }
     catch (e) { console.error("sign out failed", e); signedOut = false; }
@@ -1749,7 +1985,7 @@ function boot() {
     if (signedOut) { location.reload(); return; }
     // The browser session survived, so reloading now walks straight back in.
     // Say so rather than pretending it worked, and leave the words on screen.
-    toast("Couldn't reach your account to sign out — you may still be signed in on this device.");
+    toast(T("top.signOutFailed"));
     setTimeout(() => location.reload(), 2600);
   };
 

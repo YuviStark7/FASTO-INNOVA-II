@@ -8,7 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fasto Innova">
 <link rel="manifest" href="manifest.json">
-<title>Fasto Innova — AI for Cassino Farmers</title>
+<!-- Every data-i18n* attribute below is filled in from js/i18n.js at load and
+     again whenever the language is switched. The English text left in the
+     markup is what a browser with JavaScript disabled would show, and is kept
+     in step with the dictionary by qa_check.js. -->
+<title data-i18n="doc.title">Fasto Innova — AI for Cassino Farmers</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -22,59 +26,69 @@
 
   <!-- Step 1: account -->
   <div class="onboard-card" id="authCard">
-    <div class="brand-mark"><img src="assets/logo-mark.svg" alt=""><span class="brand-word title-md"><b>FASTO</b><span> INNOVA</span></span></div>
-    <div class="tag">Sign in to keep your farm profile, chats and matches saved between visits.</div>
+    <div class="brand-mark"><img src="assets/logo-mark.svg" alt=""><span class="brand-word title-md"><b>FASTO</b><span> INNOVA</span></span>
+      <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
+        <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
+        <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
+      </div>
+    </div>
+    <div class="tag" data-i18n="auth.tag">Sign in to keep your farm profile, chats and matches saved between visits.</div>
 
     <div class="mode-toggle">
-      <button id="authTabIn" class="active" type="button">Sign in</button>
-      <button id="authTabUp" type="button">Sign up</button>
+      <button id="authTabIn" class="active" type="button" data-i18n="auth.tabIn">Sign in</button>
+      <button id="authTabUp" type="button" data-i18n="auth.tabUp">Sign up</button>
     </div>
 
     <div class="field">
-      <label for="authEmail">Email</label>
-      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email">
+      <label for="authEmail" data-i18n="auth.email">Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" data-i18n-ph="auth.emailPh" autocomplete="email">
     </div>
     <div class="field">
-      <label for="authPassword">Password</label>
-      <input type="password" id="authPassword" placeholder="At least 6 characters" autocomplete="current-password">
+      <label for="authPassword" data-i18n="auth.password">Password</label>
+      <input type="password" id="authPassword" placeholder="At least 6 characters" data-i18n-ph="auth.passwordPh" autocomplete="current-password">
     </div>
     <div class="err-banner" id="authErr"></div>
 
     <button class="btn btn-primary" id="authSubmitBtn" style="width:100%;justify-content:center;margin-top:6px">Sign in</button>
-    <div class="onboard-hint" id="authHint" style="margin-top:14px">New here? Switch to Sign up above — it only takes an email and a password.</div>
+    <div class="onboard-hint" id="authHint" style="margin-top:14px" data-i18n="auth.hintIn">New here? Switch to Sign up above — it only takes an email and a password.</div>
   </div>
 
   <!-- Step 2: demo mode (shown after sign-in) -->
   <div class="onboard-card" id="modeCard" style="display:none">
-    <div class="brand-mark"><img src="assets/logo-mark.svg" alt=""><span class="brand-word title-md"><b>FASTO</b><span> INNOVA</span></span></div>
-    <div class="tag">The AI that helps small farmers around Cassino sell directly to nearby buyers. Prototype — MVP demo.</div>
+    <div class="brand-mark"><img src="assets/logo-mark.svg" alt=""><span class="brand-word title-md"><b>FASTO</b><span> INNOVA</span></span>
+      <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
+        <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
+        <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
+      </div>
+    </div>
+    <div class="tag" data-i18n="mode.tag">The AI that helps small farmers around Cassino sell directly to nearby buyers. Prototype — MVP demo.</div>
 
     <div class="mode-toggle">
-      <button id="modeOffline" class="active" type="button">Offline demo (works instantly)</button>
-      <button id="modeLive" type="button">Live AI (needs API key)</button>
+      <button id="modeOffline" class="active" type="button" data-i18n="mode.offline">Offline demo (works instantly)</button>
+      <button id="modeLive" type="button" data-i18n="mode.live">Live AI (needs API key)</button>
     </div>
 
     <div id="liveKeyBlock" style="display:none">
       <div class="field">
-        <label for="apikey">Anthropic API key</label>
+        <label for="apikey" data-i18n="mode.apiKey">Anthropic API key</label>
         <input type="password" id="apikey" placeholder="sk-ant-...">
       </div>
-      <div class="onboard-hint">Get one at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys. A full demo run costs a few cents. The key stays only in this browser — never saved to any file or repo.</div>
+      <div class="onboard-hint" data-i18n-html="mode.keyHint">Get one at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys. A full demo run costs a few cents. The key stays only in this browser — never saved to any file or repo.</div>
       <div class="field">
-        <label for="model">AI model</label>
+        <label for="model" data-i18n="mode.model">AI model</label>
         <select id="model">
-          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — fast &amp; cheap (recommended)</option>
-          <option value="claude-sonnet-5">Claude Sonnet 5 — smarter, slightly slower</option>
+          <option value="claude-haiku-4-5-20251001" data-i18n="mode.modelHaiku">Claude Haiku 4.5 — fast &amp; cheap (recommended)</option>
+          <option value="claude-sonnet-5" data-i18n="mode.modelSonnet">Claude Sonnet 5 — smarter, slightly slower</option>
         </select>
       </div>
       <div class="row gap-8" style="margin-top:10px">
-        <input type="checkbox" id="remember"> <label for="remember" style="margin:0;font-size:12.5px;color:var(--ink-50)">Remember key on this device only</label>
+        <input type="checkbox" id="remember"> <label for="remember" style="margin:0;font-size:12.5px;color:var(--ink-50)" data-i18n="mode.remember">Remember key on this device only</label>
       </div>
     </div>
 
-    <button class="btn btn-primary" id="startBtn" style="width:100%;justify-content:center;margin-top:20px">Enter Fasto Innova</button>
+    <button class="btn btn-primary" id="startBtn" style="width:100%;justify-content:center;margin-top:20px" data-i18n="mode.enter">Enter Fasto Innova</button>
 
-    <div class="onboard-note"><b>Three brains:</b> Brain 1 interviews the farmer in plain language · Brain 2 matches &amp; ranks against a database of real Cassino buyers · Brain 3 (Guardian) validates everything moving between them, quietly, in the background.</div>
+    <div class="onboard-note" data-i18n-html="mode.brains"><b>Three brains:</b> Brain 1 interviews the farmer in plain language · Brain 2 matches &amp; ranks against a database of real Cassino buyers · Brain 3 (Guardian) validates everything moving between them, quietly, in the background.</div>
   </div>
 </div>
 
@@ -83,10 +97,10 @@
   <aside id="sidebar">
     <div class="side-brand"><img src="assets/logo-mark.svg" alt=""><span class="wordmark"><b>FASTO</b><span> INNOVA</span></span></div>
 
-    <div class="nav-item" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label">Dashboard</span></div>
-    <div class="nav-item" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label">Clients</span></div>
-    <div class="nav-item" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label">Fasto - AI</span></div>
-    <div class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label">Admin</span></div>
+    <div class="nav-item" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></div>
+    <div class="nav-item" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></div>
+    <div class="nav-item" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></div>
+    <div class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></div>
 
     <div class="side-bottom">
       <div class="status-item"><img class="ic-svg" src="assets/icon-offline.svg" alt=""><span class="label" id="modePill">Offline demo</span></div>
@@ -102,12 +116,21 @@
     <div class="backdrop-layer" id="backdropB"></div>
 
     <header id="topbar" class="glass-45">
-      <div class="who">WELCOME, <b id="whoName">GUEST FARMER</b></div>
+      <div class="who"><span data-i18n="top.welcome">WELCOME,</span> <b id="whoName">GUEST FARMER</b></div>
       <div class="spacer hide-mobile"></div>
-      <div class="search-wrap hide-mobile"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="text" id="topSearch" placeholder="Search chats, research…"></div>
-      <button class="sync-warn" id="syncWarn" onclick="explainSyncWarn()" title="Some changes couldn't be saved to your account" aria-live="polite"><span class="sync-warn-dot"></span><span class="hide-mobile">Not saved</span></button>
-      <button class="icon-btn" id="bellBtn" title="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""></button>
-      <button class="icon-btn" id="profileBtn" title="Restart / change mode" style="padding:0;overflow:hidden">
+      <div class="search-wrap hide-mobile"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="text" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh"></div>
+      <!-- The only control that has to be reachable on every screen AND on a
+           phone, where .side-bottom is hidden and the sidebar becomes a row of
+           icons. It is deliberately NOT reachable while a sheet is open: the
+           three sheets cover the whole viewport, so a half-typed logistics or
+           profile form can't be re-rendered out from under you. -->
+      <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
+        <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
+        <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
+      </div>
+      <button class="sync-warn" id="syncWarn" onclick="explainSyncWarn()" title="Some changes couldn't be saved to your account" data-i18n-title="top.notSavedTitle" aria-live="polite"><span class="sync-warn-dot"></span><span class="hide-mobile" data-i18n="top.notSaved">Not saved</span></button>
+      <button class="icon-btn" id="bellBtn" title="Drafts ready" data-i18n-title="top.bellTitle"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""></button>
+      <button class="icon-btn" id="profileBtn" title="Restart / change mode" data-i18n-title="top.profileTitle" style="padding:0;overflow:hidden">
         <img src="assets/avatar-profile.png" alt="" style="width:100%;height:100%;object-fit:cover">
       </button>
     </header>
@@ -116,15 +139,15 @@
     <section class="screen" id="dashboardScreen">
       <div class="research-panel glass-45">
         <div class="research-panel-head">
-          <span class="title-md">Research Progress</span>
-          <button class="see-all" id="researchSeeAll">See all</button>
-          <span class="boot-chip" id="bootChip" aria-live="polite"><span class="spinner"></span><span id="bootChipText">Loading your account…</span></span>
+          <span class="title-md" data-i18n="dash.title">Research Progress</span>
+          <button class="see-all" id="researchSeeAll" data-i18n="dash.seeAll">See all</button>
+          <span class="boot-chip" id="bootChip" aria-live="polite"><span class="spinner"></span><span id="bootChipText" data-i18n="boot.account">Loading your account…</span></span>
         </div>
         <table class="rp-table">
-          <thead><tr><th>Conversation</th><th>Targeted product</th><th>Quantity pledged</th><th>Price</th><th style="width:150px">Progress</th></tr></thead>
+          <thead><tr><th data-i18n="dash.colConversation">Conversation</th><th data-i18n="dash.colProduct">Targeted product</th><th data-i18n="dash.colQuantity">Quantity pledged</th><th data-i18n="dash.colPrice">Price</th><th style="width:150px" data-i18n="dash.colProgress">Progress</th></tr></thead>
           <tbody id="researchBody"></tbody>
         </table>
-        <div class="empty-state" id="researchEmpty">No research yet — start a conversation in the Fasto-AI tab.</div>
+        <div class="empty-state" id="researchEmpty" data-i18n="dash.empty">No research yet — start a conversation in the Fasto-AI tab.</div>
       </div>
     </section>
 
@@ -139,38 +162,48 @@
     <!-- ---------- FASTO-AI ---------- -->
     <section class="screen" id="assistantScreen">
       <div class="chat-history-rail glass-20">
-        <button class="new-chat-btn" id="newChatBtn"><img class="ic-svg sm" src="assets/icon-new-chat.svg" alt="">Start New Chat</button>
+        <button class="new-chat-btn" id="newChatBtn"><img class="ic-svg sm" src="assets/icon-new-chat.svg" alt=""><span data-i18n="assist.newChat">Start New Chat</span></button>
         <div class="chat-rail-list" id="chatRailList"></div>
       </div>
 
       <div class="err-banner" id="errBanner"></div>
       <div class="assist-transcript" id="assistTranscript"></div>
-      <div class="typing-ind" id="typingInd">Fasto is thinking…</div>
+      <div class="typing-ind" id="typingInd" data-i18n="assist.thinking">Fasto is thinking…</div>
+      <!-- The chips stay in their own language whatever the UI is set to: they
+           are there to show Brain 1 mirroring whoever writes to it, so an
+           English one and an Italian one is the point. -->
       <div class="chip-row" id="chipRow">
-        <span class="sugg-chip" data-fill="Hi! I'm a farmer near Sant'Elia Fiumerapido. I have about 80 kg of tomatoes and 40 kg of zucchine per week in summer. Not certified organic. What can I do in Cassino?">Demo farmer (EN)</span>
-        <span class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio.">Contadino demo (IT)</span>
-        <span class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?">Autumn chestnuts</span>
+        <span class="sugg-chip" data-fill="Hi! I'm a farmer near Sant'Elia Fiumerapido. I have about 80 kg of tomatoes and 40 kg of zucchine per week in summer. Not certified organic. What can I do in Cassino?" data-i18n="assist.chip1">Demo farmer (EN)</span>
+        <span class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio." data-i18n="assist.chip2">Demo farmer (IT)</span>
+        <span class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?" data-i18n="assist.chip3">Autumn chestnuts</span>
       </div>
       <div class="prompt-bar glass-15">
-        <button class="round-icon-btn" id="attachBtn" title="Attach (not needed for this demo)"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
-        <input type="text" id="userInput" placeholder="Type your message here" autocomplete="off">
-        <button class="round-icon-btn" id="sendBtn" title="Send"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
+        <button class="round-icon-btn" id="attachBtn" title="Attach (not needed for this demo)" data-i18n-title="clients.attachTitle"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
+        <input type="text" id="userInput" placeholder="Type your message here" data-i18n-ph="clients.typeHere" autocomplete="off">
+        <button class="round-icon-btn" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
       </div>
     </section>
 
     <!-- ---------- ADMIN (visible only when is_admin = true) ---------- -->
     <section class="screen" id="adminScreen">
       <div class="research-panel glass-45 admin-panel-stats">
-        <div class="research-panel-head"><span class="title-md">All Farmers — Overview</span></div>
-        <div class="row gap-14" id="adminStats"></div>
+        <div class="research-panel-head"><span class="title-md" data-i18n="admin.funnelTitle">Funnel — where conversations stop</span></div>
+        <!-- Every bar counts CONVERSATIONS, never drafts; see the note above
+             adminStageSets() in js/app.js for why the units have to match.
+             Each bar filters the table below it. -->
+        <div class="fn-list" id="adminFunnel"></div>
+        <div class="row gap-8 fn-aside" id="adminAside"></div>
       </div>
       <div class="research-panel glass-45 admin-panel-main">
-        <div class="research-panel-head"><span class="title-md">Every Conversation</span></div>
+        <div class="research-panel-head">
+          <span class="title-md" id="adminTableTitle" data-i18n="admin.everyConv">Every conversation</span>
+          <button class="see-all" id="adminClearFilter" onclick="setAdminStage('started')" style="display:none" data-i18n="admin.showAll">Show all</button>
+        </div>
         <table class="rp-table">
-          <thead><tr><th>Farmer</th><th>Conversation</th><th>Location</th><th>Progress</th><th>Outreach</th></tr></thead>
+          <thead><tr><th data-i18n="admin.colFarmer">Farmer</th><th data-i18n="admin.colConversation">Conversation</th><th data-i18n="admin.colLocation">Location</th><th data-i18n="admin.colProgress">Progress</th><th data-i18n="admin.colOutreach">Outreach</th></tr></thead>
           <tbody id="adminBody"></tbody>
         </table>
-        <div class="empty-state" id="adminEmpty">No farmer activity yet.</div>
+        <div class="empty-state" id="adminEmpty" data-i18n="admin.empty">No farmer activity yet.</div>
       </div>
     </section>
   </div>
@@ -184,13 +217,13 @@
   <div class="match-panel glass-45">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
-        <span class="title-md" id="matchTitle">Why these buyers</span>
+        <span class="title-md" id="matchTitle" data-i18n="match.title">Why these buyers</span>
         <div class="foot" id="matchSubtitle"></div>
       </div>
-      <button class="icon-btn" id="matchCloseBtn" title="Close" aria-label="Close">&#10005;</button>
+      <button class="icon-btn" id="matchCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="match-panel-body" id="matchBody"></div>
-    <div class="match-panel-foot">Ranked by Fasto's scoring engine, written up by Brain 2, checked by the Guardian. Every buyer here comes from the verified Cassino database — never invented.</div>
+    <div class="match-panel-foot" data-i18n="match.foot">Ranked by Fasto's scoring engine, written up by Brain 2, checked by the Guardian. Every buyer here comes from the verified Cassino database — never invented.</div>
   </div>
 </div>
 
@@ -204,15 +237,15 @@
   <div class="match-panel glass-45">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
-        <span class="title-md">Set up logistics</span>
+        <span class="title-md" data-i18n="logi.title">Set up logistics</span>
         <div class="foot" id="logisticsSubtitle"></div>
       </div>
-      <button class="icon-btn" id="logisticsCloseBtn" title="Close" aria-label="Close">&#10005;</button>
+      <button class="icon-btn" id="logisticsCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="match-panel-body" id="logisticsBody"></div>
     <div class="match-panel-foot lg-foot">
-      <button class="btn btn-primary" id="logisticsSubmit">Send to logistics partner</button>
-      <span>Goes to Fasto's logistics partner, who arranges pickup and delivery. Nothing is sent to the buyer from here.</span>
+      <button class="btn btn-primary" id="logisticsSubmit" data-i18n="logi.submit">Send to logistics partner</button>
+      <span data-i18n="logi.foot">Goes to Fasto's logistics partner, who arranges pickup and delivery. Nothing is sent to the buyer from here.</span>
     </div>
   </div>
 </div>
@@ -226,15 +259,15 @@
   <div class="match-panel glass-45">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
-        <span class="title-md">Your farm details</span>
+        <span class="title-md" data-i18n="profile.title">Your farm details</span>
         <div class="foot" id="profileSubtitle"></div>
       </div>
-      <button class="icon-btn" id="profileCloseBtn" title="Close" aria-label="Close">&#10005;</button>
+      <button class="icon-btn" id="profileCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="match-panel-body" id="profileBody"></div>
     <div class="match-panel-foot lg-foot">
-      <button class="btn btn-primary" id="profileSaveBtn">Save changes</button>
-      <span>Saved to your account and used to work your matches out again. Nothing here is sent to a buyer.</span>
+      <button class="btn btn-primary" id="profileSaveBtn" data-i18n="profile.save">Save changes</button>
+      <span data-i18n="profile.foot">Saved to your account and used to work your matches out again. Nothing here is sent to a buyer.</span>
     </div>
   </div>
 </div>
@@ -243,6 +276,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/supabase-client.js"></script>
+<!-- Before app.js: app.js calls T() while it builds its screens. -->
+<script src="js/i18n.js"></script>
 <script src="js/data.js"></script>
 <script src="js/core.js"></script>
 <script src="js/app.js"></script>

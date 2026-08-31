@@ -21,6 +21,23 @@
 .mode-toggle{ display:flex; background:var(--white-15); border-radius:var(--radius-sm); padding:4px; gap:4px; margin-bottom:16px; }
 .mode-toggle button{ flex:1; border:none; background:transparent; color:var(--ink-70); padding:10px 8px; border-radius:8px; font-weight:700; font-size:12.5px; }
 .mode-toggle button.active{ background:var(--red); color:#fff; }
+
+/* ---------- language toggle (IT / EN) ----------
+   Three of these: one on each onboarding card, and one in the topbar. The
+   topbar is the only place that is reachable on every screen AND on a phone,
+   where .side-bottom is hidden and the sidebar collapses to a row of icons.
+   Same segmented shape as .mode-toggle above rather than a new control — this
+   is the third two-state switch in the app and it should read as the same
+   thing. Active state is the brand red, not a white highlight, so which
+   language is on is legible against the dark glass at a glance. */
+.lang-toggle{ display:flex; flex-shrink:0; gap:3px; padding:3px; border-radius:var(--radius-sm); background:var(--white-15); }
+.lang-toggle button{ border:none; background:transparent; color:var(--ink-70);
+  min-width:30px; height:26px; padding:0 8px; border-radius:7px;
+  font-family:var(--font); font-size:11px; font-weight:700; letter-spacing:.06em; line-height:1; }
+.lang-toggle button:hover{ color:#fff; }
+.lang-toggle button.active{ background:var(--red); color:#fff; }
+/* The onboarding cards put it at the end of the brand row. */
+.brand-mark .lang-toggle{ margin-left:auto; }
 .field{ margin-bottom:12px; }
 .field label{ display:block; font-size:12px; color:var(--ink-70); margin-bottom:6px; font-weight:700; }
 .field input,.field select{ width:100%; background:var(--white-15); border:1px solid transparent; border-radius:var(--radius-sm); padding:10px 12px; color:#fff; outline:none; }
@@ -126,7 +143,29 @@
    rule short of !important. */
 .admin-panel-stats{ margin-bottom:14px; flex-shrink:0; }
 .admin-panel-main{ flex:1; min-height:0; }
-#adminStats{ padding:4px 10px 10px; flex-wrap:wrap; }
+
+/* ---- admin funnel ----
+   Bar width is the entire signal, so every bar is the same colour. The brand
+   red, not the green/amber/red of .progress-fill: that palette already means
+   "how far along is this one conversation" everywhere else in the app, and
+   reusing it here would read as a verdict on each stage.
+   The track is DARKER than the fill rather than lighter, which is the reverse
+   of .progress-track — #962524 is a deep red, and on a light track the empty
+   part of the bar would draw the eye more than the full part. */
+.fn-list{ display:flex; flex-direction:column; padding:2px 10px 8px; }
+.fn-stage{ display:block; width:100%; text-align:left; background:none; border:1px solid transparent; border-radius:var(--radius-sm); padding:8px 10px; color:inherit; }
+.fn-stage:hover{ background:rgba(255,255,255,.06); }
+.fn-stage:focus-visible{ outline:2px solid rgba(255,255,255,.6); outline-offset:2px; }
+.fn-stage.active{ background:var(--pill-active); border-color:var(--hairline); }
+.fn-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; }
+.fn-label{ font-size:12.5px; font-weight:700; }
+.fn-count{ margin-left:auto; font-size:15px; font-weight:700; }
+.fn-pct{ font-size:11px; color:var(--ink-50); min-width:34px; text-align:right; }
+.fn-track{ display:block; height:10px; border-radius:6px; background:rgba(0,0,0,.32); border:1px solid var(--hairline); overflow:hidden; }
+.fn-fill{ display:block; height:100%; border-radius:6px; background:var(--red); transition:width .4s ease; }
+.fn-gap{ font-size:11px; color:var(--ink-50); padding:3px 10px 3px 22px; }
+.fn-aside{ padding:2px 10px 10px; flex-wrap:wrap; }
+@media (prefers-reduced-motion: reduce){ .fn-fill{ transition:none; } }
 
 /* ================= CLIENTS ================= */
 #clientsScreen{ min-height:0; }
@@ -277,9 +316,11 @@
 #app.booting .screen,
 #app.booting .nav-item,
 #app.booting #topbar .icon-btn,
+#app.booting #topbar .lang-toggle,
 #app.booting #topbar .search-wrap{ pointer-events:none; }
 #app.booting .nav-item{ opacity:.35; }
 #app.booting #topbar .icon-btn,
+#app.booting #topbar .lang-toggle,
 #app.booting #topbar .search-wrap{ opacity:.45; }
 
 /* On a phone the research table collapses to one block per cell, so three
@@ -429,6 +470,12 @@
   .nav-item span.label{ font-size:9px; letter-spacing:.02em; text-align:center; }
   #main{ border-radius:0; height:100vh; margin:0; }
   #topbar{ margin:12px 12px 0; gap:10px; }
+  /* A 26px-tall button is not a tap target. The row's tallest item is the 38px
+     avatar, so going to 40 costs 2px of bar height and buys a target close to
+     the 44px minimum the auth tabs already follow. Width is held down instead:
+     "IT"/"EN" are two characters and the greeting beside them is what has to
+     give, and it already truncates. */
+  #topbar .lang-toggle button{ height:40px; min-width:34px; padding:0 6px; }
   /* Without min-width:0 a longer farm name wrapped the greeting onto a second
      line and made the whole bar taller; nothing else in the row can shrink. */
   #topbar .who{ font-size:12px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -466,6 +513,18 @@
   #adminScreen{ overflow-y:auto; }
   .admin-panel-stats,.admin-panel-main{ flex:none; max-height:none; overflow:visible; }
   .admin-panel-stats{ margin-bottom:12px; }
+
+  /* Funnel: claw back the horizontal padding a phone can't spare, and let the
+     longest stage label ("Buyers matched, outreach written") wrap under itself
+     instead of squeezing the count and the percentage off the row. The stage
+     button stays ~50px tall either way, above the 44px tap-target minimum. */
+  .fn-list,.fn-aside{ padding-left:2px; padding-right:2px; }
+  .fn-stage{ padding:8px 8px; }
+  .fn-head{ flex-wrap:wrap; column-gap:8px; row-gap:2px; }
+  .fn-label{ font-size:12px; flex:1 1 100%; order:1; }
+  .fn-count{ order:2; margin-left:0; }
+  .fn-pct{ order:3; margin-left:auto; text-align:right; }
+  .fn-gap{ padding-left:14px; }
 }
 
 /* Four nav items (admin) on the narrowest phones — buy back a few pixels
@@ -474,6 +533,8 @@
   #sidebar{ gap:2px; padding:8px 6px; }
   .nav-item{ padding:8px 2px; }
   .nav-item span.label{ font-size:8.5px; letter-spacing:0; }
+  #topbar .lang-toggle{ gap:2px; padding:2px; }
+  #topbar .lang-toggle button{ min-width:30px; padding:0 4px; letter-spacing:.03em; }
   #onboard{ padding:16px 14px; }
   #onboard{ padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
   .onboard-card{ padding:22px 18px; }

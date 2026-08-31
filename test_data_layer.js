@@ -39,6 +39,14 @@
      5. isLocalId — after a failed write a record gets a client-only id.
         Sending that id back to Postgres is a guaranteed error, so every
         later write has to check first.
+     8. The IT/EN language layer. Two things, and the second is the
+        point: that every translated label is read at RENDER time rather
+        than frozen at load — the classic i18n bug, invisible until
+        somebody presses the toggle — and that switching language never
+        changes a single value written to the database. A category is
+        stored as "pomodori" whether the label beside it says "tomatoes"
+        or "pomodori", and the logistics email keeps its English field
+        names whatever the farmer's app is set to.
    ============================================================ */
 const fs = require("fs");
 const vm = require("vm");
@@ -135,8 +143,14 @@ function loadApp(root) {
       querySelectorAll: () => [],
       addEventListener() {}, createElement: () => fakeEl("new")
     },
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    navigator: { clipboard: { writeText() {} } },
+    /* js/i18n.js reads both of these the moment it is evaluated, to pick a
+       starting language. A null localStorage and an English navigator mean the
+       suite always runs in English unless a test says otherwise, so the
+       assertions below can compare against literal English strings. */
+    localStorage: (() => { const store = {};
+      return { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); },
+               removeItem: k => { delete store[k]; }, __store: store }; })(),
+    navigator: { clipboard: { writeText() {} }, language: "en-GB" },
     location: { reload() {}, href: "" },
     fetch: () => Promise.reject(new Error("no network in tests")),
     alert() {}, confirm: () => false, open: () => null
@@ -149,17 +163,22 @@ function loadApp(root) {
   /* One script, not four. Top-level `const`/`let` are scoped to the script
      that declares them, so evaluating these files separately would leave
      app.js unable to see DataStore or DB. */
-  const files = ["js/supabase-client.js", "js/data.js", "js/core.js", "js/app.js"];
+  // Same order as index.html: i18n.js before app.js, because app.js calls T().
+  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
 ;globalThis.__t = { state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
-  addProfileProduct, removeProfileProduct, toggleProfileMonth };`;
+  addProfileProduct, removeProfileProduct, toggleProfileMonth,
+  adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
+  STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
+  profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
-  return { app: sandbox.__t, sb, els, logs };
+  return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage };
 }
 
-const { app, sb, els, logs } = loadApp(path);
+const { app, sb, els, logs, storage } = loadApp(path);
 
 /* ============================================================
    1. Query shape — table, filter, sort, single-row flags
@@ -814,6 +833,450 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     els.profileSheet.has("open") && !els.pfErr.has("pf-notice") &&
     els.pfErr.textContent === "Product 1 still needs a name." && sb.chains.length === 0,
     els.pfErr.textContent);
+
+  /* ============================================================
+     7. The Admin funnel (queue item 9)
+     ------------------------------------------------------------
+     Pure arithmetic over three admin reads — no writes, no schema.
+     The reason it is worth this many tests is that a funnel is a
+     picture people trust without checking: every number is a
+     comparison against another number, so a single miscount doesn't
+     look wrong, it looks like a finding. The two failure modes that
+     matter are (a) counting a different unit at different stages,
+     which invents conversion rates out of nothing, and (b) a stage
+     that isn't a subset of the one above it, which makes "how many
+     dropped out" meaningless or negative.
+     ============================================================ */
+  console.log("== Test 7: the Admin funnel counts conversations, and only conversations ==");
+
+  const chat_ = (id, phase) => ({ id, phase, farmer_id: "f1", title: "t" + id, pct: 0, created_at: "2026-08-01T00:00:00Z" });
+  const out_ = (id, chatId, status) => ({ id, chat_id: chatId, status, farmer_id: "f1", buyer_id: "b1" });
+  const stageCount = (f, key) => f.stages.find(s => s.key === key).count;
+
+  {
+    // 6 conversations: 1 never got past the greeting, 1 is mid-interview,
+    // 2 finished the interview but produced no draft, 2 have drafts and one
+    // of those two has been sent. That is 6 → 4 → 2 → 1.
+    const chats = [chat_("c1", "interview"), chat_("c2", "interview"), chat_("c3", "matching"),
+                   chat_("c4", "done"), chat_("c5", "done"), chat_("c6", "done")];
+    const outreach = [out_("o1", "c5", "draft"), out_("o2", "c5", "draft"), out_("o3", "c5", "draft"),
+                      out_("o4", "c6", "sent"), out_("o5", "c6", "draft")];
+    const f = app.adminFunnel(chats, outreach);
+
+    check("stage 1 is every conversation started", stageCount(f, "started") === 6, stageCount(f, "started"));
+    check("stage 2 is the conversations whose interview finished", stageCount(f, "profile") === 4, stageCount(f, "profile"));
+    check("stage 3 counts conversations with a draft, not drafts — 5 drafts across 2 chats is 2",
+      stageCount(f, "drafted") === 2, stageCount(f, "drafted"));
+    check("stage 4 counts conversations with a sent draft — 1 sent draft in 1 chat is 1",
+      stageCount(f, "sent") === 1, stageCount(f, "sent"));
+
+    const counts = f.stages.map(s => s.count);
+    check("every stage is smaller than or equal to the one above it",
+      counts.every((n, i) => i === 0 || n <= counts[i - 1]), JSON.stringify(counts));
+    check("each stage is a genuine SUBSET of the one above it, not just a smaller number",
+      [...f.sets.sent].every(id => f.sets.drafted.has(id)) &&
+      [...f.sets.drafted].every(id => f.sets.profile.has(id)) &&
+      [...f.sets.profile].every(id => f.sets.started.has(id)));
+
+    check("share-of-start is measured against stage 1", eq(f.stages.map(s => s.pctOfStart), [100, 67, 33, 17]),
+      JSON.stringify(f.stages.map(s => s.pctOfStart)));
+    check("drop-off is the gap to the stage above, and the first stage has none",
+      eq(f.stages.map(s => s.dropped), [null, 2, 2, 1]), JSON.stringify(f.stages.map(s => s.dropped)));
+    check("carried-on % is measured against the stage above, not against stage 1",
+      eq(f.stages.map(s => s.fromPrev), [null, 67, 50, 50]), JSON.stringify(f.stages.map(s => s.fromPrev)));
+
+    check("the raw draft totals are reported separately, in their own unit",
+      f.drafts === 5 && f.draftsSent === 1, f.drafts + "/" + f.draftsSent);
+    check("no orphan drafts when every draft points at a real conversation", f.orphanDrafts === 0);
+  }
+
+  {
+    // The phase column is a fire-and-forget write. If it fails while the
+    // outreach insert lands, the chat still plainly finished its interview —
+    // the draft was written from the captured profile.
+    const chats = [chat_("c1", "interview")];
+    const f = app.adminFunnel(chats, [out_("o1", "c1", "sent")]);
+    check("a conversation whose phase write failed is still counted at every stage it reached",
+      eq(f.stages.map(s => s.count), [1, 1, 1, 1]), JSON.stringify(f.stages.map(s => s.count)));
+  }
+
+  {
+    // The old Admin table filtered on village/organic/farmer_name. A farmer
+    // who never gave a name or a village would finish the interview and not
+    // appear anywhere. phase is the signal the app itself sets.
+    const chats = [{ ...chat_("c1", "matching"), village: null, organic: null, farmer_name: null }];
+    const f = app.adminFunnel(chats, []);
+    check("a finished interview counts even with no name, village or organic status on the row",
+      stageCount(f, "profile") === 1);
+  }
+
+  {
+    const f = app.adminFunnel([], []);
+    check("an empty database gives zeros, not NaN or a division by zero",
+      f.stages.every(s => s.count === 0 && s.pctOfStart === 0), JSON.stringify(f.stages.map(s => s.pctOfStart)));
+    check("with nothing above it, a stage reports no carried-on percentage rather than 0%",
+      f.stages.slice(1).every(s => s.fromPrev === null));
+  }
+
+  {
+    const chats = [chat_("c1", "done")];
+    const outreach = [out_("o1", "c1", "sent"), out_("o2", "ghost-chat", "sent"), out_("o3", null, "draft")];
+    const f = app.adminFunnel(chats, outreach);
+    check("a draft pointing at no conversation is counted and surfaced, never folded into a stage",
+      f.orphanDrafts === 2 && stageCount(f, "sent") === 1, f.orphanDrafts + "/" + stageCount(f, "sent"));
+    check("orphan drafts still count in the raw draft total, which is a count of drafts",
+      f.drafts === 3 && f.draftsSent === 2, f.drafts + "/" + f.draftsSent);
+  }
+
+  {
+    /* createOutreach never sets `status` — a fresh draft gets whatever the
+       column defaults to, and a row written before that default existed can
+       hold null. "sent" has to be tested for by name, never inferred as
+       "not a draft", or an unsent draft lands in the bottom stage and the
+       funnel reports outreach that no buyer has ever seen. */
+    const chats = [chat_("c1", "done"), chat_("c2", "done")];
+    const outreach = [out_("o1", "c1", null), { id: "o2", chat_id: "c2", farmer_id: "f1", buyer_id: "b1" }];
+    const f = app.adminFunnel(chats, outreach);
+    check("a draft whose status is null or missing is NOT counted as sent",
+      stageCount(f, "sent") === 0 && f.draftsSent === 0,
+      stageCount(f, "sent") + "/" + f.draftsSent);
+    check("...but it still counts as a draft that was written",
+      stageCount(f, "drafted") === 2 && f.drafts === 2);
+  }
+
+  {
+    // A chat with several sent drafts is one conversation, not several.
+    const f = app.adminFunnel([chat_("c1", "done")],
+      [out_("o1", "c1", "sent"), out_("o2", "c1", "sent"), out_("o3", "c1", "sent")]);
+    check("three sent drafts in one conversation is one conversation at the bottom of the funnel",
+      stageCount(f, "sent") === 1 && f.draftsSent === 3);
+    check("...and the funnel can never be wider at the bottom than at the top",
+      stageCount(f, "sent") <= stageCount(f, "started"));
+  }
+
+  {
+    const f = app.adminFunnel(null, null);
+    check("null arrays (a failed read handed straight through) don't throw",
+      f.stages.every(s => s.count === 0) && f.drafts === 0);
+  }
+
+  // adminStages() is a function now (its labels are translated and so have to
+  // be read at render time); ADMIN_STAGE_KEYS is the order it walks.
+  const stagesNow = app.adminStages();
+  check("the funnel draws exactly the stages it declares, in order",
+    eq(stagesNow.map(s => s.key), ["started", "profile", "drafted", "sent"]),
+    JSON.stringify(stagesNow.map(s => s.key)));
+  check("the key list and the stage builder cannot drift apart",
+    eq(app.ADMIN_STAGE_KEYS, stagesNow.map(s => s.key)));
+  // Not `instanceof Set`: the app runs in its own vm context with its own
+  // intrinsics, so its Set is a different constructor from this file's.
+  const isSet = x => Object.prototype.toString.call(x) === "[object Set]";
+  check("every declared stage has a set behind it — a stage with no set would render blank",
+    stagesNow.every(s => isSet(app.adminStageSets([], [])[s.key])));
+  check("every declared stage has a label and a hint",
+    stagesNow.every(s => s.label && s.hint));
+
+  console.log("== Test 7b: the funnel filters the table, and the reads stay read-only ==");
+  {
+    app.state.adminStage = "started";
+    app.setAdminStage("sent");
+    check("clicking a stage selects it", app.state.adminStage === "sent");
+    app.setAdminStage("sent");
+    check("clicking the selected stage again clears the filter rather than doing nothing",
+      app.state.adminStage === "started");
+    app.setAdminStage("profile");
+    app.setAdminStage("drafted");
+    check("clicking a different stage switches to it", app.state.adminStage === "drafted");
+    app.setAdminStage("started");
+  }
+  {
+    /* The Admin elements are registered only for this block. Everywhere else
+       in this file an unknown id answers null on purpose, which is what keeps
+       the rendering code out of the way while the data layer runs for real —
+       leaving them registered would quietly change every earlier test.
+       Nothing here asserts anything visual: that needs the real stylesheet and
+       a real cascade, which this fake DOM does not have. */
+    ["adminScreen", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
+      .forEach(id => els[id] = fakeEl(id));
+
+    const chats = [chat_("c1", "interview"), chat_("c2", "matching"), chat_("c3", "done")];
+    const outreach = [out_("o1", "c3", "sent")];
+    app.state.isAdmin = true;
+    app.state.adminStage = "started";
+    sb.reset();
+    sb.router = ch => ({ data: ch.table === "chats" ? chats : ch.table === "outreach" ? outreach : [{ id: "f1", farmer_name: "Marco" }], error: null });
+
+    await app.renderAdmin();
+    check("the admin overview issues exactly its three reads, and none of them writes",
+      sb.chains.length === 3 &&
+      eq(sb.chains.map(c => c.table).sort(), ["chats", "farmers", "outreach"]) &&
+      sb.chains.every(c => c.ops.every(o => !["insert", "update", "delete"].includes(o.op))),
+      JSON.stringify(sb.chains.map(c => c.table + ":" + c.ops.map(o => o.op).join(","))));
+
+    check("the funnel renders one clickable stage per declared stage",
+      (els.adminFunnel.innerHTML.match(/class="fn-stage/g) || []).length === app.ADMIN_STAGE_KEYS.length,
+      els.adminFunnel.innerHTML.slice(0, 120));
+    check("unfiltered, the table lists every conversation — including the ones that stopped early",
+      els.adminTableTitle.textContent === "Every conversation (3)", els.adminTableTitle.textContent);
+    check("...and the 'show all' escape hatch is hidden while nothing is filtered",
+      els.adminClearFilter.style.display === "none", els.adminClearFilter.style.display);
+
+    sb.reset();
+    app.setAdminStage("sent");
+    check("re-filtering re-uses what was already fetched instead of querying Supabase again",
+      sb.chains.length === 0, sb.chains.length);
+    check("filtering to a stage narrows the table to that stage's conversations",
+      els.adminTableTitle.textContent === "Outreach sent (1)", els.adminTableTitle.textContent);
+    check("...and offers the way back out", els.adminClearFilter.style.display === "inline-flex");
+    check("the selected stage is the one marked pressed, and only it",
+      (els.adminFunnel.innerHTML.match(/aria-pressed="true"/g) || []).length === 1 &&
+      /aria-pressed="true"[^>]*onclick="setAdminStage\('sent'\)"/.test(els.adminFunnel.innerHTML.replace(/\s+/g, " ")));
+
+    app.setAdminStage("profile");
+    check("a stage nobody has reached says so instead of leaving the last stage's rows on screen",
+      els.adminTableTitle.textContent === "Farm profile captured (2)", els.adminTableTitle.textContent);
+
+    // Chats exist, but none of them reached this stage — a different sentence
+    // from "no farmer activity yet", which would be untrue.
+    sb.reset();
+    sb.router = ch => ({ data: ch.table === "chats" ? [chat_("c1", "interview")] : [], error: null });
+    await app.renderAdmin();
+    app.setAdminStage("sent");
+    check("with activity but nothing at this stage, the empty line says that and not 'no activity'",
+      els.adminEmpty.textContent === "No conversation has reached this stage yet." &&
+      els.adminEmpty.style.display === "block", els.adminEmpty.textContent);
+
+    sb.reset();
+    sb.router = () => ({ data: [], error: null });
+    await app.renderAdmin();
+    check("with no activity at all it says that instead",
+      els.adminEmpty.textContent === "No farmer activity yet.", els.adminEmpty.textContent);
+
+    app.setAdminStage("started");
+    app.state.isAdmin = false;
+    sb.router = null;
+    ["adminScreen", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
+      .forEach(id => delete els[id]);
+  }
+
+
+  /* ============================================================
+     8. The IT / EN language layer
+     ============================================================ */
+  console.log("== Test 8: the dictionary itself ==");
+  {
+    const en = app.STRINGS.en, it = app.STRINGS.it;
+    const enKeys = Object.keys(en), itKeys = Object.keys(it);
+    check("both languages define exactly the same keys",
+      eq(enKeys.slice().sort(), itKeys.slice().sort()),
+      JSON.stringify({ onlyEn: enKeys.filter(k => !(k in it)), onlyIt: itKeys.filter(k => !(k in en)) }));
+    check("no string is empty in either language",
+      enKeys.every(k => String(en[k]).trim()) && itKeys.every(k => String(it[k]).trim()));
+    /* A translator dropping a {placeholder} is the quiet one: the sentence
+       still reads, and the number it was about simply isn't there. */
+    const holders = str => (String(str).match(/\{\w+\}/g) || []).slice().sort();
+    const lostVars = enKeys.filter(k => !eq(holders(en[k]), holders(it[k])));
+    check("every {placeholder} in an English string survives into the Italian one", !lostVars.length,
+      JSON.stringify(lostVars));
+    /* The two entries that go through innerHTML are the only ones allowed to
+       carry markup; anything else is written with textContent, where a tag or
+       an entity would be printed literally. */
+    const htmlOk = ["mode.keyHint", "mode.brains", "admin.dropped"];
+    const withMarkup = enKeys.filter(k => /<[a-z/]|&\w+;/i.test(en[k] + it[k]) && htmlOk.indexOf(k) === -1);
+    check("no textContent string smuggles in a tag or an HTML entity", !withMarkup.length,
+      JSON.stringify(withMarkup));
+    check("the two languages are actually different translations, not a copy",
+      enKeys.filter(k => en[k] !== it[k]).length > enKeys.length * 0.7);
+  }
+
+  console.log("== Test 8b: T() — lookup, fallback and interpolation ==");
+  {
+    check("a known key resolves", app.T("nav.clients") === "Clients");
+    check("an unknown key returns the key itself, so a typo is visible rather than blank",
+      app.T("nope.not.here") === "nope.not.here");
+    check("{placeholders} are filled in", app.T("dash.seeAllN", { n: 7 }) === "See all (7)");
+    check("a placeholder with no value is left alone rather than printed as 'undefined'",
+      app.T("dash.seeAllN", {}) === "See all ({n})");
+    check("a value of 0 is substituted, not treated as missing",
+      app.T("top.draftsReady", { n: 0 }).indexOf("0") !== -1);
+  }
+
+  console.log("== Test 8c: switching language ==");
+  {
+    check("the suite starts in English, from the navigator", app.currentLang() === "en");
+    check("an unknown language code is refused", app.setLangValue("de") === false && app.currentLang() === "en");
+    app.setLang("it");
+    check("switching works", app.currentLang() === "it");
+    check("the choice is remembered", storage.getItem("fasto_lang") === "it");
+    check("switching to the language already in use is a no-op, so nothing re-renders for free",
+      app.setLangValue("it") === false);
+
+    /* THE ONE THAT MATTERS. Each of these used to be a table of English words
+       built when the file was evaluated. Frozen at load, they would still be
+       returning English here, and nothing else in the app would look wrong. */
+    check("phase labels are read at render time, not frozen at load",
+      app.phaseLabel("done") === app.STRINGS.it["phase.done"], app.phaseLabel("done"));
+    check("category labels are read at render time", app.catLabel("pomodori") === "pomodori");
+    check("month names are read at render time", app.monthNames()[0] === "gennaio");
+    check("funnel stage labels are read at render time",
+      app.adminStages()[0].label === app.STRINGS.it["admin.stage.started"]);
+    check("profile field labels are read at render time",
+      app.profileFieldLabel("village") === app.STRINGS.it["profile.fld.village"]);
+    check("the offline demo script is read at render time",
+      app.offlineScript()[0] === app.STRINGS.it["offline.q1"]);
+    check("the list conjunction follows the language too",
+      app.humanList(["a", "b"]) === "a e b", app.humanList(["a", "b"]));
+    check("dates follow the language", app.relDate(Date.now()) === "Oggi");
+
+    /* offlineStep is an index into this script AND is persisted as a message
+       count, so the two languages have to be the same length or a farmer who
+       switches mid-demo lands on a different question. */
+    check("both offline scripts have the same number of lines",
+      app.offlineScript().length === app.OFFLINE_SCRIPT_KEYS.length &&
+      app.OFFLINE_SCRIPT_KEYS.every(k => app.STRINGS.en[k] && app.STRINGS.it[k]));
+
+    check("the greeting follows the language",
+      (app.state.offline = true, app.greetingText() === app.STRINGS.it["assist.greetOffline"]));
+    check("a chat with no profile is titled in the current language",
+      app.chatTitle({ messages: [] }) === app.STRINGS.it["assist.newChatTitle"]);
+  }
+
+  console.log("== Test 8d: a language is a display choice — it must never change stored data ==");
+  {
+    /* In Italian the category dropdown says "pomodori" and in English it says
+       "tomatoes", but the value written to the products table is the key both
+       the engine and the database agree on. Getting this backwards would
+       store "tomatoes", which scores against nothing. */
+    const optionsIt = app.lgField("x", "Category", "verdure", { options: [["verdure", app.catLabel("verdure")], ["pomodori", app.catLabel("pomodori")]] });
+    check("the category select's VALUES are the stored keys, in Italian",
+      /value="verdure"/.test(optionsIt) && /value="pomodori"/.test(optionsIt) && />pomodori</.test(optionsIt));
+    app.setLang("en");
+    const optionsEn = app.lgField("x", "Category", "verdure", { options: [["verdure", app.catLabel("verdure")], ["pomodori", app.catLabel("pomodori")]] });
+    check("...and exactly the same values in English, with only the label changed",
+      /value="verdure"/.test(optionsEn) && /value="pomodori"/.test(optionsEn) && />tomatoes</.test(optionsEn));
+
+    /* An edit saved in one language and an identical edit saved in the other
+       have to produce byte-identical writes. */
+    const raw = { farmer_name: "Marco", village: "Terelle", organic: "no", available_months: [10, 11],
+      products: [{ name: "castagne", category: "castagne", kg_per_week: 150 }] };
+    const shot = () => {
+      const chat = { id: "local-lang", title: "t", phase: "done", profile: null, messages: [], candidates: [], recs: null };
+      app.applyProfileEdit(chat, JSON.parse(JSON.stringify(raw)));
+      return JSON.stringify(chat.profile);
+    };
+    const savedEn = shot();
+    app.setLang("it");
+    const savedIt = shot();
+    check("the same edit stores exactly the same profile in either language", savedEn === savedIt,
+      savedEn + " vs " + savedIt);
+    check("...and the stored category is still the Italian key, not a label",
+      JSON.parse(savedIt).products[0].category === "castagne");
+  }
+
+  console.log("== Test 8e: the logistics email keeps its English field names ==");
+  {
+    /* The partner receives requests from every farmer on the platform. Field
+       names that changed language per farmer would make one inbox unreadable,
+       so only the VALUES follow the farmer — plus a line naming their language
+       so the partner knows how to reply. */
+    const form = {};
+    ["lgProduct", "lgQty", "lgFCompany", "lgFContact", "lgFPhone", "lgFAddress",
+     "lgBCompany", "lgBContact", "lgBPhone", "lgBAddress", "lgMonths", "lgFirstPickup", "lgFVat", "lgBVat", "lgNotes"]
+      .forEach(id => { els[id] = fakeEl(id); els[id].value = "x"; form[id] = els[id]; });
+    els.lgConfirmF = fakeEl("lgConfirmF"); els.lgConfirmF.checked = true;
+    els.lgConfirmB = fakeEl("lgConfirmB"); els.lgConfirmB.checked = true;
+
+    app.setLang("it");
+    const builtIt = app.buildLogisticsPayload();
+    app.setLang("en");
+    const builtEn = app.buildLogisticsPayload();
+    check("the payload is valid in both languages", builtIt.ok && builtEn.ok, JSON.stringify(builtIt.message || ""));
+    check("the field names are identical whatever the app is set to",
+      eq(Object.keys(builtIt.payload), Object.keys(builtEn.payload)));
+    check("...and they are the English ones",
+      "Pickup address" in builtEn.payload && "Delivery phone" in builtEn.payload);
+    check("the farmer's language is recorded so the partner knows how to answer",
+      builtIt.payload["Farmer's app language"] === "Italiano" &&
+      builtEn.payload["Farmer's app language"] === "English");
+
+    /* Validation messages, on the other hand, are read by the farmer. */
+    els.lgProduct.value = "";
+    app.setLang("it");
+    const missingIt = app.buildLogisticsPayload();
+    check("a validation message does follow the farmer's language",
+      !missingIt.ok && missingIt.message.indexOf(app.STRINGS.it["logi.needProduct"]) !== -1, missingIt.message);
+
+    ["lgProduct", "lgQty", "lgFCompany", "lgFContact", "lgFPhone", "lgFAddress", "lgBCompany",
+     "lgBContact", "lgBPhone", "lgBAddress", "lgMonths", "lgFirstPickup", "lgFVat", "lgBVat", "lgNotes",
+     "lgConfirmF", "lgConfirmB"].forEach(id => delete els[id]);
+  }
+
+  console.log("== Test 8f: the engine's own sentences, translated at the boundary ==");
+  {
+    const C = require(path + "/js/core.js");
+    app.setLang("en");
+    check("in English, engineText is a pass-through",
+      app.engineText("In season now") === "In season now");
+    app.setLang("it");
+    check("a known reason is translated", app.engineText("In season now") === "Di stagione adesso");
+    check("a reason with a captured value keeps the value",
+      app.engineText("Very close (2 km)") === "Molto vicino (2 km)", app.engineText("Very close (2 km)"));
+    check("the volume bands inside a reason are translated too",
+      app.engineText("Volume fits (medium ↔ medium)") === "Volume adatto (medio ↔ medio)",
+      app.engineText("Volume fits (medium ↔ medium)"));
+    check("something the engine never says comes back untouched, not blank",
+      app.engineText("Brain 2 said something new") === "Brain 2 said something new");
+    check("null and undefined don't throw", app.engineText(null) === "" && app.engineText(undefined) === "");
+
+    /* Every pattern has to actually do something. One left pointing at a
+       sentence core.js no longer produces would pass the qa_check sync test
+       and still never fire. */
+    const inert = app.ENGINE_PATTERNS.filter(p => {
+      const sample = p.re.source.replace(/^\^/, "").replace(/\$$/, "")
+        .replace(/\\\//g, "/").replace(/\(\.\+\)|\(\.\*\)/g, "medium").replace(/\(\\w\+\)/g, "medium")
+        .replace(/\\([().'\/])/g, "$1");
+      return app.engineText(sample) === sample;
+    });
+    check("every ENGINE_PATTERNS entry actually rewrites its own sentence", !inert.length,
+      JSON.stringify(inert.map(p => p.re.source)));
+
+    /* And the real thing: run the engine and check nothing comes back English. */
+    const prof = C.guardianValidateProfile({ village: "Terelle", organic: "no", available_months: [10, 11],
+      products: [{ name: "castagne", category: "castagne", kg_per_week: 150 }] }).profile;
+    const ranked = C.rankMatches(prof, app.DB, 10);
+    const untranslated = [];
+    ranked.slice(0, 10).forEach(r => (r.reasons || []).forEach(x => { if (app.engineText(x) === x) untranslated.push(x); }));
+    check("a real ranking produces no reason chip the boundary can't translate", !untranslated.length,
+      JSON.stringify([...new Set(untranslated)]));
+
+    const warned = C.guardianValidateProfile({ products: [{ name: "x", category: "exotic", kg_per_week: 99999 }], organic: "maybe" });
+    const wUntranslated = warned.warnings.filter(w => app.engineText(w) === w);
+    check("nor does a Guardian correction the farmer is shown", !wUntranslated.length, JSON.stringify(wUntranslated));
+  }
+
+  console.log("== Test 8g: switching mid-boot must not wipe the skeleton ==");
+  {
+    /* loadFarmerData() replaces state.chats wholesale, so a re-render during
+       the boot sequence would swap the placeholder rows for an empty table
+       moments before the real one arrives. The toggle is pointer-events:none
+       while #app.booting; this is the same rule enforced in code. */
+    /* Every element setLang() would reach has to be registered, or the render
+       helpers bail on their own null guards and this passes whether the boot
+       guard is there or not — which is exactly what it did the first time. */
+    const ids = ["app", "dashboardScreen", "researchBody", "researchEmpty", "researchSeeAll", "whoName"];
+    ids.forEach(id => els[id] = fakeEl(id));
+    els.app.classList.add("ready", "booting");
+    els.researchBody.innerHTML = "SKELETON";
+    app.setLang("en");
+    check("a switch during boot leaves the skeleton where it is",
+      els.researchBody.innerHTML === "SKELETON", els.researchBody.innerHTML);
+    els.app.classList.remove("booting");
+    app.setLang("it");
+    check("...and once the data has landed a switch does redraw the table",
+      els.researchBody.innerHTML !== "SKELETON");
+    ids.forEach(id => delete els[id]);
+    app.setLang("en");
+  }
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
