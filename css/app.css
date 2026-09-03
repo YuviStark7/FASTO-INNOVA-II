@@ -60,11 +60,21 @@
 .side-brand .wordmark{ font-size:16px; letter-spacing:.01em; }
 .side-brand .wordmark b{ font-weight:700; } .side-brand .wordmark span{ font-weight:400; opacity:.85; }
 
-.nav-item{ display:flex; align-items:center; gap:12px; height:46px; padding:0 12px; border-radius:var(--radius-sm); color:#fff; opacity:.55; transition:opacity .15s ease, background .15s ease; }
+/* <button>, not <div> — see index.html. The reset below (no border, no browser
+   background, inherited font, left-aligned, full width) is what keeps a button
+   looking exactly like the row it replaced.
+   opacity was .55, which put the inactive labels at 3.47:1 on the brick red:
+   under AA, and these are 12.5px uppercase, which is not "large text" at any
+   weight. .72 measures 4.91:1. Active is still unmistakable — it is full
+   strength AND carries the --pill-active background, so nothing depends on the
+   gap between the two opacities alone. */
+.nav-item{ display:flex; align-items:center; gap:12px; height:46px; padding:0 12px; border-radius:var(--radius-sm); color:#fff; opacity:.72; transition:opacity .15s ease, background .15s ease;
+  width:100%; border:none; background:none; text-align:left; font-family:inherit; font-size:inherit; -webkit-appearance:none; appearance:none; }
 .nav-item .ic-svg{ opacity:.95; }
 .nav-item span.label{ font-size:12.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
-.nav-item:hover{ opacity:.85; }
+.nav-item:hover{ opacity:.9; }
 .nav-item.active{ opacity:1; background:var(--pill-active); }
+.nav-item:disabled{ cursor:default; }
 
 .side-bottom{ margin-top:auto; padding-top:10px; }
 .status-item{ display:flex; align-items:center; gap:12px; height:46px; padding:0 12px; border-radius:var(--radius-sm); background:var(--pill-active); color:#fff; }
@@ -111,7 +121,18 @@
    the dissolve — the same treatment as the chat-rail pulse and the skeletons. */
 @media (prefers-reduced-motion: reduce){ .backdrop-layer{ transition:none; } }
 
-#topbar{ margin:20px 20px 0; border-radius:var(--radius-lg); padding:13px 18px; display:flex; align-items:center; gap:16px; }
+/* The top bar sits where the backdrop scrim is at its weakest (it fades from
+   .05 at the top of the photo to .65 at the bottom) and where a farm photo is
+   most likely to be sky. Measured against the six real backdrops, the .45 glass
+   left the bar as light as rgb(129,129,127): the farmer's own name in solid
+   white came out at 3.91:1, below AA, and the search placeholder at 2.15:1.
+   A heavier tint on this one surface fixes all of it (white 10.1:1) and leaves
+   the photo itself untouched everywhere else — the alternative, darkening the
+   top of the scrim, would have dimmed the hero image for everyone. The blur
+   still comes from .glass-45 in the markup; only the tint is overridden. */
+#topbar{ margin:20px 20px 0; border-radius:var(--radius-lg); padding:13px 18px; display:flex; align-items:center; gap:16px;
+  background:rgba(0,0,0,.72); }
+@media (prefers-reduced-transparency: reduce){ #topbar{ background:#241a19; } }
 #topbar .who{ font-size:14px; font-weight:400; text-transform:uppercase; letter-spacing:.02em; }
 #topbar .who b{ font-weight:700; }
 #topbar .header-avatar{ width:38px; height:38px; }
@@ -133,7 +154,13 @@
 .rp-table th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-50); font-weight:700; padding:0 10px 10px; }
 .rp-table td{ padding:12px 10px; border-top:1px solid var(--hairline); vertical-align:middle; font-size:13px; }
 .rp-conv b{ display:block; font-size:13px; } .rp-conv small{ color:var(--ink-50); font-size:11px; }
-.rp-price{ font-weight:700; cursor:pointer; } .rp-price:hover{ text-decoration:underline; }
+.rp-price{ font-weight:700; }
+/* Both clickable cells now hold a real button instead of being a <td onclick>,
+   which nothing but a mouse could reach. Stripped back to bare text so the
+   table looks exactly as it did. */
+.rp-cell-btn{ display:block; width:100%; text-align:left; background:none; border:none; padding:0;
+  color:inherit; font:inherit; font-weight:inherit; }
+.rp-price .rp-cell-btn:hover{ text-decoration:underline; }
 .rp-prog{ min-width:130px; }
 .rp-prog .prog-label{ font-size:10.5px; color:var(--ink-50); margin-top:5px; }
 
@@ -171,7 +198,8 @@
 #clientsScreen{ min-height:0; }
 .clients-outer{ border-radius:var(--radius-lg); padding:16px; flex:1; display:flex; gap:14px; min-height:0; }
 .client-list-panel{ width:320px; flex-shrink:0; border-radius:var(--radius-lg); padding:8px; overflow-y:auto; }
-.client-item{ display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--radius-md); cursor:pointer; }
+.client-item{ display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--radius-md); cursor:pointer;
+  width:100%; border:none; background:none; text-align:left; font-family:inherit; font-size:inherit; color:inherit; -webkit-appearance:none; appearance:none; }
 .client-item:hover{ background:rgba(255,255,255,.06); }
 .client-item.active{ background:var(--pill-active); }
 .ci-top{ display:flex; align-items:center; gap:6px; }
@@ -209,7 +237,8 @@
 .new-chat-btn{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:var(--radius-md); background:var(--pill-active); border:none; color:#fff; font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.02em; margin-bottom:10px; flex-shrink:0; }
 .new-chat-btn:hover{ background:rgba(255,255,255,.2); }
 .chat-rail-list{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; -webkit-mask-image:linear-gradient(to bottom, black 85%, transparent 100%); mask-image:linear-gradient(to bottom, black 85%, transparent 100%); }
-.chat-rail-item{ display:flex; align-items:center; gap:9px; padding:9px 8px; border-radius:var(--radius-sm); font-size:12px; color:var(--ink-70); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chat-rail-item{ display:flex; align-items:center; gap:9px; padding:9px 8px; border-radius:var(--radius-sm); font-size:12px; color:var(--ink-70); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  width:100%; border:none; background:none; text-align:left; font-family:inherit; flex-shrink:0; -webkit-appearance:none; appearance:none; }
 .chat-rail-item .ic-svg{ opacity:.6; flex-shrink:0; }
 .chat-rail-item:hover{ background:rgba(255,255,255,.08); }
 .chat-rail-item.active{ background:var(--pill-active); color:#fff; }
@@ -231,7 +260,8 @@
 .typing-ind{ display:none; font-size:12px; color:var(--ink-50); padding:0 4px; }
 
 .chip-row{ display:flex; flex-wrap:wrap; gap:8px; padding:0 4px 10px; }
-.sugg-chip{ background:var(--white-15); border-radius:999px; padding:7px 13px; font-size:11.5px; color:var(--ink-70); cursor:pointer; }
+.sugg-chip{ background:var(--white-15); border-radius:999px; padding:7px 13px; font-size:11.5px; color:var(--ink-70); cursor:pointer;
+  border:none; font-family:inherit; text-align:left; -webkit-appearance:none; appearance:none; }
 .sugg-chip:hover{ background:rgba(255,255,255,.24); color:#fff; }
 
 .prompt-bar{ margin-top:auto; border-radius:var(--radius-lg); padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow-1); }
@@ -343,7 +373,11 @@
    one succeeds again. Amber rather than red: nothing is lost in this session,
    it just may not survive to the next one. */
 .sync-warn{ display:none; align-items:center; gap:7px; height:32px; padding:0 11px; border-radius:var(--radius-sm);
-  background:rgba(217,164,65,.16); border:1px solid rgba(217,164,65,.45); color:var(--warn);
+  /* --warn (#d9a441) as TEXT on its own .16 tint measured 3.46:1 against the
+     top bar; #f0c375 is the amber this app already uses for text on a tint
+     (.pill-amber) and gives 4.73:1. The dot keeps --warn: it is a solid
+     shape, not text, and 3:1 is the bar a non-text indicator has to clear. */
+  background:rgba(217,164,65,.16); border:1px solid rgba(217,164,65,.45); color:#f0c375;
   font-family:var(--font); font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
   cursor:pointer; white-space:nowrap; flex-shrink:0; }
 .sync-warn.show{ display:flex; }
@@ -433,6 +467,79 @@
    but you should know" (see the "Not saved" chip). */
 .err-banner.pf-notice{ background:rgba(217,164,65,.16); border-color:rgba(217,164,65,.45); color:#f0c375; }
 
+/* ================= EXPORT FOR REPORTING =================
+   Fourth sheet, same overlay and panel chrome as the three above, on top of
+   them in the stack. It contains no form, so nothing can be lost by closing
+   it, but it follows the same rules anyway: X, backdrop or Escape only. */
+#exportSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#exportSheet.open{ display:flex; }
+#exportSheet .match-panel{ max-width:620px; }
+
+.ex-row{ display:flex; align-items:center; gap:14px; padding:12px 0; }
+.ex-row + .ex-row{ border-top:1px solid var(--hairline); }
+.ex-row-text{ min-width:0; flex:1; }
+.ex-row-title{ font-size:13px; font-weight:700; color:#fff; margin-bottom:3px; }
+.ex-row-sub{ font-size:11px; color:var(--ink-70); line-height:1.5; }
+.ex-row .btn{ flex-shrink:0; }
+.ex-row .btn[disabled]{ opacity:.4; }
+.ex-notes{ margin-top:6px; padding-top:12px; border-top:1px solid var(--hairline);
+  font-size:10.5px; color:var(--ink-70); line-height:1.6; }
+.ex-notes p{ margin:0 0 6px; }
+.ex-notes p:last-child{ margin-bottom:0; }
+
+/* ================= THE PRINTED REPORT =================
+   No PDF library, no popup window: the browser writes the PDF. #printReport is
+   filled in only when the button is pressed and never shown on screen; in print
+   every other child of body is hidden and this one is laid out for white paper.
+   Written as "body > *" rather than a list of ids on purpose — a fifth sheet
+   added later would otherwise print itself across the report. */
+#printReport{ display:none; }
+@media print{
+  body > *{ display:none !important; }
+  body > #printReport{ display:block !important; }
+  @page{ margin:14mm; }
+  html, body{ background:#fff !important; color:#000 !important; height:auto; overflow:visible; }
+  #printReport{ font-family:Roboto, Arial, sans-serif; font-size:9pt; color:#000; }
+  #printReport h1{ font-size:15pt; margin:0 0 4px; }
+  #printReport h2{ font-size:11.5pt; margin:16px 0 4px; page-break-after:avoid; }
+  #printReport .pr-meta{ margin:0 0 2px; font-size:8.5pt; color:#444; }
+  #printReport .pr-note{ margin:0 0 6px; font-size:8pt; color:#444; }
+  #printReport .pr-head{ border-bottom:1.5pt solid #962524; padding-bottom:8px; margin-bottom:4px; }
+  #printReport .pr-table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  #printReport .pr-table th, #printReport .pr-table td{ border:0.5pt solid #bbb; padding:3px 4px;
+    text-align:left; vertical-align:top; word-wrap:break-word; overflow-wrap:break-word; }
+  #printReport .pr-table th{ background:#f0eceb; font-size:7.5pt; }
+  #printReport .pr-table td{ font-size:8pt; }
+  #printReport .pr-table tr{ page-break-inside:avoid; }
+  #printReport .pr-empty{ font-size:8.5pt; color:#444; }
+  #printReport .pr-foot{ margin-top:14px; padding-top:8px; border-top:0.5pt solid #bbb;
+    font-size:7.5pt; color:#444; }
+  #printReport .pr-foot p{ margin:0 0 3px; }
+}
+
+/* ================= KEYBOARD FOCUS ON THE FIELDS =================
+   base.css draws the app-wide focus ring. Every text field in this file sets
+   outline:none and shows focus only as a 1px border going from transparent to
+   rgba(255,255,255,.35) — which is nearly nothing on dark glass, and the search
+   box and the message bar don't even have that: they set outline:none and stop.
+
+   These are written out one selector at a time, at (0,2,1), rather than left to
+   win on source order: outline:none and the ring would otherwise be a tie
+   settled by which line comes last in the file, and the next edit that moves a
+   rule turns the focus ring off with nothing reporting it. The border colour is
+   kept as well, so a pointer user still gets the softer highlight. */
+.field input:focus-visible, .field select:focus-visible,
+.lg-field input:focus-visible, .lg-field textarea:focus-visible, .lg-field select:focus-visible,
+.lg-check input:focus-visible, .input-glass:focus-visible{
+  outline:2px solid #fff; outline-offset:2px;
+}
+/* The search box and the message box are bare inputs stretched inside a
+   bordered wrapper, so the ring goes on the wrapper: an outline hugging the
+   text alone reads as a text cursor, not as "this control has focus". Their own
+   outline:none above is left to stand, which is why they are not in the list. */
+.search-wrap:focus-within, .prompt-bar:focus-within{ outline:2px solid #fff; outline-offset:2px; }
+
 /* ================= mobile ================= */
 @media (max-width: 900px){
   /* iOS Safari zooms the entire page in when a focused field is smaller than
@@ -441,10 +548,15 @@
   .field input,.field select{ font-size:16px; }
   .mode-toggle button{ min-height:44px; }
 
-  #matchSheet, #logisticsSheet, #profileSheet{ padding:10px; }
+  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet{ padding:10px; }
   .match-panel{ max-width:100%; }
   #logisticsSheet .match-panel{ max-width:100%; }
   #profileSheet .match-panel{ max-width:100%; }
+  #exportSheet .match-panel{ max-width:100%; }
+  /* the label and its button are ~250px together at 360px — the button drops
+     under the text and goes full width rather than squeezing to two words */
+  .ex-row{ flex-direction:column; align-items:stretch; gap:9px; }
+  .ex-row .btn{ width:100%; justify-content:center; min-height:38px; }
   /* two columns of inputs at 360px is roughly 150px per field — one column,
      and the footer button goes full width above its explanation */
   .lg-grid{ grid-template-columns:1fr; }

@@ -21,6 +21,10 @@
 </head>
 <body>
 
+<!-- First thing in the tab order, invisible until it has focus. Without it a
+     keyboard user tabs through the whole sidebar on every screen change. -->
+<a class="skip-link" href="#main" data-i18n="a11y.skip">Skip to main content</a>
+
 <!-- ============ ONBOARDING ============ -->
 <div id="onboard">
 
@@ -34,9 +38,12 @@
     </div>
     <div class="tag" data-i18n="auth.tag">Sign in to keep your farm profile, chats and matches saved between visits.</div>
 
-    <div class="mode-toggle">
-      <button id="authTabIn" class="active" type="button" data-i18n="auth.tabIn">Sign in</button>
-      <button id="authTabUp" type="button" data-i18n="auth.tabUp">Sign up</button>
+    <!-- aria-pressed, not role="tab": these are two states of one control, the
+         same shape the language toggle already uses, and a real tablist would
+         also promise arrow-key navigation between panels that don't exist. -->
+    <div class="mode-toggle" role="group" data-i18n-aria="a11y.authTabs" aria-label="Sign in or create an account">
+      <button id="authTabIn" class="active" type="button" aria-pressed="true" data-i18n="auth.tabIn">Sign in</button>
+      <button id="authTabUp" type="button" aria-pressed="false" data-i18n="auth.tabUp">Sign up</button>
     </div>
 
     <div class="field">
@@ -47,7 +54,7 @@
       <label for="authPassword" data-i18n="auth.password">Password</label>
       <input type="password" id="authPassword" placeholder="At least 6 characters" data-i18n-ph="auth.passwordPh" autocomplete="current-password">
     </div>
-    <div class="err-banner" id="authErr"></div>
+    <div class="err-banner" id="authErr" role="alert"></div>
 
     <button class="btn btn-primary" id="authSubmitBtn" style="width:100%;justify-content:center;margin-top:6px">Sign in</button>
     <div class="onboard-hint" id="authHint" style="margin-top:14px" data-i18n="auth.hintIn">New here? Switch to Sign up above — it only takes an email and a password.</div>
@@ -63,9 +70,9 @@
     </div>
     <div class="tag" data-i18n="mode.tag">The AI that helps small farmers around Cassino sell directly to nearby buyers. Prototype — MVP demo.</div>
 
-    <div class="mode-toggle">
-      <button id="modeOffline" class="active" type="button" data-i18n="mode.offline">Offline demo (works instantly)</button>
-      <button id="modeLive" type="button" data-i18n="mode.live">Live AI (needs API key)</button>
+    <div class="mode-toggle" role="group" data-i18n-aria="a11y.modeTabs" aria-label="How the AI should run">
+      <button id="modeOffline" class="active" type="button" aria-pressed="true" data-i18n="mode.offline">Offline demo (works instantly)</button>
+      <button id="modeLive" type="button" aria-pressed="false" data-i18n="mode.live">Live AI (needs API key)</button>
     </div>
 
     <div id="liveKeyBlock" style="display:none">
@@ -94,20 +101,30 @@
 
 <!-- ============ APP SHELL ============ -->
 <div id="app">
-  <aside id="sidebar">
+  <!-- <nav>, not <aside>: this is the app's primary navigation, and a screen
+       reader's landmark list is the fastest way to reach it. The four items are
+       real buttons for the same reason — as plain divs with an onclick they
+       were reachable by mouse only, which made every screen but the Dashboard
+       unreachable without one.
+       (Written without angle brackets on purpose: qa_check.js counts div tags
+       to check the markup is balanced, and a tag name in a comment is counted
+       too.) -->
+  <nav id="sidebar" data-i18n-aria="a11y.mainNav" aria-label="Main navigation">
     <div class="side-brand"><img src="assets/logo-mark.svg" alt=""><span class="wordmark"><b>FASTO</b><span> INNOVA</span></span></div>
 
-    <div class="nav-item" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></div>
-    <div class="nav-item" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></div>
-    <div class="nav-item" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></div>
-    <div class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></div>
+    <button type="button" class="nav-item" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
+    <button type="button" class="nav-item" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
+    <button type="button" class="nav-item" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
+    <button type="button" class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></button>
 
     <div class="side-bottom">
       <div class="status-item"><img class="ic-svg" src="assets/icon-offline.svg" alt=""><span class="label" id="modePill">Offline demo</span></div>
     </div>
-  </aside>
+  </nav>
 
-  <div id="main">
+  <!-- <main> + tabindex="-1" so the skip link above has somewhere to land.
+       The id is unchanged, so every #main rule in css/app.css still applies. -->
+  <main id="main" tabindex="-1">
     <!-- The rotating farm photo. Two layers, so a new one can fade in over the
          one already showing instead of cutting to it. Empty on purpose —
          showBackdrop() in js/app.js fills them; before that runs, #main's own
@@ -118,7 +135,9 @@
     <header id="topbar" class="glass-45">
       <div class="who"><span data-i18n="top.welcome">WELCOME,</span> <b id="whoName">GUEST FARMER</b></div>
       <div class="spacer hide-mobile"></div>
-      <div class="search-wrap hide-mobile"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="text" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh"></div>
+      <!-- A placeholder is not a label: it disappears as soon as anything is
+           typed, and several screen readers never announce it at all. -->
+      <div class="search-wrap hide-mobile"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="search" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh" data-i18n-aria="top.searchPh" aria-label="Search chats, research…"></div>
       <!-- The only control that has to be reachable on every screen AND on a
            phone, where .side-bottom is hidden and the sidebar becomes a row of
            icons. It is deliberately NOT reachable while a sheet is open: the
@@ -128,9 +147,15 @@
         <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
         <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
       </div>
-      <button class="sync-warn" id="syncWarn" onclick="explainSyncWarn()" title="Some changes couldn't be saved to your account" data-i18n-title="top.notSavedTitle" aria-live="polite"><span class="sync-warn-dot"></span><span class="hide-mobile" data-i18n="top.notSaved">Not saved</span></button>
-      <button class="icon-btn" id="bellBtn" title="Drafts ready" data-i18n-title="top.bellTitle"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""></button>
-      <button class="icon-btn" id="profileBtn" title="Restart / change mode" data-i18n-title="top.profileTitle" style="padding:0;overflow:hidden">
+      <!-- Every icon-only control below carries an aria-label as well as its
+           title. A title is a hover tooltip first and an accessible name only
+           by fallback: it needs a pointer to appear at all, and VoiceOver
+           ignores it unless the user has turned tooltip reading on. The dot
+           beside "Not saved" is decorative, and the word itself is hidden on a
+           phone, so that button would otherwise announce as nothing there. -->
+      <button class="sync-warn" id="syncWarn" onclick="explainSyncWarn()" title="Some changes couldn't be saved to your account" data-i18n-title="top.notSavedTitle" data-i18n-aria="top.notSavedTitle" aria-label="Some changes couldn't be saved to your account"><span class="sync-warn-dot" aria-hidden="true"></span><span class="hide-mobile" data-i18n="top.notSaved">Not saved</span></button>
+      <button class="icon-btn" id="bellBtn" title="Drafts ready" data-i18n-title="top.bellTitle" data-i18n-aria="top.bellTitle" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""></button>
+      <button class="icon-btn" id="profileBtn" title="Restart / change mode" data-i18n-title="top.profileTitle" data-i18n-aria="top.profileTitle" aria-label="Restart / change mode" style="padding:0;overflow:hidden">
         <img src="assets/avatar-profile.png" alt="" style="width:100%;height:100%;object-fit:cover">
       </button>
     </header>
@@ -141,10 +166,15 @@
         <div class="research-panel-head">
           <span class="title-md" data-i18n="dash.title">Research Progress</span>
           <button class="see-all" id="researchSeeAll" data-i18n="dash.seeAll">See all</button>
+          <!-- The only way into the export sheet. It sits here rather than in the
+               top bar because the top bar is already tight on a narrow window
+               (see ROADMAP item 10) and the Dashboard is the reporting screen.
+               It is in BOOT_LOCK_SEL: the booting CSS is pointer-events only. -->
+          <button class="see-all" id="exportBtn" onclick="openExportSheet()" data-i18n="export.btn">Export</button>
           <span class="boot-chip" id="bootChip" aria-live="polite"><span class="spinner"></span><span id="bootChipText" data-i18n="boot.account">Loading your account…</span></span>
         </div>
         <table class="rp-table">
-          <thead><tr><th data-i18n="dash.colConversation">Conversation</th><th data-i18n="dash.colProduct">Targeted product</th><th data-i18n="dash.colQuantity">Quantity pledged</th><th data-i18n="dash.colPrice">Price</th><th style="width:150px" data-i18n="dash.colProgress">Progress</th></tr></thead>
+          <thead><tr><th scope="col" data-i18n="dash.colConversation">Conversation</th><th scope="col" data-i18n="dash.colProduct">Targeted product</th><th scope="col" data-i18n="dash.colQuantity">Quantity pledged</th><th scope="col" data-i18n="dash.colPrice">Price</th><th scope="col" style="width:150px" data-i18n="dash.colProgress">Progress</th></tr></thead>
           <tbody id="researchBody"></tbody>
         </table>
         <div class="empty-state" id="researchEmpty" data-i18n="dash.empty">No research yet — start a conversation in the Fasto-AI tab.</div>
@@ -154,7 +184,7 @@
     <!-- ---------- CLIENTS ---------- -->
     <section class="screen" id="clientsScreen">
       <div class="clients-outer glass-45">
-        <div class="client-list-panel glass-30" id="clientList"></div>
+        <div class="client-list-panel glass-30" id="clientList" role="group" data-i18n-aria="a11y.clientList" aria-label="Buyers you have a draft for"></div>
         <div class="chat-box-panel glass-30" id="threadPane"></div>
       </div>
     </section>
@@ -163,24 +193,28 @@
     <section class="screen" id="assistantScreen">
       <div class="chat-history-rail glass-20">
         <button class="new-chat-btn" id="newChatBtn"><img class="ic-svg sm" src="assets/icon-new-chat.svg" alt=""><span data-i18n="assist.newChat">Start New Chat</span></button>
-        <div class="chat-rail-list" id="chatRailList"></div>
+        <div class="chat-rail-list" id="chatRailList" role="group" data-i18n-aria="a11y.chatList" aria-label="Your conversations"></div>
       </div>
 
-      <div class="err-banner" id="errBanner"></div>
-      <div class="assist-transcript" id="assistTranscript"></div>
-      <div class="typing-ind" id="typingInd" data-i18n="assist.thinking">Fasto is thinking…</div>
+      <!-- role="alert" so a Guardian block or an API failure is spoken when it
+           appears; without it the banner is a silent visual change. -->
+      <div class="err-banner" id="errBanner" role="alert"></div>
+      <div class="assist-transcript" id="assistTranscript" role="log" data-i18n-aria="a11y.transcript" aria-label="Conversation with Fasto"></div>
+      <div class="typing-ind" id="typingInd" role="status" data-i18n="assist.thinking">Fasto is thinking…</div>
       <!-- The chips stay in their own language whatever the UI is set to: they
            are there to show Brain 1 mirroring whoever writes to it, so an
            English one and an Italian one is the point. -->
-      <div class="chip-row" id="chipRow">
-        <span class="sugg-chip" data-fill="Hi! I'm a farmer near Sant'Elia Fiumerapido. I have about 80 kg of tomatoes and 40 kg of zucchine per week in summer. Not certified organic. What can I do in Cassino?" data-i18n="assist.chip1">Demo farmer (EN)</span>
-        <span class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio." data-i18n="assist.chip2">Demo farmer (IT)</span>
-        <span class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?" data-i18n="assist.chip3">Autumn chestnuts</span>
+      <!-- Buttons, not spans: these fill the message box, which is an action,
+           and a span with an onclick is invisible to the keyboard entirely. -->
+      <div class="chip-row" id="chipRow" role="group" data-i18n-aria="a11y.examples" aria-label="Example messages">
+        <button type="button" class="sugg-chip" data-fill="Hi! I'm a farmer near Sant'Elia Fiumerapido. I have about 80 kg of tomatoes and 40 kg of zucchine per week in summer. Not certified organic. What can I do in Cassino?" data-i18n="assist.chip1">Demo farmer (EN)</button>
+        <button type="button" class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio." data-i18n="assist.chip2">Demo farmer (IT)</button>
+        <button type="button" class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?" data-i18n="assist.chip3">Autumn chestnuts</button>
       </div>
       <div class="prompt-bar glass-15">
-        <button class="round-icon-btn" id="attachBtn" title="Attach (not needed for this demo)" data-i18n-title="clients.attachTitle"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
-        <input type="text" id="userInput" placeholder="Type your message here" data-i18n-ph="clients.typeHere" autocomplete="off">
-        <button class="round-icon-btn" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
+        <button class="round-icon-btn" id="attachBtn" title="Attach (not needed for this demo)" data-i18n-title="clients.attachTitle" data-i18n-aria="clients.attachTitle" aria-label="Attach (not needed for this demo)"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
+        <input type="text" id="userInput" placeholder="Type your message here" data-i18n-ph="clients.typeHere" data-i18n-aria="a11y.messageBox" aria-label="Your message to Fasto" autocomplete="off">
+        <button class="round-icon-btn" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle" data-i18n-aria="clients.sendTitle" aria-label="Send"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
       </div>
     </section>
 
@@ -191,7 +225,7 @@
         <!-- Every bar counts CONVERSATIONS, never drafts; see the note above
              adminStageSets() in js/app.js for why the units have to match.
              Each bar filters the table below it. -->
-        <div class="fn-list" id="adminFunnel"></div>
+        <div class="fn-list" id="adminFunnel" role="group" data-i18n-aria="a11y.funnel" aria-label="Where conversations stop"></div>
         <div class="row gap-8 fn-aside" id="adminAside"></div>
       </div>
       <div class="research-panel glass-45 admin-panel-main">
@@ -200,13 +234,13 @@
           <button class="see-all" id="adminClearFilter" onclick="setAdminStage('started')" style="display:none" data-i18n="admin.showAll">Show all</button>
         </div>
         <table class="rp-table">
-          <thead><tr><th data-i18n="admin.colFarmer">Farmer</th><th data-i18n="admin.colConversation">Conversation</th><th data-i18n="admin.colLocation">Location</th><th data-i18n="admin.colProgress">Progress</th><th data-i18n="admin.colOutreach">Outreach</th></tr></thead>
+          <thead><tr><th scope="col" data-i18n="admin.colFarmer">Farmer</th><th scope="col" data-i18n="admin.colConversation">Conversation</th><th scope="col" data-i18n="admin.colLocation">Location</th><th scope="col" data-i18n="admin.colProgress">Progress</th><th scope="col" data-i18n="admin.colOutreach">Outreach</th></tr></thead>
           <tbody id="adminBody"></tbody>
         </table>
         <div class="empty-state" id="adminEmpty" data-i18n="admin.empty">No farmer activity yet.</div>
       </div>
     </section>
-  </div>
+  </main>
 </div>
 
 <!-- ---------- MATCH VIEW ("why these buyers") ---------- -->
@@ -214,7 +248,11 @@
      overflow:hidden. Opened from a finished chat or a completed row on
      the Dashboard; shows Brain 2's ranking + the engine's own reasons. -->
 <div id="matchSheet">
-  <div class="match-panel glass-45">
+  <!-- role/aria-modal go on the panel, not on the full-screen backdrop around
+       it: the backdrop is a click target, the panel is the dialog. Focus is
+       moved in on open, held inside while it is up and put back on whatever
+       opened it on close — see openSheet()/closeSheet() in js/app.js. -->
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="matchTitle">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
         <span class="title-md" id="matchTitle" data-i18n="match.title">Why these buyers</span>
@@ -234,10 +272,10 @@
      every field is prefilled from that chat, that buyer and the farmer's
      saved business details. -->
 <div id="logisticsSheet">
-  <div class="match-panel glass-45">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="logisticsTitle">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
-        <span class="title-md" data-i18n="logi.title">Set up logistics</span>
+        <span class="title-md" id="logisticsTitle" data-i18n="logi.title">Set up logistics</span>
         <div class="foot" id="logisticsSubtitle"></div>
       </div>
       <button class="icon-btn" id="logisticsCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
@@ -256,10 +294,10 @@
      app.js because every field is filled from what Brain 1 captured in that
      conversation, and the product rows can be added to and removed. -->
 <div id="profileSheet">
-  <div class="match-panel glass-45">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
     <div class="match-panel-head">
       <div style="min-width:0;flex:1">
-        <span class="title-md" data-i18n="profile.title">Your farm details</span>
+        <span class="title-md" id="profileTitle" data-i18n="profile.title">Your farm details</span>
         <div class="foot" id="profileSubtitle"></div>
       </div>
       <button class="icon-btn" id="profileCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
@@ -272,7 +310,32 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<!-- ---------- EXPORT FOR REPORTING ----------
+     Fourth body-level sheet, same chrome and same reasons as the three above.
+     The body is built in app.js because the row counts it shows, and which
+     buttons are enabled, depend on what there actually is to export. -->
+<div id="exportSheet">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+    <div class="match-panel-head">
+      <div style="min-width:0;flex:1">
+        <span class="title-md" id="exportTitle" data-i18n="export.title">Export for reporting</span>
+        <div class="foot" id="exportSubtitle"></div>
+      </div>
+      <button class="icon-btn" id="exportCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="match-panel-body" id="exportBody"></div>
+    <div class="match-panel-foot" data-i18n="export.printHint">Opens your browser's print dialog — choose “Save as PDF” as the destination.</div>
+  </div>
+</div>
+
+<!-- The printable report. Empty until the Print / PDF button fills it, hidden
+     on screen, and the only child of <body> that @media print leaves visible. -->
+<div id="printReport" aria-hidden="true"></div>
+
+<!-- Every toast in this app carries something the farmer needs: a save that
+     failed, a correction the Guardian made, a draft gone stale. Without a live
+     region they are all purely visual and a screen reader announces none. -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/supabase-client.js"></script>

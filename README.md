@@ -13,6 +13,7 @@ Visual design is a direct implementation of the Figma file *DOLCE MERAVGLIA* (Da
 ## Screens
 
 - **Dashboard** — Research Progress table: your last conversations, targeted product, quantity pledged, an assumed price per kg (click it to adjust), and how far each one has progressed.
+- **Export** (the button beside "See all" on the Dashboard) — the Research Progress table and the outreach log, as CSV for a spreadsheet or as a printed report your browser can save as a PDF. A research row is **one product**, not one conversation, so the quantities add up to what was actually pledged; the sheet and the report both say so. The CSV separator follows the language the app is set to (`;` in Italian, `,` in English), because Excel splits on its own locale's separator. Prices are the same desk-research assumptions used on the Dashboard, and every column derived from them says so.
 - **Clients** — every buyer Brain 2 has matched you with, and the real outreach message Brain 2 drafted for them (Italian + English). Nothing here is simulated — a message only appears once a real match has been found. "Mark as sent" and "Copy" are manual, on purpose: this prototype never sends anything on its own.
 - **Fasto-AI** — the interview itself, with a history rail on the right so you can start fresh chats or revisit old ones.
 - **Admin** (R&S account only) — a funnel showing where conversations stop (started → farm profile captured → buyers matched and a draft written → outreach sent), over a table of every conversation across the whole app. Click a funnel stage to filter the table to it. Every bar counts *conversations*, never drafts: one finished conversation produces a draft per matched buyer, so mixing the two would show more at the bottom of the funnel than at the top. The draft totals are given separately, beside it.
@@ -72,8 +73,8 @@ js/supabase-client.js      accounts + database access (DataStore) — the only f
 assets/                     images/icons exported from the Figma file
 manifest.json                PWA metadata (name, theme color)
 test_engine.js                dev only — the matching engine (19 tests)
-test_data_layer.js             dev only — app ↔ database, and the language layer (203 tests)
-qa_check.js                     dev only — static checks: assets, dead handlers, syntax, translations
+test_data_layer.js             dev only — app ↔ database, the language layer, the export (259 tests)
+qa_check.js                     dev only — static checks: assets, dead handlers, syntax, translations, accessibility
 ```
 
 ## Checking nothing broke
@@ -82,7 +83,7 @@ Three scripts, none of which ship with the app or need anything installed — pl
 
 ```
 node test_engine.js        →  19 passed, 0 failed
-node test_data_layer.js    →  203 passed, 0 failed
+node test_data_layer.js    →  259 passed, 0 failed
 node qa_check.js           →  QA: PASS
 ```
 

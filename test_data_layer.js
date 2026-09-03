@@ -173,7 +173,11 @@ function loadApp(root) {
   adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
-  profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField };`;
+  profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
+  csvSeparator, csvNumber, csvCell, toCSV, exportDate, exportFileName, organicLabel,
+  researchExportRows, outreachExportRows, researchCsvCells, outreachCsvCells,
+  exportHeaders, exportCsv, exportRowCount, RESEARCH_COLS, OUTREACH_COLS,
+  buildPrintReport, PRICE_ASSUMPTIONS };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage };
 }
@@ -1276,6 +1280,244 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       els.researchBody.innerHTML !== "SKELETON");
     ids.forEach(id => delete els[id]);
     app.setLang("en");
+  }
+
+  /* ============================================================
+     9. EXPORT FOR REPORTING (ROADMAP item 12)
+     Two datasets leave the app as files someone else reads, so the ways
+     this can be wrong are all quiet ones: a column that shifts because a
+     header was added in one place and not the other, a comma inside a
+     message splitting a row in half, an Italian spreadsheet reading
+     "3.00" as three hundred, a conversation dropped because its outreach
+     row points at nothing. None of them look like a bug on screen.
+     ============================================================ */
+  console.log("== Test 9: CSV mechanics ==");
+  {
+    app.setLang("en");
+    check("the separator is a comma in English", app.csvSeparator() === ",");
+    check("...and decimals use a dot", app.csvNumber(3, 2) === "3.00", app.csvNumber(3, 2));
+    app.setLang("it");
+    check("the separator is a semicolon in Italian (Excel splits on the locale's list separator)",
+      app.csvSeparator() === ";");
+    check("...and decimals use a comma, or the same file reads 3.00 as three hundred",
+      app.csvNumber(3, 2) === "3,00", app.csvNumber(3, 2));
+    app.setLang("en");
+
+    check("a cell containing the separator is quoted",
+      app.csvCell("Terelle, FR", ",") === '"Terelle, FR"', app.csvCell("Terelle, FR", ","));
+    check("a quote inside a cell is doubled",
+      app.csvCell('the "big" farm', ",") === '"the ""big"" farm"', app.csvCell('the "big" farm', ","));
+    check("a newline forces quoting", app.csvCell("line one\nline two", ",") === '"line one\nline two"');
+    check("a plain cell is left alone", app.csvCell("tomatoes", ",") === "tomatoes");
+    check("a semicolon is harmless in a comma file", app.csvCell("a;b", ",") === "a;b");
+    check("...and quoted in a semicolon file", app.csvCell("a;b", ";") === '"a;b"');
+
+    /* Product names and follow-up notes are typed by the farmer, and a
+       spreadsheet runs a cell beginning = + - @ as a formula. Quoting does not
+       stop that; a leading apostrophe does. */
+    check("a cell that starts like a formula is neutralised",
+      app.csvCell("=1+1", ",") === "'=1+1", app.csvCell("=1+1", ","));
+    check("...including @ and a leading dash on text", app.csvCell("@cmd", ",") === "'@cmd" &&
+      app.csvCell("-tomatoes", ",") === "'-tomatoes", app.csvCell("-tomatoes", ","));
+    check("...but a real negative number is left as a number",
+      app.csvCell("-5", ",") === "-5" && app.csvCell("-5,5", ";") === "-5,5", app.csvCell("-5", ","));
+
+    const csv = app.toCSV(["a", "b"], [["1", "2"]], ",");
+    check("the file opens with a UTF-8 BOM, or Excel mangles every accented village name",
+      csv.charCodeAt(0) === 0xFEFF);
+    check("lines are CRLF and the header comes first",
+      csv.slice(1) === "a,b\r\n1,2\r\n", JSON.stringify(csv.slice(1)));
+  }
+
+  console.log("== Test 9b: Research Progress rows ==");
+  {
+    app.setLang("en");
+    const chats = [
+      { id: "c1", title: "Older chat", phase: "done", pct: 100, ts: 1000,
+        profile: { farmer_name: "Marco", village: "Terelle", distance_km_from_cassino: 12.5, organic: "yes",
+          available_months: [6, 7], products: [
+            { name: "pomodori San Marzano", category: "pomodori", kg_per_week: 80 },
+            { name: "zucchine", category: "verdure", kg_per_week: "40" } ] } },
+      { id: "c2", title: "Newer chat", phase: "matching", pct: 60, ts: 5000,
+        profile: { village: "Cassino", organic: "no", available_months: [], products: [] } },
+      { id: "c3", title: "Never got going", phase: "interview", pct: 0, ts: 9000, profile: null }
+    ];
+    const clients = [
+      { id: "o1", chatId: "c1", status: "sent", ts: 1 },
+      { id: "o2", chatId: "c1", status: "draft", ts: 2 },
+      { id: "o3", chatId: "c1", status: null, ts: 3 },
+      { id: "o4", chatId: "cGONE", status: "sent", ts: 4 }
+    ];
+    const rows = app.researchExportRows(chats, clients);
+
+    check("a conversation with no captured profile is not in the report", rows.length === 3, rows.length);
+    check("newest conversation first", rows[0].conversation === "Newer chat", rows[0].conversation);
+    /* The Dashboard shows one row per conversation carrying its LARGEST product
+       and hides the rest. In a report that means the quantities do not add up
+       to what the farmer actually pledged. */
+    check("one row per product, with the conversation repeated",
+      rows[1].conversation === "Older chat" && rows[2].conversation === "Older chat" &&
+      rows[1].product === "pomodori San Marzano" && rows[2].product === "zucchine");
+    check("a captured profile with no products still gets a row, with the product columns blank",
+      rows[0].product === "" && rows[0].kg === null && rows[0].value === null);
+
+    check("kg arriving from Postgres as a string is coerced, not concatenated",
+      rows[2].kg === 40, rows[2].kg);
+    const price = app.PRICE_ASSUMPTIONS["pomodori"] || 3;
+    check("the weekly value is kg × the price assumption",
+      rows[1].price === price && rows[1].value === 80 * price, rows[1].value);
+    check("distance survives as a number", rows[1].distance === 12.5, rows[1].distance);
+
+    /* Number(null) is 0, which would report a farm sitting in the middle of
+       Cassino — the same trap the profile editor avoids on the way in. */
+    const noDist = app.researchExportRows([{ id: "x", title: "t", phase: "done", pct: 1, ts: 1,
+      profile: { village: "v", organic: "no", available_months: [], products: [{ name: "p", category: "verdure", kg_per_week: 10 }] } }], []);
+    check("a missing distance is blank, never 0", noDist[0].distance === null, noDist[0].distance);
+
+    check("drafts are counted per conversation", rows[1].drafts === 3, rows[1].drafts);
+    /* createOutreach doesn't set a status, so a row can hold null. "not draft"
+       would count that as sent — the same rule the Admin funnel follows. */
+    check("only status === \"sent\" counts as sent, so a null status doesn't",
+      rows[1].sent === 1, rows[1].sent);
+    check("a draft pointing at a conversation that isn't there is not counted against one that is",
+      rows[0].drafts === 0 && rows[0].sent === 0);
+
+    check("organic is a label, not the stored key", rows[1].organic === app.T("match.organic"), rows[1].organic);
+    check("months are named, not numbered", rows[1].months.indexOf(app.monthNames()[5]) === 0, rows[1].months);
+  }
+
+  console.log("== Test 9c: outreach log rows ==");
+  {
+    app.setLang("en");
+    const chats = [{ id: "c1", title: "Tomatoes, June" }];
+    const clients = [
+      { id: "o1", chatId: "c1", name: "Mercato Cassino", type: "gruppo_acquisto", zone: "Cassino",
+        status: "sent", flagged: true, profileEdited: true, message_it: "Buongiorno", message_en: "Hello",
+        ts: 5000, extra: [{ text: "called them" }, { text: "no answer" }] },
+      { id: "o2", chatId: "cGONE", name: "Orphan Buyer", type: "", zone: "", status: null,
+        flagged: false, message_it: "x", message_en: "y", ts: 9000, extra: [] }
+    ];
+    const rows = app.outreachExportRows(clients, chats);
+    check("newest first", rows[0].buyer === "Orphan Buyer", rows[0].buyer);
+    check("a draft whose conversation is gone is named, not dropped",
+      rows.length === 2 && rows[0].conversation === app.T("export.orphanChat"), rows[0].conversation);
+    check("a null status reads as a draft, not as sent",
+      rows[0].status === app.T("clients.draft"), rows[0].status);
+    check("a sent draft says so", rows[1].status === app.T("clients.sent"));
+    check("the Guardian flag and the stale-draft flag come through as yes/no",
+      rows[1].flagged === app.T("export.yes") && rows[1].edited === app.T("export.yes") &&
+      rows[0].flagged === app.T("export.no") && rows[0].edited === app.T("export.no"));
+    check("the buyer type is readable, not a database key", rows[1].type === "gruppo acquisto", rows[1].type);
+    check("follow-up notes are joined rather than lost", rows[1].notes === "called them | no answer", rows[1].notes);
+    check("both halves of the draft are exported", rows[1].message_it === "Buongiorno" && rows[1].message_en === "Hello");
+  }
+
+  console.log("== Test 9d: columns and cells stay in step ==");
+  {
+    /* The failure this exists for: a column added to RESEARCH_COLS but not to
+       researchCsvCells (or the reverse) shifts every value after it one column
+       to the left, which reads as plausible data under the wrong heading. */
+    app.setLang("en");
+    const chats = [{ id: "c1", title: "T", phase: "done", pct: 100, ts: 1,
+      profile: { farmer_name: "M", village: "V", distance_km_from_cassino: 3, organic: "yes",
+        available_months: [6], products: [{ name: "p", category: "verdure", kg_per_week: 10 }] } }];
+    const clients = [{ id: "o1", chatId: "c1", name: "B", type: "t", zone: "z", status: "draft",
+      flagged: false, message_it: "a", message_en: "b", ts: 1, extra: [] }];
+    const rRow = app.researchCsvCells(app.researchExportRows(chats, clients)[0]);
+    const oRow = app.outreachCsvCells(app.outreachExportRows(clients, chats)[0]);
+    check("every Research column has exactly one cell",
+      app.RESEARCH_COLS.length === rRow.length, app.RESEARCH_COLS.length + " vs " + rRow.length);
+    check("every outreach column has exactly one cell",
+      app.OUTREACH_COLS.length === oRow.length, app.OUTREACH_COLS.length + " vs " + oRow.length);
+    check("every header resolves to a translated string, not to its own key",
+      app.exportHeaders(app.RESEARCH_COLS).concat(app.exportHeaders(app.OUTREACH_COLS))
+        .every(h => h && h.indexOf("export.h.") === -1));
+    check("no cell is undefined", rRow.concat(oRow).every(c => c !== undefined && c !== null));
+  }
+
+  console.log("== Test 9e: a whole file, and what the language does and doesn't change ==");
+  {
+    app.state.chats = [{ id: "c1", title: 'Chat "A", spring', phase: "done", pct: 100, ts: 1,
+      profile: { farmer_name: "Marco", village: "Terelle", distance_km_from_cassino: 12, organic: "yes",
+        available_months: [6], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] } }];
+    app.state.clients = [{ id: "o1", chatId: "c1", name: "Mercato, Cassino", type: "ristorante", zone: "Cassino",
+      status: "draft", flagged: false, message_it: 'Riga uno\nRiga "due"', message_en: "Line one", ts: 1, extra: [] }];
+
+    app.setLang("en");
+    const en = app.exportCsv("research");
+    check("the file has a header line and one line per row",
+      en.replace(/\r\n$/, "").split("\r\n").length === 2, en.split("\r\n").length);
+    check("a title containing a quote and a comma survives the header row's separator",
+      en.indexOf('"Chat ""A"", spring"') !== -1, en.split("\r\n")[1].slice(0, 40));
+
+    const outEn = app.exportCsv("outreach");
+    check("a message with an embedded newline is quoted rather than splitting the row",
+      outEn.indexOf('"Riga uno\nRiga ""due"""') !== -1, JSON.stringify(outEn.slice(-90)));
+
+    /* Written in English on purpose. In Italian every category label equals its
+       key, so a bug that swapped one for the other is invisible there — the
+       lesson from item 10, which shipped with exactly that blind spot. */
+    check("the category is exported as its readable label, in English too",
+      en.indexOf(app.catLabel("pomodori")) !== -1 && app.catLabel("pomodori") !== "pomodori", app.catLabel("pomodori"));
+
+    /* Read back with a quote-aware split, not String.split(sep): the English
+       header "Estimated weekly value (EUR, from the assumption)" contains the
+       comma it is separated by, which is exactly the case the quoting is for
+       and exactly the case a naive reader gets wrong. */
+    const splitCsv = (line, sep) => {
+      const out = []; let cur = "", q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+        else if (ch === '"') q = true;
+        else if (ch === sep) { out.push(cur); cur = ""; }
+        else cur += ch;
+      }
+      out.push(cur); return out;
+    };
+    const enHead = splitCsv(en.slice(1).split("\r\n")[0], ",");
+    check("the header row reads back as exactly the declared columns",
+      enHead.length === app.RESEARCH_COLS.length &&
+      enHead.join("|") === app.exportHeaders(app.RESEARCH_COLS).join("|"), enHead.length);
+    check("a header containing the separator survives being read back",
+      enHead[11] === app.T("export.h.value") && enHead[11].indexOf(",") !== -1, enHead[11]);
+
+    app.setLang("it");
+    const it = app.exportCsv("research");
+    check("Italian gets a different header line", it.split("\r\n")[0] !== en.split("\r\n")[0]);
+    check("...and the same number of rows and columns",
+      it.split("\r\n").length === en.split("\r\n").length &&
+      splitCsv(it.slice(1).split("\r\n")[0], ";").length === enHead.length,
+      splitCsv(it.slice(1).split("\r\n")[0], ";").length + " vs " + enHead.length);
+    check("switching language does not change what is stored on the chat",
+      app.state.chats[0].profile.products[0].category === "pomodori");
+    check("the count the sheet shows matches the rows in the file",
+      app.exportRowCount("research") === 1 && app.exportRowCount("outreach") === 1);
+    app.setLang("en");
+
+    /* A farmer types product names and follow-up notes, and both are dropped
+       straight into the report's markup. Everything else in this app goes
+       through esc(); this table is new, and it prints. */
+    app.state.chats[0].profile.products[0].name = 'pomodori <b>& "co"</b>';
+    app.state.clients[0].extra = [{ text: "<script>alert(1)</script>" }];
+    const printed = app.buildPrintReport();
+    check("angle brackets from a farmer-typed product name are escaped, not emitted as markup",
+      printed.indexOf("<b>&") === -1 && printed.indexOf("pomodori &lt;b&gt;&amp; ") !== -1,
+      printed.slice(printed.indexOf("pomodori") - 10, printed.indexOf("pomodori") + 50));
+    check("...and so is a script tag pasted into a follow-up note",
+      printed.indexOf("<script>") === -1 && printed.indexOf("&lt;script&gt;") !== -1);
+    check("a quote and a comma in the conversation title still read normally",
+      printed.indexOf('Chat "A", spring') !== -1);
+    check("the printed report states the row unit and that the prices are assumptions",
+      printed.indexOf(app.T("export.rowUnit")) !== -1 && printed.indexOf(app.T("export.priceNote")) !== -1);
+    check("the printed report carries both tables", printed.indexOf(app.T("export.researchName")) !== -1 &&
+      printed.indexOf(app.T("export.outreachName")) !== -1);
+    check("an empty dataset prints a sentence rather than an empty table", (() => {
+      const keep = app.state.clients; app.state.clients = [];
+      const p = app.buildPrintReport(); app.state.clients = keep;
+      return p.indexOf(app.T("export.emptyTable")) !== -1;
+    })());
+    app.state.chats = []; app.state.clients = [];
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

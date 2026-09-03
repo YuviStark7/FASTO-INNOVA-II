@@ -12,8 +12,15 @@
 
   --page-bg: #15100f;
   --ink: #ffffff;
-  --ink-70: rgba(255,255,255,.70);
-  --ink-50: rgba(255,255,255,.50);
+  /* .70 and .50 were both measured against the real backdrop photos and both
+     came up short of WCAG AA (4.5:1) on the panels: white at 50% over a glass
+     panel sitting on the brightest of the six photos is 4.04:1, and every
+     secondary label in the app — table headers, .foot, percentages, hints,
+     placeholders — is that colour at 10.5–12px. .78 and .62 clear it (5.9 and
+     5.3) while staying plain white at reduced strength, so nothing about the
+     palette changes, only how far down it goes. */
+  --ink-70: rgba(255,255,255,.78);
+  --ink-50: rgba(255,255,255,.62);
   --ink-30: rgba(255,255,255,.30);
 
   --glass-05: rgba(0,0,0,.05);
@@ -100,7 +107,7 @@ a{ color:inherit; }
 .pill{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.02em; }
 .pill-accent{ background:rgba(59,165,93,.22); color:#7bd696; }
 .pill-amber{ background:rgba(217,164,65,.22); color:#f0c375; }
-.pill-blue{ background:rgba(74,134,201,.22); color:#8fc0ee; }
+.pill-blue{ background:rgba(74,134,201,.22); color:#9ac7f1; }   /* was #8fc0ee — 4.50:1, a hair under AA on a panel over the brightest photo */
 .pill-muted{ background:var(--white-15); color:var(--ink-70); }
 
 /* ---------- inputs ---------- */
@@ -130,6 +137,37 @@ a{ color:inherit; }
 
 /* ---------- empty state ---------- */
 .empty-state{ padding:22px 10px; text-align:center; color:var(--ink-50); font-size:13px; }
+
+/* ---------- keyboard focus ----------
+   One ring for the whole app. Until now only the funnel stages had one, and
+   several inputs set outline:none with nothing in its place, so a keyboard
+   user could be typing into a field with no way to tell which. :focus-visible
+   rather than :focus, so a mouse click never draws it.
+
+   White at 2px with a 2px offset: the offset gap shows the element's own dark
+   surround, which is what separates the ring from the control on both the
+   brick-red sidebar (8.1:1) and the black glass. The extra dark halo underneath
+   covers the one case the offset can't — a control sitting straight on a bright
+   patch of the backdrop photo. Colours are literal, not tokens: a focus ring
+   that inherits a theme colour is a focus ring that can be themed away. */
+:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{
+  outline:2px solid #fff; outline-offset:2px; box-shadow:0 0 0 5px rgba(0,0,0,.55);
+}
+/* Windows high-contrast mode throws author colours away, including the ring
+   above; this is the system-supplied one. */
+@media (forced-colors: active){
+  :focus-visible{ outline:3px solid Highlight; outline-offset:2px; }
+}
+
+/* ---------- skip link ----------
+   Off-screen until focused. Without it the first Tab on every screen lands in
+   the sidebar and takes four presses to get past. */
+.skip-link{ position:fixed; top:10px; left:-9999px; z-index:300;
+  background:var(--red); color:#fff; padding:11px 18px; border-radius:var(--radius-sm);
+  font-size:13.5px; font-weight:700; text-decoration:none; box-shadow:var(--shadow-1); }
+.skip-link:focus{ left:10px; }
 
 /* ---------- error banner ---------- */
 .err-banner{ display:none; background:rgba(217,83,79,.18); color:#f3a6a3; border:1px solid rgba(217,83,79,.4); border-radius:var(--radius-sm); padding:9px 12px; font-size:12.5px; margin:0 0 10px; }

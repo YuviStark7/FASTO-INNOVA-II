@@ -408,12 +408,19 @@ async function startNewChat() {
 }
 function selectChat(id) { state.activeChatId = id; clearErr(); updateHeaderIdentity(); renderChatRail(); renderTranscript(); }
 
+/* Each rail entry is a <button>, not a <div onclick>. The conversation history
+   was reachable by mouse only — there was no way to change conversation from
+   the keyboard at all. aria-current marks which one is open, since "active"
+   here is a background tint and nothing else. */
 function renderChatRail() {
   const el = $("chatRailList"); if (!el) return;
-  el.innerHTML = state.chats.map(c => `
-    <div class="chat-rail-item ${c.id === state.activeChatId ? "active" : ""}" data-chat-id="${esc(c.id)}" onclick="selectChat('${c.id}')">
+  el.innerHTML = state.chats.map(c => {
+    const on = c.id === state.activeChatId;
+    return `
+    <button type="button" class="chat-rail-item ${on ? "active" : ""}" data-chat-id="${esc(c.id)}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openChat", { title: c.title }))}" onclick="selectChat('${c.id}')">
       <img class="ic-svg sm" src="assets/icon-chat-item.svg" alt="">${esc(c.title)}
-    </div>`).join("");
+    </button>`;
+  }).join("");
 }
 // Briefly outline the rail entry, so reusing a chat doesn't look like the
 // button did nothing — especially when the reused chat was already the open one.
@@ -569,6 +576,108 @@ async function finishWithRecs(recs, chat) {
    a plain-language sentence per ranked buyer, and 2-3 creative
    suggestions. This surfaces both, next to the deterministic score and
    reasons the engine itself generated. Read-only, no schema change. */
+/* ================= SHEETS: FOCUS AND KEYBOARD =================
+   The three sheets (match view, logistics, profile editor) were `display:none`
+   overlays and nothing more. Opening one left focus on the button underneath
+   it, so a keyboard user pressed Enter and then had to Tab through the entire
+   app behind the panel to reach it — and could Tab straight back out the far
+   side while it was still up. Closing one dropped focus at the top of the
+   document.
+
+   Everything below is one small stack, because these sheets genuinely nest:
+   the profile editor opens from the match sheet, and saving a corrected
+   profile reopens the match sheet behind it.
+
+   Only the FIRST sheet in a run remembers where focus came from. Opening the
+   profile editor from the match sheet closes the match sheet on the way, so
+   "put me back where I was" has to mean the button that started all of it, not
+   a control inside a panel that has since been torn down and rebuilt. */
+const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet"];
+const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+let sheetStack = [];
+let sheetReturnFocus = null;
+
+function focusablesIn(el) {
+  if (!el || !el.querySelectorAll) return [];
+  return Array.prototype.slice.call(el.querySelectorAll(FOCUSABLE_SEL));
+}
+function topSheet() { return sheetStack.length ? sheetStack[sheetStack.length - 1] : null; }
+
+function focusIntoSheet(s) {
+  if (!s) return;
+  const items = focusablesIn(s);
+  // The close button is first in the panel, which is where a dialog should
+  // land: it names the thing you have just opened and it is the way out.
+  const target = items.length ? items[0] : (s.querySelector ? s.querySelector(".match-panel") : null);
+  if (target && target.focus) { try { target.focus(); } catch (e) { /* detached */ } }
+}
+
+/* While a sheet is up, everything behind it is hidden from assistive tech and
+   inert where the browser supports it. The focus trap below is what holds the
+   line in browsers that don't. Order matters in both directions: focus goes
+   INTO the dialog before the app is hidden, and the app is revealed again
+   before focus is handed back — aria-hidden over the focused element is
+   exactly the bug this is meant to prevent. */
+function setBehindSheetsHidden(on) {
+  const app = $("app"); if (!app) return;
+  if (on) { app.setAttribute("aria-hidden", "true"); app.setAttribute("inert", ""); }
+  else { app.removeAttribute("aria-hidden"); app.removeAttribute("inert"); }
+}
+
+function openSheet(id) {
+  const s = $(id); if (!s) return;
+  const already = sheetStack.indexOf(id) !== -1;
+  if (!already) {
+    if (!sheetStack.length) sheetReturnFocus = (typeof document !== "undefined" && document.activeElement) || null;
+    sheetStack.push(id);
+  }
+  s.classList.add("open");
+  if (!already) { focusIntoSheet(s); setBehindSheetsHidden(true); }
+}
+
+function closeSheet(id) {
+  const s = $(id); if (s) s.classList.remove("open");
+  const i = sheetStack.indexOf(id);
+  if (i !== -1) sheetStack.splice(i, 1);
+  if (sheetStack.length) { focusIntoSheet($(topSheet())); return; }
+  setBehindSheetsHidden(false);
+  const back = sheetReturnFocus; sheetReturnFocus = null;
+  // Only if it is still on the page. Saving a profile redraws the chat rail,
+  // the dashboard and the client list, so the very button that was clicked may
+  // no longer exist — focusing a detached node silently sends focus to <body>.
+  const stillThere = back && back.focus &&
+    (!document.body || !document.body.contains || document.body.contains(back));
+  if (stillThere) { try { back.focus(); } catch (e) { /* ignore */ } }
+}
+
+/* Tab must not walk out of the sheet that is on top. */
+function trapSheetTab(e) {
+  if (!e || e.key !== "Tab") return;
+  const s = $(topSheet()); if (!s) return;
+  const items = focusablesIn(s);
+  if (!items.length) { e.preventDefault(); return; }
+  const first = items[0], last = items[items.length - 1];
+  const cur = document.activeElement;
+  const inside = s.contains ? s.contains(cur) : true;
+  if (e.shiftKey ? (!inside || cur === first) : (!inside || cur === last)) {
+    e.preventDefault();
+    const t = e.shiftKey ? last : first;
+    if (t.focus) t.focus();
+  }
+}
+
+/* Escape closes the TOP sheet only. Three separate Escape listeners used to
+   each close their own sheet, so one press on the profile editor also closed
+   the match sheet waiting behind it. */
+function closeTopSheet() {
+  const id = topSheet(); if (!id) return false;
+  if (id === "matchSheet") closeMatchView();
+  else if (id === "logisticsSheet") closeLogistics();
+  else if (id === "exportSheet") closeExportSheet();
+  else closeProfileEdit();
+  return true;
+}
+
 function scorePillClass(score) { return score >= 70 ? "pill-accent" : score >= 40 ? "pill-amber" : "pill-muted"; }
 
 function matchRowsFor(chat) {
@@ -651,10 +760,10 @@ function openMatchView(chatId) {
     ? profileBits + `<div class="eyebrow">${esc(T("match.best"))}</div>` + cards + tail
     : `<div class="empty-state">${esc(T("match.none"))}</div>`;
 
-  sheet.classList.add("open");
+  openSheet("matchSheet");
 }
 
-function closeMatchView() { const s = $("matchSheet"); if (s) s.classList.remove("open"); }
+function closeMatchView() { closeSheet("matchSheet"); }
 
 /* ---------- Clients ("chats with clients") ---------- */
 async function addClientFromRecs(recs, chat) {
@@ -708,6 +817,21 @@ function bootStatus(text) {
   if (el) el.textContent = text;
 }
 
+/* The CSS half of the boot lock is `pointer-events:none` under #app.booting,
+   which stops a MOUSE. It does nothing to a keyboard: a focusable element with
+   pointer-events:none still takes Tab and still fires on Enter. That did not
+   matter while the nav items were <div>s, and it matters now that they are
+   buttons — pressing "Start New Chat" or a nav item mid-boot creates a chat
+   that loadFarmerData() then wipes when it replaces state.chats wholesale.
+   So the same controls the stylesheet dims are really disabled here.
+   Anything added to the #app.booting rules in css/app.css belongs in this
+   list too, or the lock holds for a mouse and leaks for a keyboard. */
+const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #userInput, .sugg-chip";
+function setBootLock(on) {
+  if (!document.querySelectorAll) return;
+  document.querySelectorAll(BOOT_LOCK_SEL).forEach(el => { el.disabled = !!on; });
+}
+
 function showResearchSkeleton(rows) {
   const body = $("researchBody");
   if (!body) return;
@@ -754,11 +878,19 @@ function renderDashboard() {
     const prod = c.profile.products.find(p => p.category === top) || c.profile.products[0];
     const price = PRICE_ASSUMPTIONS[top] || 3;
     const done = c.phase === "done";
+    /* Both of these used to be a <td onclick>: a cell is not focusable and not
+       activatable, so opening the match view and correcting a price were mouse
+       gestures with no keyboard equivalent anywhere else in the app. The cell
+       keeps its class (the mobile data-label rules key off it); the control
+       inside it is a real button. */
+    const convCell = done
+      ? `<button type="button" class="rp-cell-btn" onclick="openMatchView('${c.id}')" title="${escAttr(T("dash.whyTitle"))}" aria-label="${escAttr(T("dash.whyTitle"))}"><b>${esc(c.title)}</b><small>${esc(relDate(c.ts))}</small></button>`
+      : `<b>${esc(c.title)}</b><small>${esc(relDate(c.ts))}</small>`;
     return `<tr>
-      <td class="rp-conv ${done ? "rp-clickable" : ""}" ${done ? `onclick="openMatchView('${c.id}')" title="${escAttr(T("dash.whyTitle"))}"` : ""}><b>${esc(c.title)}</b><small>${esc(relDate(c.ts))}</small></td>
+      <td class="rp-conv ${done ? "rp-clickable" : ""}">${convCell}</td>
       <td>${esc(catLabel(top) || top || "—")}</td>
       <td>${prod ? esc(T("dash.kgWk", { n: Math.round(prod.kg_per_week) })) : "—"}</td>
-      <td class="rp-price" onclick="adjustPrice('${top}')">€${price.toFixed(2)}/kg</td>
+      <td class="rp-price"><button type="button" class="rp-cell-btn" onclick="adjustPrice('${top}')" aria-label="${escAttr(T("a11y.changePrice", { cat: catLabel(top) || top }))}">€${price.toFixed(2)}/kg</button></td>
       <td class="rp-prog">
         <div class="progress-track"><div class="progress-fill ${progClass(c.pct)}" style="width:${c.pct}%"></div></div>
         <div class="prog-label">${esc(phaseLabel(c.phase))} · ${c.pct}%</div>
@@ -770,6 +902,284 @@ function renderDashboard() {
   seeAll.style.display = rows.length > 3 ? "inline-flex" : "none";
   seeAll.textContent = state.showAllResearch ? T("dash.showLatest") : T("dash.seeAllN", { n: rows.length });
 }
+
+
+/* ================= EXPORT (Research Progress + outreach log) =================
+   ROADMAP item 12. Two datasets leave the app here: what Brain 1 captured in
+   every conversation, and every outreach draft Brain 2 wrote. Both as CSV, and
+   both together as a printable report the browser can save as a PDF.
+
+   FOUR DECISIONS THIS RESTS ON, none of them cosmetic:
+
+   1. A RESEARCH ROW IS ONE PRODUCT, not one conversation. The Dashboard shows a
+      conversation's LARGEST product and hides the rest, which is right for a
+      glance and wrong for a report: the quantities would not add up to what the
+      farmer actually pledged. So a conversation with three products is three
+      rows, and the sheet, the CSV header block and the printed report all SAY
+      SO — the same rule as the Admin funnel, where the unit is stated rather
+      than left to be guessed at. A profile with no products at all is still one
+      row with the product columns blank; it is never dropped.
+
+   2. PRICE IS AN ASSUMPTION AND IS LABELLED AS ONE. PRICE_ASSUMPTIONS is desk
+      research the farmer can override, not a quote from a buyer, so the column
+      is "price assumption" and the money column says where it came from. This
+      app's standing rule is that nothing invented is ever presented as if a
+      buyer had said it, and an unlabelled "weekly value" column in a document
+      handed to a tutor is exactly that.
+
+   3. THE SEPARATOR FOLLOWS THE UI LANGUAGE. Excel splits on the list separator
+      of its own locale: an Italian copy of Excel opens a comma-separated file
+      as one column of text. The app already knows which language it is in (and
+      defaults to the browser's), so Italian gets ";" with "," for decimals and
+      English gets "," with ".". The export sheet states which one it will use.
+      This is the one place where a language changes what leaves the app — the
+      logistics email deliberately keeps English field names because it is read
+      by the partner, but this file is read by whoever pressed the button.
+
+   4. A CELL THAT STARTS LIKE A FORMULA IS NEUTRALISED. Product names and
+      follow-up notes are typed by the farmer, and a spreadsheet treats a cell
+      beginning with = + - @ as a formula. Quoting does not stop it; a leading
+      apostrophe does. Plain negative numbers are left alone. */
+
+const EXPORT_KINDS = ["research", "outreach"];
+
+function csvSeparator() { return currentLang() === "it" ? ";" : ","; }
+
+/* Numbers follow the same locale as the separator: ";"-separated files are for
+   an Italian spreadsheet, which reads "3.00" as three hundred. */
+function csvNumber(n, dp) {
+  if (n == null || !isFinite(n)) return "";
+  const s = Number(n).toFixed(dp == null ? 2 : dp);
+  return csvSeparator() === ";" ? s.replace(".", ",") : s;
+}
+
+const FORMULA_START = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^-?\d+(?:[.,]\d+)?$/;
+function csvCell(v, sep) {
+  let s = v == null ? "" : String(v);
+  if (FORMULA_START.test(s) && !PLAIN_NUMBER.test(s)) s = "'" + s;
+  return /["\n\r]/.test(s) || s.indexOf(sep) !== -1 ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/* The BOM is not decoration: without it Excel reads a UTF-8 file as Latin-1 and
+   every accented village name in the Cassino area comes out mangled. */
+function toCSV(headers, rows, sep) {
+  sep = sep || csvSeparator();
+  const lines = [headers.map(h => csvCell(h, sep)).join(sep)];
+  rows.forEach(r => lines.push(r.map(c => csvCell(c, sep)).join(sep)));
+  return "\uFEFF" + lines.join("\r\n") + "\r\n";
+}
+
+/* Local calendar date, not toISOString(): a conversation started at 00:30 in
+   Italy is dated the day before in UTC, which is the day the farmer would
+   swear it did not happen. */
+function exportDate(ts) {
+  const d = new Date(ts);
+  if (!isFinite(d.getTime())) return "";
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+function exportFileName(kind) {
+  return "fasto-" + (kind === "outreach" ? "outreach-log" : "research-progress") + "-" + exportDate(Date.now()) + ".csv";
+}
+function organicLabel(v) {
+  return v === "yes" ? T("match.organic") : v === "partial" ? T("match.partlyOrganic") : T("match.notOrganic");
+}
+
+/* ---------- the two datasets, as plain objects and with no DOM ----------
+   Split from everything that renders or downloads for the same reason
+   buildLogisticsPayload() is: this is the part that can be wrong in a way
+   nobody notices, so it is the part that gets tested. */
+function researchExportRows(chats, clients) {
+  const drafts = {}, sent = {};
+  (clients || []).forEach(c => {
+    if (!c.chatId) return;
+    drafts[c.chatId] = (drafts[c.chatId] || 0) + 1;
+    if (c.status === "sent") sent[c.chatId] = (sent[c.chatId] || 0) + 1;
+  });
+  const out = [];
+  (chats || []).filter(c => c.profile).slice().sort((a, b) => b.ts - a.ts).forEach(c => {
+    const p = c.profile;
+    const dist = p.distance_km_from_cassino;
+    const base = {
+      conversation: c.title || "", date: exportDate(c.ts),
+      farmer: p.farmer_name || "", village: p.village || "",
+      distance: dist != null && isFinite(Number(dist)) ? Number(dist) : null,
+      organic: organicLabel(p.organic),
+      months: (p.available_months || []).map(m => monthName(m)).join(" · "),
+      stage: phaseLabel(c.phase), pct: c.pct == null ? 0 : c.pct,
+      drafts: drafts[c.id] || 0, sent: sent[c.id] || 0
+    };
+    const prods = p.products || [];
+    // A captured profile with no products is a real state (the Guardian lets it
+    // through with a warning) and it is the interesting one, so it keeps its row.
+    if (!prods.length) { out.push(Object.assign({}, base, { product: "", category: "", kg: null, price: null, value: null })); return; }
+    prods.forEach(pr => {
+      const kg = Number(pr.kg_per_week);
+      const price = PRICE_ASSUMPTIONS[pr.category] || 3;
+      out.push(Object.assign({}, base, {
+        product: pr.name || "", category: catLabel(pr.category) || pr.category || "",
+        kg: isFinite(kg) ? kg : null, price: price, value: isFinite(kg) ? kg * price : null
+      }));
+    });
+  });
+  return out;
+}
+
+function outreachExportRows(clients, chats) {
+  const titleById = {};
+  (chats || []).forEach(c => { titleById[c.id] = c.title; });
+  return (clients || []).slice().sort((a, b) => b.ts - a.ts).map(c => ({
+    buyer: c.name || "", type: (c.type || "").replace(/_/g, " "), zone: c.zone || "",
+    // "sent" only when it says so. createOutreach doesn't set a status, so a row
+    // can hold null, and "not draft" would count that as sent.
+    status: T(c.status === "sent" ? "clients.sent" : "clients.draft"),
+    flagged: T(c.flagged ? "export.yes" : "export.no"),
+    edited: T(c.profileEdited ? "export.yes" : "export.no"),
+    // Named, never dropped — the same rule the Admin funnel follows for an
+    // outreach row whose conversation isn't there.
+    conversation: (c.chatId && titleById[c.chatId]) || T("export.orphanChat"),
+    date: exportDate(c.ts),
+    notes: (c.extra || []).map(m => m.text).join(" | "),
+    message_it: c.message_it || "", message_en: c.message_en || ""
+  }));
+}
+
+const RESEARCH_COLS = ["conversation", "date", "farmer", "village", "distance", "organic", "product",
+  "category", "kg", "months", "price", "value", "stage", "pct", "drafts", "sent"];
+const OUTREACH_COLS = ["buyer", "buyerType", "zone", "status", "flagged", "edited",
+  "conversation", "written", "notes", "messageIt", "messageEn"];
+const exportHeaders = cols => cols.map(k => T("export.h." + k));
+
+function researchCsvCells(r) {
+  return [r.conversation, r.date, r.farmer, r.village,
+    r.distance == null ? "" : csvNumber(r.distance, 1), r.organic, r.product, r.category,
+    r.kg == null ? "" : csvNumber(r.kg, 0), r.months,
+    r.price == null ? "" : csvNumber(r.price, 2), r.value == null ? "" : csvNumber(r.value, 2),
+    r.stage, String(r.pct), String(r.drafts), String(r.sent)];
+}
+function outreachCsvCells(r) {
+  return [r.buyer, r.type, r.zone, r.status, r.flagged, r.edited,
+    r.conversation, r.date, r.notes, r.message_it, r.message_en];
+}
+function exportCsv(kind) {
+  return kind === "outreach"
+    ? toCSV(exportHeaders(OUTREACH_COLS), outreachExportRows(state.clients, state.chats).map(outreachCsvCells))
+    : toCSV(exportHeaders(RESEARCH_COLS), researchExportRows(state.chats, state.clients).map(researchCsvCells));
+}
+function exportRowCount(kind) {
+  return kind === "outreach" ? outreachExportRows(state.clients, state.chats).length
+                             : researchExportRows(state.chats, state.clients).length;
+}
+
+function downloadTextFile(name, text, mime) {
+  try {
+    const blob = new Blob([text], { type: (mime || "text/csv") + ";charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.style.display = "none";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (e) { /* already gone */ } }, 0);
+    return true;
+  } catch (e) {
+    console.warn("Download blocked:", e);
+    return false;
+  }
+}
+
+function doExportCsv(kind) {
+  if (!exportRowCount(kind)) { toast(T("export.nothing")); return; }
+  const name = exportFileName(kind);
+  if (downloadTextFile(name, exportCsv(kind))) toast(T("export.done", { file: name }));
+  else toast(T("export.failed"));
+}
+
+/* ---------- printable report ----------
+   No PDF library: this project has no build step, and a CDN script for one
+   file would be a dependency the app carries on every load for a button most
+   visits never press. The browser already writes PDFs. @media print in
+   css/app.css hides every other child of <body> and prints #printReport on
+   white paper, which also means no popup window for a blocker to eat. */
+function printTable(cols, rows, cells) {
+  if (!rows.length) return `<p class="pr-empty">${esc(T("export.emptyTable"))}</p>`;
+  return `<table class="pr-table">
+    <thead><tr>${cols.map(k => `<th scope="col">${esc(T("export.h." + k))}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${cells(r).map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table>`;
+}
+function printCells(vals) { return vals.map(v => v == null ? "" : String(v)); }
+function buildPrintReport() {
+  const research = researchExportRows(state.chats, state.clients);
+  const outreach = outreachExportRows(state.clients, state.chats);
+  const account = (state.farmerProfile && state.farmerProfile.farmer_name) || T("export.noAccountName");
+  const conv = (state.chats || []).filter(c => c.profile).length;
+  return `
+    <div class="pr-head">
+      <h1>${esc(T("export.reportTitle"))}</h1>
+      <p class="pr-meta">${esc(T("export.generated", { date: exportDate(Date.now()), account: account }))}</p>
+      <p class="pr-meta">${esc(T("export.counts", { conv: conv, prod: research.length, out: outreach.length }))}</p>
+    </div>
+    <h2>${esc(T("export.researchName"))}</h2>
+    <p class="pr-note">${esc(T("export.rowUnit"))}</p>
+    ${printTable(RESEARCH_COLS, research, r => printCells([r.conversation, r.date, r.farmer, r.village,
+      r.distance == null ? "" : r.distance, r.organic, r.product, r.category,
+      r.kg == null ? "" : Math.round(r.kg), r.months,
+      r.price == null ? "" : "€" + r.price.toFixed(2), r.value == null ? "" : "€" + r.value.toFixed(2),
+      r.stage, r.pct + "%", r.drafts, r.sent]))}
+    <h2>${esc(T("export.outreachName"))}</h2>
+    ${printTable(OUTREACH_COLS, outreach, r => printCells([r.buyer, r.type, r.zone, r.status, r.flagged,
+      r.edited, r.conversation, r.date, r.notes, r.message_it, r.message_en]))}
+    <div class="pr-foot">
+      <p>${esc(T("export.priceNote"))}</p>
+      <p>${esc(T("export.sessionNote"))}</p>
+    </div>`;
+}
+function doExportPrint() {
+  const el = $("printReport");
+  if (!el) return;
+  if (!exportRowCount("research") && !exportRowCount("outreach")) { toast(T("export.nothing")); return; }
+  el.innerHTML = buildPrintReport();
+  if (typeof window !== "undefined" && typeof window.print === "function") window.print();
+}
+
+/* ---------- the sheet ---------- */
+function openExportSheet() {
+  const research = researchExportRows(state.chats, state.clients);
+  const outreach = outreachExportRows(state.clients, state.chats);
+  const conv = (state.chats || []).filter(c => c.profile).length;
+  const sub = $("exportSubtitle");
+  if (sub) sub.textContent = T("export.counts", { conv: conv, prod: research.length, out: outreach.length });
+  const body = $("exportBody");
+  if (body) body.innerHTML = `
+    <div class="ex-row">
+      <div class="ex-row-text">
+        <div class="ex-row-title">${esc(T("export.researchName"))}</div>
+        <div class="ex-row-sub">${esc(T("export.rowUnit"))}</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="doExportCsv('research')"${research.length ? "" : " disabled"}>${esc(T("export.csv"))}</button>
+    </div>
+    <div class="ex-row">
+      <div class="ex-row-text">
+        <div class="ex-row-title">${esc(T("export.outreachName"))}</div>
+        <div class="ex-row-sub">${esc(T("export.outreachSub"))}</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="doExportCsv('outreach')"${outreach.length ? "" : " disabled"}>${esc(T("export.csv"))}</button>
+    </div>
+    <div class="ex-row">
+      <div class="ex-row-text">
+        <div class="ex-row-title">${esc(T("export.bothName"))}</div>
+        <div class="ex-row-sub">${esc(T("export.printHint"))}</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="doExportPrint()"${research.length || outreach.length ? "" : " disabled"}>${esc(T("export.print"))}</button>
+    </div>
+    <div class="ex-notes">
+      <p>${esc(T("export.sepNote", { sep: csvSeparator() }))}</p>
+      <p>${esc(T("export.priceNote"))}</p>
+      <p>${esc(T("export.sessionNote"))}</p>
+    </div>`;
+  openSheet("exportSheet");
+}
+function closeExportSheet() { closeSheet("exportSheet"); }
 
 function avatarHTML(name, idx) {
   return `<div class="avatar av-${idx % 5}">${esc((name || "?").slice(0, 2).toUpperCase())}</div>`;
@@ -783,14 +1193,18 @@ function renderChats() {
     $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`;
     return;
   }
-  list.innerHTML = state.clients.map((c, i) => `
-    <div class="client-item ${c.id === state.activeClientId ? "active" : ""}" onclick="selectClient('${c.id}')">
+  // Buttons for the same reason as the chat rail: this list was mouse-only.
+  list.innerHTML = state.clients.map((c, i) => {
+    const on = c.id === state.activeClientId;
+    return `
+    <button type="button" class="client-item ${on ? "active" : ""}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openClient", { name: c.name }))}" onclick="selectClient('${c.id}')">
       ${avatarHTML(c.name, i)}
       <div style="min-width:0;flex:1">
         <div class="ci-top"><span class="ci-name">${esc(c.name)}</span>${c.status === "sent" ? `<span class="pill pill-accent" style="margin-left:auto">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber" style="margin-left:auto">${esc(T("clients.draft"))}</span>`}</div>
         <div class="ci-prev">${esc(c.message_it.slice(0, 46))}…</div>
       </div>
-    </div>`).join("");
+    </button>`;
+  }).join("");
   if (!state.activeClientId) state.activeClientId = state.clients[0].id;
   renderThread();
 }
@@ -994,14 +1408,14 @@ function openLogistics(clientId) {
       <label class="lg-check"><input type="checkbox" id="lgConfirmF"><span>${esc(T("logi.confirmF"))}</span></label>
       <label class="lg-check"><input type="checkbox" id="lgConfirmB"><span>${esc(T("logi.confirmB"))}</span></label>
     </div>
-    <div class="err-banner" id="lgErr"></div>`;
+    <div class="err-banner" id="lgErr" role="alert"></div>`;
 
   const btn = $("logisticsSubmit");
   btn.disabled = false; btn.textContent = T("logi.submit");
-  $("logisticsSheet").classList.add("open");
+  openSheet("logisticsSheet");
 }
 
-function closeLogistics() { $("logisticsSheet").classList.remove("open"); }
+function closeLogistics() { closeSheet("logisticsSheet"); }
 
 const lgVal = id => { const el = $(id); return el ? String(el.value || "").trim() : ""; };
 
@@ -1386,16 +1800,19 @@ function openProfileEdit(chatId, fromMatchView) {
       <div class="pf-months" id="pfMonths"></div>
     </div>
 
-    <div class="err-banner" id="pfErr"></div>`;
+    ${/* role="alert" so the Guardian's "I changed one of your numbers" notice is
+          spoken, not only shown — it is the one correction this app must never
+          let slip past unnoticed. */ ""}
+    <div class="err-banner" id="pfErr" role="alert"></div>`;
 
   renderProfileProducts();
   renderProfileMonths();
   const btn = $("profileSaveBtn");
   if (btn) { btn.disabled = false; btn.textContent = T("profile.save"); }
-  sheet.classList.add("open");
+  openSheet("profileSheet");
 }
 
-function closeProfileEdit() { const s = $("profileSheet"); if (s) s.classList.remove("open"); }
+function closeProfileEdit() { closeSheet("profileSheet"); }
 
 function saveProfileEdit() {
   const chat = state.chats.find(c => c.id === profileChatId);
@@ -1747,7 +2164,14 @@ function switchScreen(name) {
   const prev = state.screen;
   state.screen = name;
   document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === name + "Screen"));
-  document.querySelectorAll(".nav-item").forEach(s => s.classList.toggle("active", s.dataset.screen === name));
+  document.querySelectorAll(".nav-item").forEach(s => {
+    const on = s.dataset.screen === name;
+    s.classList.toggle("active", on);
+    // Which screen you are on is otherwise carried by opacity and a tint, and
+    // neither reaches a screen reader. aria-current is removed rather than set
+    // to "false" — the attribute's presence is the signal.
+    if (on) s.setAttribute("aria-current", "page"); else s.removeAttribute("aria-current");
+  });
   if (name === "dashboard") { if (prev !== "dashboard") rotateBackdrop(); renderDashboard(); }
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
@@ -1821,6 +2245,9 @@ function boot() {
     authMode = next;
     $("authTabIn").classList.toggle("active", next === "in");
     $("authTabUp").classList.toggle("active", next === "up");
+    // Which of the two is chosen is otherwise only a red background.
+    $("authTabIn").setAttribute("aria-pressed", next === "in" ? "true" : "false");
+    $("authTabUp").setAttribute("aria-pressed", next === "up" ? "true" : "false");
     // don't overwrite a spinner that's mid-request — setAuthBusy(false) relabels
     if (!$("authSubmitBtn").disabled) $("authSubmitBtn").textContent = authLabel();
     // data-i18n is updated too, or a later language switch would put the wrong
@@ -1892,8 +2319,21 @@ function boot() {
 
   /* ---- demo mode: offline vs live AI (unchanged) ---- */
   let mode = "offline";
-  $("modeOffline").onclick = () => { mode = "offline"; $("modeOffline").classList.add("active"); $("modeLive").classList.remove("active"); $("liveKeyBlock").style.display = "none"; };
-  $("modeLive").onclick = () => { mode = "live"; $("modeLive").classList.add("active"); $("modeOffline").classList.remove("active"); $("liveKeyBlock").style.display = "block"; };
+  function setDemoMode(next) {
+    mode = next;
+    const off = next === "offline";
+    $("modeOffline").classList.toggle("active", off);
+    $("modeLive").classList.toggle("active", !off);
+    $("modeOffline").setAttribute("aria-pressed", off ? "true" : "false");
+    $("modeLive").setAttribute("aria-pressed", off ? "false" : "true");
+    // aria-expanded on the button that reveals the key block, so the extra
+    // fields appearing below isn't a purely visual event.
+    $("modeLive").setAttribute("aria-expanded", off ? "false" : "true");
+    $("liveKeyBlock").style.display = off ? "none" : "block";
+  }
+  $("modeOffline").onclick = () => setDemoMode("offline");
+  $("modeLive").onclick = () => setDemoMode("live");
+  setDemoMode("offline");
 
   let entering = false;
   $("startBtn").onclick = async () => {
@@ -1916,6 +2356,7 @@ function boot() {
     // wiped the moment loadFarmerData() replaced state.chats underneath it.
     $("onboard").style.display = "none";
     $("app").classList.add("ready", "booting");
+    setBootLock(true);
     showBackdrop();                                   // first photo of the session; rotates on each return to Dashboard
     paintModePill();
     switchScreen("dashboard");
@@ -1946,6 +2387,7 @@ function boot() {
       toast(T("boot.openFailed"));
     } finally {
       $("app").classList.remove("booting");
+      setBootLock(false);
       entering = false;
     }
 
@@ -1991,25 +2433,26 @@ function boot() {
 
   $("researchSeeAll").onclick = () => { state.showAllResearch = !state.showAllResearch; renderDashboard(); };
 
-  // Match view: close on the X, on a backdrop click, or on Escape
+  // The three sheets: close on the X, on a backdrop click, or on Escape.
+  // Backdrop only — never a stray click inside a panel, which would throw away
+  // a half-typed logistics request or a half-corrected profile.
   $("matchCloseBtn").onclick = () => closeMatchView();
   $("matchSheet").addEventListener("click", e => { if (e.target === $("matchSheet")) closeMatchView(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeMatchView(); });
-
-  // Logistics sheet: same three ways out. Backdrop/Escape only — never a stray
-  // click inside the panel, which would throw away a half-typed form.
   $("logisticsCloseBtn").onclick = () => closeLogistics();
   $("logisticsSubmit").onclick = () => submitLogistics();
   $("logisticsSheet").addEventListener("click", e => { if (e.target === $("logisticsSheet")) closeLogistics(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeLogistics(); });
-
-  // Profile editor: the same three ways out as the logistics sheet, and for the
-  // same reason — never on a stray click inside the panel, which would throw
-  // away a half-corrected form.
   $("profileCloseBtn").onclick = () => closeProfileEdit();
   $("profileSaveBtn").onclick = () => saveProfileEdit();
   $("profileSheet").addEventListener("click", e => { if (e.target === $("profileSheet")) closeProfileEdit(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeProfileEdit(); });
+
+  /* ONE keyboard handler for all three, not one each. Three separate Escape
+     listeners each closed their own sheet, so a single press while correcting a
+     profile also closed the match sheet waiting behind it. Tab is held inside
+     whichever sheet is on top — see trapSheetTab(). */
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeTopSheet(); return; }
+    if (e.key === "Tab") trapSheetTab(e);
+  });
 
   renderDashboard();
 }
