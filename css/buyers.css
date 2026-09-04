@@ -1,0 +1,140 @@
+/* ============================================================
+   FASTO INNOVA — public "for buyers" page (buyers.html)
+   ------------------------------------------------------------
+   Loaded INSTEAD of css/app.css, not alongside it: this page has
+   no sidebar, no sheets and no shell, and app.css is 650 lines
+   of a fixed-height application that would all be dead weight.
+   base.css comes first and supplies the tokens, the glass
+   surfaces, the buttons, the pills and the focus ring, so the
+   identity is inherited rather than restated.
+
+   ONE THING TO KNOW BEFORE EDITING: base.css sets
+   `html,body{ height:100%; overflow:hidden }` because the app is
+   exactly one viewport tall and never grows. This page is an
+   ordinary scrolling document, so it has to undo that in both
+   places — undo it on body alone and the page is still clipped
+   at the first screenful, with the scrollbar simply absent.
+   ============================================================ */
+
+html, body{ height:auto; overflow:visible; }
+body{ background:var(--page-bg); }
+
+/* The photo lives on its own fixed layer rather than on <body>.
+   background-attachment:fixed is the obvious way to do this and is exactly the
+   thing mobile Safari renders badly (it re-rasterises on every scroll frame);
+   a position:fixed element under the content gets the same result for free. */
+.pub-bg{
+  position:fixed; inset:0; z-index:-1;
+  background:linear-gradient(rgba(10,6,6,.62), rgba(10,6,6,.88)),
+             url('../assets/hero-farm.jpg') center/cover no-repeat;
+}
+
+/* ---------- top bar ----------
+   rgba(0,0,0,.72) is the same tint #topbar carries in the app, and for the
+   same measured reason: a farm photo is brightest at the top of the frame,
+   which is exactly where this bar sits, and the standard .45 glass left white
+   text at 3.91:1 over it. Do not lighten this to match the panels. */
+.pub-top{
+  position:sticky; top:0; z-index:5;
+  display:flex; align-items:center; gap:12px;
+  padding:11px 24px; padding-top:calc(11px + env(safe-area-inset-top, 0px));
+  background:rgba(0,0,0,.72);
+  backdrop-filter:blur(18px) saturate(140%); -webkit-backdrop-filter:blur(18px) saturate(140%);
+  border-bottom:1px solid var(--hairline);
+}
+.pub-top .brand-mark{ display:flex; align-items:center; gap:10px; text-decoration:none; flex-shrink:0; }
+.pub-top .brand-mark img{ width:26px; height:26px; }
+.brand-word{ letter-spacing:.04em; }
+.brand-word b{ font-weight:700; }
+.brand-word span{ font-weight:400; color:var(--ink-70); }
+.pub-appbtn{ text-decoration:none; flex-shrink:0; }
+
+/* ---------- page frame ---------- */
+.pub-wrap{ max-width:940px; margin:0 auto; padding:34px 24px 72px; }
+.pub-wrap > section, .pub-wrap > footer{ margin-bottom:18px; }
+
+.pub-hero{ padding:6px 2px 12px; }
+.pub-h1{ font-size:32px; line-height:1.2; font-weight:700; margin:14px 0 12px; max-width:22ch; }
+.pub-lede{ font-size:15.5px; line-height:1.6; color:var(--ink-70); margin:0; max-width:66ch; }
+
+.pub-stats{ display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; }
+.pub-stat{ border:1px solid var(--hairline); border-radius:var(--radius-lg); padding:16px 14px; }
+.pub-stat b{ display:block; font-size:26px; font-weight:700; line-height:1.1; }
+.pub-stat span{ display:block; font-size:11.5px; color:var(--ink-70); margin-top:5px; }
+
+.pub-card{ border:1px solid var(--hairline); border-radius:var(--radius-xl); padding:24px; }
+.pub-card h2{ margin-bottom:14px; }
+.pub-card p{ font-size:14px; line-height:1.65; color:var(--ink-70); margin:0 0 12px; max-width:76ch; }
+.pub-card p:last-of-type{ margin-bottom:0; }
+.pub-card .btn{ text-decoration:none; margin-top:16px; }
+
+/* The paragraph that says what is NOT published, and why. It is the reason
+   this page exists, so it is not allowed to read as one bullet among four. */
+.pub-card p.pub-emph{ border-left:3px solid var(--red); padding:2px 0 2px 14px; color:var(--ink); }
+
+.pub-steps{ list-style:none; counter-reset:step; margin:0; padding:0;
+  display:grid; grid-template-columns:repeat(3, 1fr); gap:18px; }
+.pub-steps li{ counter-increment:step; }
+.pub-steps li::before{
+  content:counter(step); display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:50%; background:var(--red); color:#fff;
+  font-size:13px; font-weight:700; margin-bottom:10px;
+}
+.pub-steps h3{ margin:0 0 6px; }
+.pub-steps p{ font-size:13.5px; }
+
+.pub-list{ margin:0; padding:0; list-style:none; }
+.pub-list li{ position:relative; padding-left:20px; font-size:14px; line-height:1.65;
+  color:var(--ink-70); margin-bottom:11px; max-width:76ch; }
+.pub-list li:last-child{ margin-bottom:0; }
+.pub-list li::before{ content:""; position:absolute; left:0; top:.62em;
+  width:7px; height:7px; border-radius:50%; background:var(--red); }
+
+/* ---------- the list ---------- */
+.pub-card p.pub-note{ margin:-6px 0 16px; max-width:76ch; }
+.pub-subh{ margin:28px 0 8px; padding-top:22px; border-top:1px solid var(--hairline); }
+.pub-search{ display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.pub-search input{ flex:1; min-width:220px; }
+
+.pub-table{ width:100%; border-collapse:collapse; }
+.pub-table th{ text-align:left; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--ink-50); font-weight:700; padding:0 12px 8px 0; border-bottom:1px solid var(--hairline); }
+.pub-table td{ padding:11px 12px 11px 0; font-size:13.5px; color:var(--ink-70);
+  border-bottom:1px solid rgba(255,255,255,.07); vertical-align:top; }
+.pub-table td:first-child{ color:var(--ink); font-weight:500; }
+.pub-table tr:last-child td{ border-bottom:none; }
+.pub-src{ font-size:12px; color:var(--ink-50); word-break:break-word; }
+
+/* ---------- mobile ----------
+   Same four standing rules the app follows (ROADMAP item 6): the table stacks
+   to one block per cell and hides its header row, so every cell carries its own
+   data-label; the row keeps the divider rather than each cell; and any
+   focusable input is 16px or iOS Safari zooms the page in on focus and never
+   zooms back out. */
+@media (max-width:900px){
+  .pub-wrap{ padding:24px 16px 56px; }
+  .pub-top{ padding-left:14px; padding-right:14px; gap:8px; }
+  .pub-top .brand-word{ font-size:15px; }
+  .pub-h1{ font-size:25px; max-width:none; }
+  .pub-lede{ font-size:14.5px; }
+  .pub-card{ padding:18px; }
+  .pub-stats{ grid-template-columns:repeat(2, 1fr); }
+  .pub-steps{ grid-template-columns:1fr; gap:22px; }
+  .pub-search input{ font-size:16px; }
+
+  .pub-table thead{ display:none; }
+  .pub-table tr{ display:block; padding:12px 0; border-bottom:1px solid var(--hairline); }
+  .pub-table tr:last-child{ border-bottom:none; }
+  .pub-table td{ display:block; padding:2px 0; border-bottom:none; }
+  .pub-table td[data-label]::before{
+    content:attr(data-label) " · "; color:var(--ink-50); font-size:11px;
+    letter-spacing:.04em; text-transform:uppercase; font-weight:700;
+  }
+  .pub-table td:first-child{ font-size:15px; padding-bottom:5px; }
+  .pub-table td:first-child::before{ content:none; }
+}
+
+@media (max-width:400px){
+  .pub-appbtn{ display:none; }   /* the footer link says the same thing, and the bar is three items wide at 360px */
+  .pub-stats{ grid-template-columns:1fr; }
+}

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#962524">
+<meta name="description" content="Fasto Innova helps small farms around Cassino reach nearby buyers directly. What it is, why your business is on our list, and how to be corrected or removed.">
+<!-- PUBLIC PAGE — no sign-in, no Supabase, no writes of any kind.
+     Everything here is read out of js/data.js, which is already in this
+     repository. The one thing this page deliberately does NOT show is the
+     inferred needs/volume/quality_focus on each buyer: those are guesses made
+     from cuisine type and reviews so the prototype has something to rank, and
+     printing them next to a real, named local business would present a guess
+     as a fact about someone else's company. See buyers.data.3 in js/i18n.js.
+     Same data-i18n mechanism as index.html; the English left in the markup is
+     the JS-disabled fallback and qa_check.js keeps it in step. -->
+<title data-i18n="buyers.docTitle">For buyers — Fasto Innova</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/buyers.css">
+</head>
+<body id="top">
+
+<a class="skip-link" href="#main" data-i18n="a11y.skip">Skip to main content</a>
+
+<!-- The photo sits on its own fixed layer rather than on body, so the page
+     scrolls over it without background-attachment:fixed, which mobile Safari
+     renders badly. -->
+<div class="pub-bg" aria-hidden="true"></div>
+
+<header class="pub-top">
+  <a class="brand-mark" href="index.html">
+    <img src="assets/logo-mark.svg" alt="">
+    <span class="brand-word title-md"><b>FASTO</b><span> INNOVA</span></span>
+  </a>
+  <span class="spacer"></span>
+  <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
+    <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
+    <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
+  </div>
+  <a class="btn btn-ghost btn-sm pub-appbtn" href="index.html" data-i18n="buyers.forFarmers">Are you a farmer? Open the app</a>
+</header>
+
+<main id="main" tabindex="-1">
+<div class="pub-wrap">
+
+  <section class="pub-hero">
+    <span class="pill pill-muted" data-i18n="buyers.badge">Public page · nothing to sign up for</span>
+    <h1 class="pub-h1" data-i18n="buyers.h1">A farmer near you may write to you through Fasto Innova</h1>
+    <p class="pub-lede" data-i18n="buyers.lede">Fasto Innova helps small farms around Cassino reach nearby restaurants, hotels, shops and markets directly. This page explains what it is, why your business is on our list, and what you can do about it.</p>
+  </section>
+
+  <section class="pub-stats" aria-label="Who is on the list" data-i18n-aria="buyers.list.h">
+    <div class="pub-stat glass-45"><b id="statBusinesses">—</b><span data-i18n="buyers.stat.businesses">businesses on the list</span></div>
+    <div class="pub-stat glass-45"><b id="statChannels">—</b><span data-i18n="buyers.stat.channels">direct-sales channels</span></div>
+    <div class="pub-stat glass-45"><b id="statCategories">—</b><span data-i18n="buyers.stat.categories">product categories</span></div>
+    <div class="pub-stat glass-45"><b id="statDistance">—</b><span data-i18n="buyers.stat.distance">km from Cassino at most</span></div>
+  </section>
+
+  <section class="pub-card glass-45">
+    <h2 class="title-md" data-i18n="buyers.how.h">How it works</h2>
+    <ol class="pub-steps">
+      <li>
+        <h3 class="title-sm" data-i18n="buyers.how.1h">The farmer talks to the AI</h3>
+        <p data-i18n="buyers.how.1b">A farmer describes their farm in their own words: what they grow, roughly how much a week, which months, and how far they are from Cassino.</p>
+      </li>
+      <li>
+        <h3 class="title-sm" data-i18n="buyers.how.2h">The AI looks for buyers nearby</h3>
+        <p data-i18n="buyers.how.2b">It compares that farm against the list below and ranks the closest fits by product, quantity and distance. Then it drafts a short introduction — in Italian, with an English translation underneath.</p>
+      </li>
+      <li>
+        <h3 class="title-sm" data-i18n="buyers.how.3h">The farmer decides whether to send it</h3>
+        <p data-i18n="buyers.how.3b">Nothing is sent automatically. The farmer reads the draft, changes it if they want, and sends it themselves. If you are interested, a logistics partner arranges the pickup and the delivery — that hand-off is the point of the project, not an introduction and a shrug.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="pub-card glass-45">
+    <h2 class="title-md" data-i18n="buyers.you.h">What this means for you</h2>
+    <ul class="pub-list">
+      <li data-i18n="buyers.you.1">You do not need an account, an app or a password. There is nothing to install and nothing to pay.</li>
+      <li data-i18n="buyers.you.2">A message you receive was written for your business, but an AI composed it from the farmer's answers. Treat the quantities and the months as that farmer's offer, and confirm them with them directly.</li>
+      <li data-i18n="buyers.you.3">No price is agreed here. Any figure this project puts on an order is a desk-research assumption used to size it — never a price a farmer or a buyer has accepted.</li>
+      <li data-i18n="buyers.you.4">Being on the list is not an agreement. It does not mean your business has been contacted, has replied, or has committed to anything.</li>
+    </ul>
+  </section>
+
+  <section class="pub-card glass-45" id="yourdata">
+    <h2 class="title-md" data-i18n="buyers.data.h">Why your business is on this list</h2>
+    <p data-i18n="buyers.data.1">The list was built by desk research in July 2026 from public sources — review platforms, business directories, official websites and local press. Nobody was visited, phoned or written to in order to build it, and every entry names the public source it came from.</p>
+    <p data-i18n="buyers.data.2">What is held about your business is what those listings already say in public: the name, the kind of business, the area, and roughly how far it is from Cassino.</p>
+    <p class="pub-emph" data-i18n="buyers.data.3">There is also a guess — which products you would plausibly buy, and roughly what volume. It was inferred from the kind of food you serve and from public reviews, to give the prototype something to rank against. It is not a statement about your business, which is why it is deliberately not published on this page. Ask, and you will be told exactly what is written next to your name.</p>
+    <p data-i18n="buyers.data.4">Ask for a correction, or to be removed from the list altogether, and it will be done. No reason needed.</p>
+    <a class="btn btn-primary" id="listingMail" href="#" data-i18n="buyers.data.cta">Write to us about your listing</a>
+  </section>
+
+  <section class="pub-card glass-45">
+    <h2 class="title-md" data-i18n="buyers.list.h">Who is on the list</h2>
+    <p class="foot pub-note" data-i18n="buyers.list.note">Names, business types and areas only. The inferred needs and volumes are left out for the reason above, and appearing here is neither a recommendation nor an agreement.</p>
+
+    <div class="pub-search">
+      <input type="search" id="buyerSearch" class="input-glass" placeholder="Search by name, type or area"
+             data-i18n-ph="buyers.list.searchPh" data-i18n-aria="buyers.list.searchAria" aria-label="Search the list of businesses">
+      <span class="foot" id="buyerCount" role="status"></span>
+    </div>
+
+    <table class="pub-table" id="buyerTable">
+      <thead><tr>
+        <th scope="col" data-i18n="buyers.list.colName">Business</th>
+        <th scope="col" data-i18n="buyers.list.colType">Type</th>
+        <th scope="col" data-i18n="buyers.list.colZone">Area</th>
+        <th scope="col" data-i18n="buyers.list.colDist">From Cassino</th>
+        <th scope="col" data-i18n="buyers.list.colSource">Public source</th>
+      </tr></thead>
+      <tbody id="buyerRows"></tbody>
+    </table>
+    <p class="empty-state" id="buyerEmpty" style="display:none" data-i18n="buyers.list.none">Nothing matches that search.</p>
+
+    <h3 class="title-sm pub-subh" data-i18n="buyers.list.channelsH">Direct-sales channels</h3>
+    <p class="foot pub-note" data-i18n="buyers.list.channelsNote">These three are not single businesses but routes a farmer can sell through: a weekly market, a km 0 producer network, and institutional canteens.</p>
+    <table class="pub-table" id="channelTable">
+      <thead><tr>
+        <th scope="col" data-i18n="buyers.list.colName">Business</th>
+        <th scope="col" data-i18n="buyers.list.colType">Type</th>
+        <th scope="col" data-i18n="buyers.list.colZone">Area</th>
+        <th scope="col" data-i18n="buyers.list.colDist">From Cassino</th>
+        <th scope="col" data-i18n="buyers.list.colSource">Public source</th>
+      </tr></thead>
+      <tbody id="channelRows"></tbody>
+    </table>
+  </section>
+
+  <footer class="pub-card glass-45 pub-foot">
+    <h2 class="title-md" data-i18n="buyers.foot.h">What this is, honestly</h2>
+    <p data-i18n="buyers.foot.b">Fasto Innova is a student prototype built during an internship at R&amp;S Management. It is not a company, it takes no commission and it handles nobody's money. Matching runs against a hand-curated list rather than against buyers who signed up — which is exactly why this page exists.</p>
+    <div class="row gap-14 pub-footlinks">
+      <a href="index.html" data-i18n="buyers.forFarmers">Are you a farmer? Open the app</a>
+      <a href="#top" data-i18n="buyers.toTop">Back to the top</a>
+    </div>
+  </footer>
+
+</div>
+</main>
+
+<script src="js/data.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/buyers.js"></script>
+</body>
+</html>

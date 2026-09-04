@@ -18,6 +18,12 @@ Visual design is a direct implementation of the Figma file *DOLCE MERAVGLIA* (Da
 - **Fasto-AI** — the interview itself, with a history rail on the right so you can start fresh chats or revisit old ones.
 - **Admin** (R&S account only) — a funnel showing where conversations stop (started → farm profile captured → buyers matched and a draft written → outreach sent), over a table of every conversation across the whole app. Click a funnel stage to filter the table to it. Every bar counts *conversations*, never drafts: one finished conversation produces a draft per matched buyer, so mixing the two would show more at the bottom of the funnel than at the top. The draft totals are given separately, beside it.
 
+## The public page for buyers (`buyers.html`)
+
+Buyers have no account in this app and are not asked for one. `buyers.html` is a separate, public, read-only page for the other side: a restaurant or a shop that has just been contacted, or that has found the project, and wants to know what it is. It explains how the matching works, that no price is agreed and nothing is sent automatically, why their business is on the list, and how to have their entry corrected or removed. It shares the design tokens, the buyer database and the IT/EN dictionary with the app and nothing else — no sign-in, no database, no form.
+
+**What it deliberately does not show.** Each buyer record carries `needs`, `volume` and `quality_focus`, which are *inferred* from cuisine type and public reviews so the engine has something to rank. Those are guesses, and printing a guess beside a real company's name states it as a fact about somebody else's business — so the page publishes only what the public listing already said (name, type, area, distance, source) and says plainly that the rest exists, is an inference, and can be seen or deleted on request. `qa_check.js` fails if a row ever starts rendering one of the other fields.
+
 ## Italiano or English
 
 There is an **IT / EN** switch on the sign-in card and, once you are inside, in the top bar on the right — the same place on a phone, where the sidebar shrinks to a row of icons.
@@ -51,7 +57,7 @@ There's also a private **Admin** view (visible only on the R&S account) showing 
 
 1. Go to [github.com](https://github.com) → sign in (or create a free account) → **New repository**. Name it e.g. `fasto-innova`, keep it **Public**, don't add a README (you already have one).
 2. On the new repo's page, click **uploading an existing file**.
-3. Drag in every file and folder from this project (`index.html`, `manifest.json`, `css/`, `js/`, `assets/`, this `README.md`) and click **Commit changes**.
+3. Drag in every file and folder from this project (`index.html`, `buyers.html`, `manifest.json`, `css/`, `js/`, `assets/`, this `README.md`) and click **Commit changes**.
 4. Go to the repo's **Settings → Pages**. Under "Build and deployment", set **Source: Deploy from a branch**, branch **main**, folder **/ (root)**. Save.
 5. Wait ~1 minute, then your app is live at `https://<your-username>.github.io/fasto-innova/` — open that on any phone or laptop.
 
@@ -63,18 +69,21 @@ No terminal, no git commands — everything above is point-and-click on github.c
 
 ```
 index.html          app shell — onboarding + sidebar/header + the 3 screens
+buyers.html          public read-only explainer for buyers — no account, no form
 css/base.css         design tokens, resets, buttons/pills/inputs/avatars
 css/app.css           shell layout, dashboard/clients/chatbot layouts, mobile
+css/buyers.css         the public page only (loaded instead of app.css, not alongside it)
 js/i18n.js             the IT/EN dictionary + T() — every visible string in the app
 js/data.js              the 36-buyer + 3-channel Cassino database, price assumptions
 js/core.js               Brain 2 (matching engine) + Brain 3 (Guardian) — pure functions, unit-tested
 js/app.js                 state, screens, Brain 1 orchestration (Claude API calls)
+js/buyers.js               the public page only — renders the list, read-only, no network
 js/supabase-client.js      accounts + database access (DataStore) — the only file that talks to Supabase
 assets/                     images/icons exported from the Figma file
 manifest.json                PWA metadata (name, theme color)
 test_engine.js                dev only — the matching engine (19 tests)
 test_data_layer.js             dev only — app ↔ database, the language layer, the export (259 tests)
-qa_check.js                     dev only — static checks: assets, dead handlers, syntax, translations, accessibility
+qa_check.js                     dev only — static checks: assets, dead handlers, syntax, translations, accessibility, the public page
 ```
 
 ## Checking nothing broke
@@ -91,4 +100,4 @@ Run all three from inside this folder after any change. The daily improvement au
 
 ## Data honesty
 
-The buyer database (`js/data.js`) is desk research from public listings (review sites, business directories, official sites) — real business names and locations, but `needs`, `volume` and `quality_focus` are inferred for prototype purposes and would need real outreach to confirm before commercial use. This is documented directly in `data.js`'s `meta.disclaimer` field. Per-kg prices shown on the dashboard are editable assumptions, not live market data — click any price to change it.
+This is also the point of `buyers.html` (above): the businesses in that file never asked to be in it, so the public page tells them it exists, shows them only what was already public about them, and offers a correction or a deletion. The buyer database (`js/data.js`) is desk research from public listings (review sites, business directories, official sites) — real business names and locations, but `needs`, `volume` and `quality_focus` are inferred for prototype purposes and would need real outreach to confirm before commercial use. This is documented directly in `data.js`'s `meta.disclaimer` field. Per-kg prices shown on the dashboard are editable assumptions, not live market data — click any price to change it.

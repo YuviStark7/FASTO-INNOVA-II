@@ -429,6 +429,87 @@ var STRINGS = {
     "month.9": "September", "month.10": "October", "month.11": "November", "month.12": "December",
 
     /* ---- volume bands, used inside the engine's own reason sentences ---- */
+
+    /* ---- the public "for buyers" page (buyers.html) ----
+       A different audience from every other string in this file: not the
+       farmer using the app, but a restaurant or a shop that has just been
+       written to and wants to know what this is. Kept in this dictionary
+       rather than in one of its own so the IT/EN parity check in qa_check.js
+       covers it, and so the language chosen on one page carries to the other
+       through the same localStorage key. */
+    "buyers.docTitle": "For buyers — Fasto Innova",
+    "buyers.badge": "Public page · nothing to sign up for",
+    "buyers.h1": "A farmer near you may write to you through Fasto Innova",
+    "buyers.lede": "Fasto Innova helps small farms around Cassino reach nearby restaurants, hotels, shops and markets directly. This page explains what it is, why your business is on our list, and what you can do about it.",
+    "buyers.forFarmers": "Are you a farmer? Open the app",
+    "buyers.toTop": "Back to the top",
+
+    "buyers.stat.businesses": "businesses on the list",
+    "buyers.stat.channels": "direct-sales channels",
+    "buyers.stat.categories": "product categories",
+    "buyers.stat.distance": "km from Cassino at most",
+
+    "buyers.how.h": "How it works",
+    "buyers.how.1h": "The farmer talks to the AI",
+    "buyers.how.1b": "A farmer describes their farm in their own words: what they grow, roughly how much a week, which months, and how far they are from Cassino.",
+    "buyers.how.2h": "The AI looks for buyers nearby",
+    "buyers.how.2b": "It compares that farm against the list below and ranks the closest fits by product, quantity and distance. Then it drafts a short introduction — in Italian, with an English translation underneath.",
+    "buyers.how.3h": "The farmer decides whether to send it",
+    "buyers.how.3b": "Nothing is sent automatically. The farmer reads the draft, changes it if they want, and sends it themselves. If you are interested, a logistics partner arranges the pickup and the delivery — that hand-off is the point of the project, not an introduction and a shrug.",
+
+    "buyers.you.h": "What this means for you",
+    "buyers.you.1": "You do not need an account, an app or a password. There is nothing to install and nothing to pay.",
+    "buyers.you.2": "A message you receive was written for your business, but an AI composed it from the farmer's answers. Treat the quantities and the months as that farmer's offer, and confirm them with them directly.",
+    "buyers.you.3": "No price is agreed here. Any figure this project puts on an order is a desk-research assumption used to size it — never a price a farmer or a buyer has accepted.",
+    "buyers.you.4": "Being on the list is not an agreement. It does not mean your business has been contacted, has replied, or has committed to anything.",
+
+    "buyers.data.h": "Why your business is on this list",
+    "buyers.data.1": "The list was built by desk research in July 2026 from public sources — review platforms, business directories, official websites and local press. Nobody was visited, phoned or written to in order to build it, and every entry names the public source it came from.",
+    "buyers.data.2": "What is held about your business is what those listings already say in public: the name, the kind of business, the area, and roughly how far it is from Cassino.",
+    "buyers.data.3": "There is also a guess — which products you would plausibly buy, and roughly what volume. It was inferred from the kind of food you serve and from public reviews, to give the prototype something to rank against. It is not a statement about your business, which is why it is deliberately not published on this page. Ask, and you will be told exactly what is written next to your name.",
+    "buyers.data.4": "Ask for a correction, or to be removed from the list altogether, and it will be done. No reason needed.",
+    "buyers.data.cta": "Write to us about your listing",
+    "buyers.data.mailSubject": "Fasto Innova — my business listing",
+
+    "buyers.list.h": "Who is on the list",
+    "buyers.list.note": "Names, business types and areas only. The inferred needs and volumes are left out for the reason above, and appearing here is neither a recommendation nor an agreement.",
+    "buyers.list.searchPh": "Search by name, type or area",
+    "buyers.list.searchAria": "Search the list of businesses",
+    "buyers.list.count": "Showing {shown} of {total}",
+    "buyers.list.none": "Nothing matches that search.",
+    "buyers.list.colName": "Business",
+    "buyers.list.colType": "Type",
+    "buyers.list.colZone": "Area",
+    "buyers.list.colDist": "From Cassino",
+    "buyers.list.colSource": "Public source",
+    "buyers.list.km": "{n} km",
+    "buyers.list.channelsH": "Direct-sales channels",
+    "buyers.list.channelsNote": "These three are not single businesses but routes a farmer can sell through: a weekly market, a km 0 producer network, and institutional canteens.",
+
+    "buyers.foot.h": "What this is, honestly",
+    "buyers.foot.b": "Fasto Innova is a student prototype built during an internship at R&S Management. It is not a company, it takes no commission and it handles nobody's money. Matching runs against a hand-curated list rather than against buyers who signed up — which is exactly why this page exists.",
+
+    "buyers.type.trattoria": "Trattoria",
+    "buyers.type.osteria": "Osteria",
+    "buyers.type.ristorante": "Restaurant",
+    "buyers.type.ristorante_eventi": "Restaurant & events venue",
+    "buyers.type.ristorante_pizzeria": "Restaurant & pizzeria",
+    "buyers.type.rosticceria": "Rotisserie",
+    "buyers.type.steakhouse": "Steakhouse",
+    "buyers.type.birreria_ristorante": "Beer house & restaurant",
+    "buyers.type.sushi": "Sushi restaurant",
+    "buyers.type.pizzeria": "Pizzeria",
+    "buyers.type.hotel_ristorante": "Hotel restaurant",
+    "buyers.type.agriturismo": "Agriturismo",
+    "buyers.type.bottega_supermercato": "Grocery & supermarket",
+    "buyers.type.gastronomia": "Delicatessen",
+    "buyers.type.pasticceria": "Pastry shop",
+    "buyers.type.mercato": "Weekly market",
+    "buyers.type.rete_km0": "Km 0 producer network",
+    "buyers.type.istituzionale": "Institutional canteens",
+
+    "auth.buyerLink": "Not a farmer? See what this is for buyers.",
+
     "band.low": "low", "band.medium": "medium", "band.high": "high"
   },
 
@@ -796,6 +877,81 @@ var STRINGS = {
     "month.1": "gennaio", "month.2": "febbraio", "month.3": "marzo", "month.4": "aprile",
     "month.5": "maggio", "month.6": "giugno", "month.7": "luglio", "month.8": "agosto",
     "month.9": "settembre", "month.10": "ottobre", "month.11": "novembre", "month.12": "dicembre",
+
+
+    /* ---- la pagina pubblica per gli acquirenti (buyers.html) ---- */
+    "buyers.docTitle": "Per gli acquirenti — Fasto Innova",
+    "buyers.badge": "Pagina pubblica · niente da registrare",
+    "buyers.h1": "Un agricoltore vicino a te potrebbe scriverti tramite Fasto Innova",
+    "buyers.lede": "Fasto Innova aiuta le piccole aziende agricole intorno a Cassino a raggiungere direttamente ristoranti, hotel, negozi e mercati della zona. Questa pagina spiega che cos'è, perché la tua attività è nel nostro elenco e che cosa puoi fare al riguardo.",
+    "buyers.forFarmers": "Sei un agricoltore? Apri l'app",
+    "buyers.toTop": "Torna all'inizio",
+
+    "buyers.stat.businesses": "attività nell'elenco",
+    "buyers.stat.channels": "canali di vendita diretta",
+    "buyers.stat.categories": "categorie di prodotto",
+    "buyers.stat.distance": "km da Cassino al massimo",
+
+    "buyers.how.h": "Come funziona",
+    "buyers.how.1h": "L'agricoltore parla con l'IA",
+    "buyers.how.1b": "Un agricoltore descrive la sua azienda con parole sue: che cosa coltiva, più o meno quanto alla settimana, in quali mesi e a che distanza si trova da Cassino.",
+    "buyers.how.2h": "L'IA cerca acquirenti vicini",
+    "buyers.how.2b": "Confronta quell'azienda con l'elenco qui sotto e mette in ordine le più adatte per prodotto, quantità e distanza. Poi scrive una breve presentazione, in italiano, con la traduzione inglese sotto.",
+    "buyers.how.3h": "L'agricoltore decide se inviarla",
+    "buyers.how.3b": "Niente parte in automatico. L'agricoltore legge la bozza, la modifica se vuole e la invia di persona. Se sei interessato, un partner logistico organizza il ritiro e la consegna: è questo passaggio il senso del progetto, non una presentazione e poi arrangiatevi.",
+
+    "buyers.you.h": "Che cosa significa per te",
+    "buyers.you.1": "Non ti serve un account, un'app o una password. Non c'è niente da installare e niente da pagare.",
+    "buyers.you.2": "Il messaggio che ricevi è scritto per la tua attività, ma è stato composto da un'IA a partire dalle risposte dell'agricoltore. Considera le quantità e i mesi come l'offerta di quell'agricoltore e verificali direttamente con lui.",
+    "buyers.you.3": "Qui non si concorda nessun prezzo. Le cifre che questo progetto associa a un ordine sono ipotesi di ricerca a tavolino, servono solo a stimarne il valore e non sono prezzi accettati da nessuno.",
+    "buyers.you.4": "Essere nell'elenco non è un accordo. Non significa che la tua attività sia stata contattata, che abbia risposto o che si sia impegnata a qualcosa.",
+
+    "buyers.data.h": "Perché la tua attività è in questo elenco",
+    "buyers.data.1": "L'elenco è stato costruito con ricerca a tavolino nel luglio 2026 a partire da fonti pubbliche: piattaforme di recensioni, elenchi di aziende, siti ufficiali e stampa locale. Per costruirlo nessuno è stato visitato, chiamato o contattato, e ogni voce indica la fonte pubblica da cui proviene.",
+    "buyers.data.2": "Della tua attività conserviamo quello che quegli elenchi dicono già pubblicamente: il nome, il tipo di attività, la zona e all'incirca quanto dista da Cassino.",
+    "buyers.data.3": "C'è anche un'ipotesi: quali prodotti potresti plausibilmente comprare e con quale volume. È dedotta dal tipo di cucina e dalle recensioni pubbliche, per dare al prototipo qualcosa su cui calcolare un punteggio. Non è un'affermazione sulla tua attività, ed è per questo che su questa pagina non viene pubblicata. Se lo chiedi, ti diciamo esattamente che cosa è scritto accanto al tuo nome.",
+    "buyers.data.4": "Se vuoi una correzione, o vuoi essere tolto del tutto dall'elenco, lo facciamo. Non serve motivare la richiesta.",
+    "buyers.data.cta": "Scrivici a proposito della tua scheda",
+    "buyers.data.mailSubject": "Fasto Innova — la scheda della mia attività",
+
+    "buyers.list.h": "Chi è nell'elenco",
+    "buyers.list.note": "Solo nome, tipo di attività e zona. Le esigenze e i volumi dedotti restano fuori per il motivo spiegato sopra, e comparire qui non è né una raccomandazione né un accordo.",
+    "buyers.list.searchPh": "Cerca per nome, tipo o zona",
+    "buyers.list.searchAria": "Cerca nell'elenco delle attività",
+    "buyers.list.count": "Visibili {shown} di {total}",
+    "buyers.list.none": "Nessun risultato per questa ricerca.",
+    "buyers.list.colName": "Attività",
+    "buyers.list.colType": "Tipo",
+    "buyers.list.colZone": "Zona",
+    "buyers.list.colDist": "Da Cassino",
+    "buyers.list.colSource": "Fonte pubblica",
+    "buyers.list.km": "{n} km",
+    "buyers.list.channelsH": "Canali di vendita diretta",
+    "buyers.list.channelsNote": "Questi tre non sono singole attività ma canali attraverso cui un agricoltore può vendere: un mercato settimanale, una rete di produttori a km 0 e le mense istituzionali.",
+
+    "buyers.foot.h": "Che cos'è, detto onestamente",
+    "buyers.foot.b": "Fasto Innova è un prototipo universitario sviluppato durante un tirocinio presso R&S Management. Non è un'azienda, non prende commissioni e non gestisce il denaro di nessuno. Gli abbinamenti si basano su un elenco curato a mano e non su acquirenti che si sono registrati: ed è esattamente per questo che questa pagina esiste.",
+
+    "buyers.type.trattoria": "Trattoria",
+    "buyers.type.osteria": "Osteria",
+    "buyers.type.ristorante": "Ristorante",
+    "buyers.type.ristorante_eventi": "Ristorante e location per eventi",
+    "buyers.type.ristorante_pizzeria": "Ristorante e pizzeria",
+    "buyers.type.rosticceria": "Rosticceria",
+    "buyers.type.steakhouse": "Steakhouse",
+    "buyers.type.birreria_ristorante": "Birreria e ristorante",
+    "buyers.type.sushi": "Ristorante sushi",
+    "buyers.type.pizzeria": "Pizzeria",
+    "buyers.type.hotel_ristorante": "Ristorante d'albergo",
+    "buyers.type.agriturismo": "Agriturismo",
+    "buyers.type.bottega_supermercato": "Alimentari e supermercato",
+    "buyers.type.gastronomia": "Gastronomia",
+    "buyers.type.pasticceria": "Pasticceria",
+    "buyers.type.mercato": "Mercato settimanale",
+    "buyers.type.rete_km0": "Rete di produttori km 0",
+    "buyers.type.istituzionale": "Mense istituzionali",
+
+    "auth.buyerLink": "Non sei un agricoltore? Guarda che cos'è per gli acquirenti.",
 
     "band.low": "basso", "band.medium": "medio", "band.high": "alto"
   }

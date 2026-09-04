@@ -17,6 +17,14 @@ const sbjs = fs.readFileSync(path + "/js/supabase-client.js", "utf8");
 const i18njs = fs.readFileSync(path + "/js/i18n.js", "utf8");
 const corejs = fs.readFileSync(path + "/js/core.js", "utf8");
 const css = fs.readFileSync(path + "/css/app.css", "utf8") + fs.readFileSync(path + "/css/base.css", "utf8");
+/* The public buyers page (ROADMAP item 13). It shares base.css, js/data.js and
+   js/i18n.js with the app but nothing else, so every check below that used to
+   read index.html + app.js now reads these two as well — a page nobody checks
+   is a page that rots, and this one is the only part of the project a stranger
+   ever sees. */
+const bhtml = fs.readFileSync(path + "/buyers.html", "utf8");
+const bjs = fs.readFileSync(path + "/js/buyers.js", "utf8");
+const bcss = fs.readFileSync(path + "/css/buyers.css", "utf8");
 
 let problems = 0;
 function report(label, arr, expectEmpty = true) {
@@ -34,9 +42,9 @@ console.log("IDs referenced by JS ($(...)) but missing from static HTML (verify 
 console.log(JSON.stringify([...idsUsedInJs].filter(id => !idsInHtml.has(id))));
 
 const onclickFns = new Set();
-for (const re of [js, html]) for (const m of re.matchAll(/onclick="([a-zA-Z_][a-zA-Z0-9_]*)\(/g)) onclickFns.add(m[1]);
+for (const re of [js, html, bhtml, bjs]) for (const m of re.matchAll(/onclick="([a-zA-Z_][a-zA-Z0-9_]*)\(/g)) onclickFns.add(m[1]);
 const definedFns = new Set();
-for (const src of [js, i18njs]) for (const m of src.matchAll(/(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) definedFns.add(m[1]);
+for (const src of [js, i18njs, bjs]) for (const m of src.matchAll(/(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) definedFns.add(m[1]);
 report("onclick handlers referencing undefined functions", [...onclickFns].filter(f => !definedFns.has(f)));
 
 /* ============================================================
@@ -56,10 +64,10 @@ const i18n = require(path + "/js/i18n.js");
 
   // Every key asked for, from either the markup or the code.
   const used = new Set();
-  for (const m of html.matchAll(/data-i18n(?:-html|-ph|-title|-aria)?="([^"]+)"/g)) used.add(m[1]);
+  for (const src of [html, bhtml]) for (const m of src.matchAll(/data-i18n(?:-html|-ph|-title|-aria)?="([^"]+)"/g)) used.add(m[1]);
   // A literal ending in "." is the prefix half of T("phase." + p) and is
   // covered by the `built` list below, not a key in its own right.
-  for (const m of js.matchAll(/\bT\(\s*"([^"]+)"/g)) if (!m[1].endsWith(".")) used.add(m[1]);
+  for (const src of [js, bjs]) for (const m of src.matchAll(/\bT\(\s*"([^"]+)"/g)) if (!m[1].endsWith(".")) used.add(m[1]);
   // ...plus the ones built from a prefix and a variable, which the regex above
   // can't see. Each is listed with the suffixes it can take.
   const built = [
@@ -68,6 +76,9 @@ const i18n = require(path + "/js/i18n.js");
     ["phase.", ["interview", "matching", "done"]],
     ["band.", ["low", "medium", "high"]],
     ["profile.fld.", (js.match(/const PROFILE_FIELDS = \[([^\]]+)\]/) || [, ""])[1].split(",").map(x => x.trim().replace(/"/g, "")).filter(Boolean)],
+    // Every business type in the database gets a label on the public page. A
+    // type added to js/data.js with no entry here renders as "buyers.type.x".
+    ["buyers.type.", [...new Set([...require(path + "/js/data.js").DB.buyers, ...require(path + "/js/data.js").DB.channels].map(b => b.type))]],
     ["admin.stage.", ["started", "profile", "drafted", "sent"]],
     ["admin.hint.", ["started", "profile", "drafted", "sent"]],
     ["", (js.match(/const OFFLINE_SCRIPT_KEYS = \[([^\]]+)\]/) || [, ""])[1].split(",").map(x => x.trim().replace(/"/g, "")).filter(Boolean)]
@@ -80,11 +91,12 @@ const i18n = require(path + "/js/i18n.js");
   // compared; the two innerHTML strings carry markup and are skipped.
   const decode = s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
   const drifted = [];
-  for (const m of html.matchAll(/<(\w+)[^>]*\sdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/g)) {
-    const [, , key, text] = m;
-    if (decode(text) !== decode(i18n.STRINGS.en[key] || "")) drifted.push(key);
-  }
-  report("static English in index.html out of step with the en dictionary", drifted);
+  for (const [where, src] of [["index.html", html], ["buyers.html", bhtml]])
+    for (const m of src.matchAll(/<(\w+)[^>]*\sdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/g)) {
+      const [, , key, text] = m;
+      if (decode(text) !== decode(i18n.STRINGS.en[key] || "")) drifted.push(where + ":" + key);
+    }
+  report("static English out of step with the en dictionary", drifted);
 }
 
 /* The engine's own sentences. js/core.js is the tested engine and is not
@@ -102,19 +114,21 @@ const i18n = require(path + "/js/i18n.js");
 }
 
 const assetRefs = new Set();
-for (const m of html.matchAll(/(?:src|href)="(assets\/[^"]+)"/g)) assetRefs.add(m[1]);
+for (const src of [html, bhtml]) for (const m of src.matchAll(/(?:src|href)="(assets\/[^"]+)"/g)) assetRefs.add(m[1]);
 const re2 = new RegExp("[\"'`](assets/[^\"'`]+)[\"'`]", "g");
-for (const m of js.matchAll(re2)) assetRefs.add(m[1]);
-for (const m of css.matchAll(/url\(['"]?\.\.\/(assets\/[^'")]+)/g)) assetRefs.add(m[1]);
+for (const src of [js, bjs]) for (const m of src.matchAll(re2)) assetRefs.add(m[1]);
+for (const m of (css + bcss).matchAll(/url\(['"]?\.\.\/(assets\/[^'")]+)/g)) assetRefs.add(m[1]);
 report("Asset paths referenced but missing from disk", [...assetRefs].filter(p => !fs.existsSync(path + "/" + p)));
 
-const openDiv = (html.match(/<div/g) || []).length, closeDiv = (html.match(/<\/div>/g) || []).length;
-const openSec = (html.match(/<section/g) || []).length, closeSec = (html.match(/<\/section>/g) || []).length;
-console.log("<div> open=" + openDiv + " close=" + closeDiv + " balanced=" + (openDiv === closeDiv));
-console.log("<section> open=" + openSec + " close=" + closeSec + " balanced=" + (openSec === closeSec));
-if (openDiv !== closeDiv || openSec !== closeSec) problems++;
+for (const [name, src] of [["index.html", html], ["buyers.html", bhtml]]) {
+  const openDiv = (src.match(/<div/g) || []).length, closeDiv = (src.match(/<\/div>/g) || []).length;
+  const openSec = (src.match(/<section/g) || []).length, closeSec = (src.match(/<\/section>/g) || []).length;
+  console.log(name + ": <div> open=" + openDiv + " close=" + closeDiv + " balanced=" + (openDiv === closeDiv) +
+    " · <section> open=" + openSec + " close=" + closeSec + " balanced=" + (openSec === closeSec));
+  if (openDiv !== closeDiv || openSec !== closeSec) problems++;
+}
 
-for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs], ["i18n.js", i18njs]]) {
+for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs], ["i18n.js", i18njs], ["buyers.js", bjs]]) {
   try { new Function(src); console.log("✓ " + name + ": syntax OK"); }
   catch (e) { console.log("✗ " + name + " SYNTAX ERROR: " + e.message); problems++; }
 }
@@ -129,7 +143,7 @@ for (const [name, src] of [["app.js", js], ["supabase-client.js", sbjs], ["i18n.
 // (Written with line comments on purpose: a block comment describing stray
 // comment markers has to contain one, which ends the comment early — which is
 // exactly the mistake this check exists to catch, and it happened here too.)
-for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base.css"]]) {
+for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base.css"], ["buyers.css", "/css/buyers.css"]]) {
   const src = fs.readFileSync(path + file, "utf8");
   const opens = (src.match(/\/\*/g) || []).length, closes = (src.match(/\*\//g) || []).length;
   const stripped = src.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -177,7 +191,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   // 1. A control the keyboard cannot reach. Every list in this app was written
   //    this way once, and the next one will be too unless something says so.
   const clickableNonButton = [];
-  for (const [where, src] of [["index.html", html], ["app.js", js]]) {
+  for (const [where, src] of [["index.html", html], ["app.js", js], ["buyers.html", bhtml], ["buyers.js", bjs]]) {
     for (const m of src.matchAll(/<(div|span|td|tr|li|p|section|a)\b(?![^>]*\bhref=)[^>]*\bonclick=/g)) {
       clickableNonButton.push(where + ":<" + m[1] + ">");
     }
@@ -188,7 +202,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   //    A title attribute doesn't count: it needs a pointer to appear, and it is
   //    only a fallback name that some screen readers ignore outright.
   const unnamed = [];
-  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
+  for (const m of (html + bhtml).matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
     const [, attrs, inner] = m;
     const visible = inner.replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, "x").replace(/\s+/g, "").trim();
     const named = /\baria-label=/.test(attrs) || /\bdata-i18n-aria=/.test(attrs) ||
@@ -320,6 +334,98 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   for (const m of js.matchAll(/const (?:RESEARCH_COLS|OUTREACH_COLS) = \[([\s\S]*?)\]/g))
     for (const k of (m[1].match(/"([^"]+)"/g) || [])) cols.push("export.h." + k.replace(/"/g, ""));
   report("export column headers with no dictionary entry", cols.filter(k => !(k in i18n.STRINGS.en) || !(k in i18n.STRINGS.it)));
+}
+
+/* ============================================================
+   PUBLIC PAGE CHECKS (ROADMAP item 13)
+   buyers.html is the only part of this project a stranger ever sees, and it is
+   the only page that shows other people's businesses by name. Two things it
+   must keep doing forever, and neither of them looks wrong on screen if it
+   stops: it must render only fields that came from a public listing, and it
+   must stay read-only.
+   ============================================================ */
+{
+  // The body of row() in js/buyers.js, taken by counting braces rather than by
+  // a regex, so a nested block can't end the match early.
+  const start = bjs.indexOf("function row(b)");
+  let body = "";
+  if (start !== -1) {
+    let i = bjs.indexOf("{", start), depth = 0;
+    for (let j = i; j < bjs.length; j++) {
+      if (bjs[j] === "{") depth++;
+      else if (bjs[j] === "}" && --depth === 0) { body = bjs.slice(i, j + 1); break; }
+    }
+  }
+  const publicFields = ((bjs.match(/(?:var|const|let) PUBLIC_FIELDS = \[([^\]]*)\]/) || [, ""])[1].match(/"([^"]+)"/g) || [])
+    .map(x => x.replace(/"/g, ""));
+  const touched = [...new Set([...body.matchAll(/\bb\.([a-z_]+)/g)].map(m => m[1]))];
+  const leaked = touched.filter(f => publicFields.indexOf(f) === -1);
+
+  // The inferred fields, by name. Stripped of comments first — the file
+  // explains at length why these are excluded, and that explanation must not
+  // read as a violation.
+  const bjsCode = bjs.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const inferred = ["needs", "volume", "quality_focus", "confidence", "notes"]
+    .filter(f => new RegExp("\\b" + f + "\\b").test(bjsCode));
+
+  const appEmail = (js.match(/const LOGISTICS_EMAIL = "([^"]+)"/) || [])[1];
+  const pageEmail = (bjs.match(/BUYERS_EMAIL = "([^"]+)"/) || [])[1];
+
+  const flatB = bcss.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  const mobileB = (flatB.match(/@media \(max-width:900px\)\{([\s\S]*?)\} \}/) || [, flatB])[1];
+  const topbarTint = (css.replace(/\s+/g, " ").match(/#topbar\{[^}]*background:(rgba\([^)]*\))/) || [])[1];
+  const pubTint = (flatB.match(/\.pub-top\{[^}]*background:(rgba\([^)]*\))/) || [])[1];
+
+  const checks = [
+    // Reachability. A public page nothing links to is a public page nobody finds.
+    ['index.html links to buyers.html', /href="buyers\.html"/.test(html)],
+    ['buyers.html links back to the app', /href="index\.html"/.test(bhtml)],
+
+    // THE rule of this page. row() may read only the five fields that came out
+    // of a public listing; needs/volume/quality_focus are desk-research guesses
+    // and printing one beside a real company's name states it as fact.
+    ['row() reads only PUBLIC_FIELDS' + (leaked.length ? " — leaked: " + leaked.join(", ") : ""),
+      publicFields.length === 5 && body.length > 0 && leaked.length === 0],
+    ['PUBLIC_FIELDS is exactly the public-listing fields',
+      publicFields.join(",") === "name,type,zone,distance_km,source"],
+    ['no inferred field is named anywhere in buyers.js code' + (inferred.length ? " — found: " + inferred.join(", ") : ""),
+      inferred.length === 0],
+
+    // Read-only. Item 14 (buyer-side intake) is a different decision entirely;
+    // a form appearing here is how it would arrive by accident.
+    ['the page is read-only (no form, no POST)', !/<form\b/i.test(bhtml) && !/method\s*=\s*"?post/i.test(bhtml) && !/fetch\(|XMLHttpRequest/.test(bjsCode)],
+    ['the page carries no auth or database code', !/supabase|createClient|signIn/i.test(bjsCode) && !/supabase-client\.js|js\/app\.js/.test(bhtml)],
+
+    // One address, in two files that cannot see each other.
+    ['the listing contact matches LOGISTICS_EMAIL in app.js', !!appEmail && appEmail === pageEmail],
+
+    // base.css locks the document to one viewport for the app shell. Undo it on
+    // body alone and this page is clipped at the first screenful with no
+    // scrollbar — which is item 6's bug, in a different place.
+    ['buyers.css unlocks scrolling on BOTH html and body',
+      /html, ?body\{ ?height:auto; ?overflow:visible/.test(flatB)],
+
+    // Item 6's standing mobile rules, applied to the new table.
+    ['the table stacks on mobile and hides its header row', /\.pub-table thead\{ ?display:none/.test(mobileB)],
+    ['...and every stacked cell renders its own label', /\.pub-table td\[data-label\]::before\{ ?content:attr\(data-label\)/.test(mobileB)],
+    ['every generated cell but the first carries data-label',
+      (body.match(/<td/g) || []).length === 5 && (body.match(/data-label=/g) || []).length === 4],
+    ['the search input is 16px on mobile (or iOS zooms in and never back out)',
+      /\.pub-search input\{ ?font-size:16px/.test(mobileB)],
+    ['the sticky bar allows for the safe-area inset', /env\(safe-area-inset-top/.test(flatB)],
+
+    // Item 11's standing accessibility rules.
+    ['the page has a skip link and a main to skip to',
+      /class="skip-link"[^>]*href="#main"/.test(bhtml) && /<main id="main" tabindex="-1">/.test(bhtml)],
+    ['the result count is a live region (it changes as you type)', /id="buyerCount"[^>]*role="status"/.test(bhtml)],
+    ['the search box has a name, not just a placeholder', /id="buyerSearch"[\s\S]{0,240}?aria-label=/.test(bhtml)],
+
+    // Same measured tint as the app's top bar: both sit over the brightest part
+    // of a farm photo, where the standard .45 glass leaves white text at 3.9:1.
+    ['the sticky bar uses the same measured tint as #topbar',
+      !!topbarTint && topbarTint === pubTint]
+  ];
+  checks.forEach(([what, ok]) => { console.log((ok ? "✓ " : "✗ ") + "buyers page: " + what); if (!ok) problems++; });
 }
 
 // Every DataStore.X( call in app.js must exist in supabase-client.js
