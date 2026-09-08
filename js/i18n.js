@@ -81,6 +81,24 @@ var STRINGS = {
     "auth.confirmEmail": "Check your email to confirm your account, then sign in.",
     "auth.generic": "Something went wrong.",
 
+    /* ---- what the sign-in service says, in the farmer's language ----
+       Supabase answers in English only. These are the replacements; the
+       mapping from its codes and wording to these keys is AUTH_ERROR_RULES
+       in js/app.js, and qa_check.js fails if the two lists drift apart in
+       either direction. Wording rule: say what to do next, not what the
+       server called it. "Invalid login credentials" names a category; "check
+       them and try again" is an instruction. */
+    "auth.err.invalidCredentials": "That email and password don't match an account. Check them and try again.",
+    "auth.err.notConfirmed": "This account still needs confirming. Open the email we sent you, then sign in.",
+    "auth.err.alreadyRegistered": "There is already an account with this email. Switch to Sign in above.",
+    "auth.err.weakPassword": "That password is too weak. Use at least 6 characters.",
+    "auth.err.badEmail": "That doesn't look like an email address.",
+    "auth.err.rateLimit": "Too many attempts. Wait a moment and try again.",
+    "auth.err.rateLimitWait": "Too many attempts. Try again in about {seconds} seconds.",
+    "auth.err.signupsClosed": "New accounts are switched off at the moment.",
+    "auth.err.banned": "This account has been blocked. Get in touch if you think that's a mistake.",
+    "auth.err.offline": "Couldn't reach the service. Check your connection and try again.",
+
     /* ---- demo mode card ---- */
     "mode.tag": "The AI that helps small farmers around Cassino sell directly to nearby buyers. Prototype — MVP demo.",
     "mode.offline": "Offline demo (works instantly)",
@@ -552,6 +570,18 @@ var STRINGS = {
     "auth.tooShort": "La password deve avere almeno 6 caratteri.",
     "auth.confirmEmail": "Controlla la tua email per confermare l'account, poi accedi.",
     "auth.generic": "Qualcosa è andato storto.",
+
+    /* ---- gli errori del servizio di accesso, nella lingua dell'agricoltore ---- */
+    "auth.err.invalidCredentials": "Questa email e questa password non corrispondono a nessun account. Controllale e riprova.",
+    "auth.err.notConfirmed": "Questo account deve ancora essere confermato. Apri l'email che ti abbiamo inviato, poi accedi.",
+    "auth.err.alreadyRegistered": "Esiste già un account con questa email. Passa ad Accedi qui sopra.",
+    "auth.err.weakPassword": "Questa password è troppo debole. Usa almeno 6 caratteri.",
+    "auth.err.badEmail": "Questo non sembra un indirizzo email.",
+    "auth.err.rateLimit": "Troppi tentativi. Aspetta un momento e riprova.",
+    "auth.err.rateLimitWait": "Troppi tentativi. Riprova tra circa {seconds} secondi.",
+    "auth.err.signupsClosed": "In questo momento non è possibile creare nuovi account.",
+    "auth.err.banned": "Questo account è stato bloccato. Scrivici se pensi che sia un errore.",
+    "auth.err.offline": "Non riesco a raggiungere il servizio. Controlla la connessione e riprova.",
 
     "mode.tag": "L'AI che aiuta i piccoli agricoltori intorno a Cassino a vendere direttamente agli acquirenti della zona. Prototipo — demo MVP.",
     "mode.offline": "Demo offline (funziona subito)",

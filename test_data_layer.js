@@ -174,6 +174,7 @@ function loadApp(root) {
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
+  authErrorInfo, AUTH_ERROR_RULES, logAuthError,
   csvSeparator, csvNumber, csvCell, toCSV, exportDate, exportFileName, organicLabel,
   researchExportRows, outreachExportRows, researchCsvCells, outreachCsvCells,
   exportHeaders, exportCsv, exportRowCount, RESEARCH_COLS, OUTREACH_COLS,
@@ -1518,6 +1519,114 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       return p.indexOf(app.T("export.emptyTable")) !== -1;
     })());
     app.state.chats = []; app.state.clients = [];
+  }
+
+  /* ============================================================
+     10. The sign-in errors (queue item 15)
+     ------------------------------------------------------------
+     Supabase's auth service answers in English and only in English, and
+     that text used to be printed verbatim into the box under the form —
+     so the first screen a farmer ever sees was the one screen the IT/EN
+     layer did not reach.
+
+     What makes this worth testing rather than eyeballing: a WRONG mapping
+     looks exactly like a right one. The box shows a fluent Italian
+     sentence either way. "Invalid login credentials" quietly mapped to
+     "there is already an account with this email" would sail past any
+     reading of the screen, and would send a farmer who mistyped a
+     password to the sign-up tab.
+     ============================================================ */
+  console.log("== Test 10: Supabase's English mapped to the farmer's language ==");
+  {
+    app.setLang("en");
+    const info = e => app.authErrorInfo(e);
+
+    /* (a) The real messages. These are Supabase's own wording, not
+       paraphrases — a rule that stops matching one of these is a rule
+       that has silently reverted that case to the generic line. */
+    const REAL = [
+      ["Invalid login credentials", "auth.err.invalidCredentials"],
+      ["Email not confirmed", "auth.err.notConfirmed"],
+      ["User already registered", "auth.err.alreadyRegistered"],
+      ["Password should be at least 6 characters.", "auth.err.weakPassword"],
+      ["Unable to validate email address: invalid format", "auth.err.badEmail"],
+      ["Signups not allowed for this instance", "auth.err.signupsClosed"],
+      ["User is banned", "auth.err.banned"],
+      ["Failed to fetch", "auth.err.offline"]
+    ];
+    for (const [msg, key] of REAL)
+      check('"' + msg + '" → ' + key, info({ message: msg }).key === key, info({ message: msg }).key);
+
+    /* (b) The code is what to trust, and it has to work on its own —
+       newer versions of the auth library send a code with a message this
+       app has never seen, and older ones send no code at all. Both
+       shapes have to land on the same key. */
+    check("a code alone is enough, with no recognisable message at all",
+      info({ code: "invalid_credentials", message: "" }).key === "auth.err.invalidCredentials");
+    check("...and a message alone is enough, with no code at all",
+      info({ message: "Invalid login credentials" }).key === "auth.err.invalidCredentials");
+    check("a known code beats an unfamiliar reworded message",
+      info({ code: "user_already_exists", message: "This address is spoken for" }).key === "auth.err.alreadyRegistered");
+    check("email_exists is the same case as user_already_exists",
+      info({ code: "email_exists" }).key === "auth.err.alreadyRegistered");
+
+    /* (c) The rate limit carries a number of seconds. "Wait a moment" and
+       "wait 51 seconds" are different instructions, so the number is used
+       when it is there and never invented when it is not. */
+    const waited = info({ code: "over_request_rate_limit", message: "For security purposes, you can only request this after 51 seconds." });
+    check("a rate limit with a countdown says how long", waited.key === "auth.err.rateLimitWait" && waited.vars.seconds === "51", JSON.stringify(waited));
+    check("...and the seconds actually reach the sentence",
+      app.T(waited.key, waited.vars).indexOf("51") !== -1, app.T(waited.key, waited.vars));
+    check("a rate limit with no countdown does not invent one",
+      info({ code: "over_email_send_rate_limit", message: "Rate limit exceeded" }).key === "auth.err.rateLimit");
+    check("...and that sentence has no leftover placeholder in it",
+      app.T("auth.err.rateLimit").indexOf("{") === -1);
+
+    /* (d) Anything unrecognised. The farmer gets the generic line rather
+       than English — but `matched` has to say so, because that flag is
+       what puts the original in the console for whoever has to debug it. */
+    for (const e of [{ message: "some brand new failure" }, { code: "totally_new_code" }, {}, null, undefined, new Error("boom")])
+      check("unrecognised (" + JSON.stringify(e && (e.message || e.code)) + ") → the generic line, flagged as unmatched",
+        info(e).key === "auth.generic" && info(e).matched === false);
+    check("a recognised one is flagged as matched", info({ message: "Invalid login credentials" }).matched === true);
+    check("nothing raw from Supabase is ever handed back as the message",
+      Object.values(app.STRINGS.en).indexOf("Invalid login credentials") === -1);
+
+    /* (e) Rules must not swallow each other. "Password should be at least
+       6 characters" must not land on the credentials rule just because
+       both mention a password; an off-by-one in the ordering shows up
+       here and nowhere else. */
+    const keys = REAL.map(([m]) => info({ message: m }).key);
+    check("every real message lands on a DIFFERENT rule", new Set(keys).size === REAL.length, keys.join(","));
+
+    /* (f) Both languages, for every key any rule can produce — including
+       the placeholder, which is the one thing a translator can drop
+       without the sentence looking wrong. */
+    const ruleKeys = [];
+    for (const r of app.AUTH_ERROR_RULES) { ruleKeys.push(r.key); if (r.waitKey) ruleKeys.push(r.waitKey); }
+    check("every rule names a key that exists in BOTH dictionaries",
+      ruleKeys.every(k => app.STRINGS.en[k] && app.STRINGS.it[k]),
+      ruleKeys.filter(k => !app.STRINGS.en[k] || !app.STRINGS.it[k]).join(","));
+    check("...and no auth.err.* string sits in the dictionary that no rule can reach",
+      Object.keys(app.STRINGS.en).filter(k => k.indexOf("auth.err.") === 0).every(k => ruleKeys.indexOf(k) !== -1));
+    check("the Italian keeps the {seconds} placeholder",
+      app.STRINGS.it["auth.err.rateLimitWait"].indexOf("{seconds}") !== -1);
+    check("the sentences really do change with the language", (() => {
+      app.setLang("it");
+      const it = app.T("auth.err.invalidCredentials");
+      app.setLang("en");
+      return it !== app.T("auth.err.invalidCredentials") && it === app.STRINGS.it["auth.err.invalidCredentials"];
+    })());
+
+    /* (g) The mapping is read at call time, not frozen — same trap as
+       every other label in this app (see test 8). */
+    check("the message is looked up when the error happens, not when the file loads", (() => {
+      app.setLang("it");
+      const shown = app.T(info({ message: "Invalid login credentials" }).key);
+      app.setLang("en");
+      return shown === app.STRINGS.it["auth.err.invalidCredentials"];
+    })());
+    app.setLang("en");
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

@@ -233,7 +233,28 @@
    measure top/right/bottom from this padding edge, so the rail itself
    doesn't move, only the normal-flow content does. */
 #assistantScreen{ position:relative; min-height:0; padding-right:264px; }
-.chat-history-rail{ position:absolute; top:18px; right:20px; bottom:18px; width:220px; border-radius:var(--radius-lg); padding:14px 10px; display:flex; flex-direction:column; overflow:hidden; z-index:2; }
+/* The Fasto-AI screen is the one screen with no panel between its content and
+   the photo, so its surfaces were the app's last four failures of WCAG AA:
+   measured against the six real backdrops, the conversation rail sat at
+   3.15:1, the incoming bubbles at 2.43:1, the example chips at 3.39:1 and the
+   message bar at 4.00:1 — three of them white glass over a bright photo,
+   the rail black but at only .20, which is nearly the same thing. Yuvi's
+   call on 2026-09-06 was to make them the same translucent BLACK glass the
+   rest of the app already uses, rather than an opaque white bubble or a
+   heavier scrim over the picture. His own red bubbles (8.1:1) and the photo
+   itself are untouched.
+
+   The rail and the transcript reach up to just under the top bar, where the
+   scrim is at its weakest (.05 at the top of the photo, .65 at the bottom),
+   so the standard .45 glass is not enough for them — same situation as
+   #topbar, and the same answer: keep the blur that comes from .glass-45 in
+   the markup and override only the tint. The chips and the message bar are
+   pinned to the bottom, where the scrim does most of the work already, so
+   those two use the plain --glass-45 token. All four ratios are recomputed
+   from this file by qa_check.js on every run. */
+.chat-history-rail{ position:absolute; top:18px; right:20px; bottom:18px; width:220px; border-radius:var(--radius-lg); padding:14px 10px; display:flex; flex-direction:column; overflow:hidden; z-index:2;
+  background:rgba(0,0,0,.62); }
+@media (prefers-reduced-transparency: reduce){ .chat-history-rail{ background:#241a19; } }
 .new-chat-btn{ display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius:var(--radius-md); background:var(--pill-active); border:none; color:#fff; font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.02em; margin-bottom:10px; flex-shrink:0; }
 .new-chat-btn:hover{ background:rgba(255,255,255,.2); }
 .chat-rail-list{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; -webkit-mask-image:linear-gradient(to bottom, black 85%, transparent 100%); mask-image:linear-gradient(to bottom, black 85%, transparent 100%); }
@@ -257,12 +278,20 @@
    "latest message visible" result without breaking scroll. */
 .assist-transcript{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:8px 8px 16px 4px; }
 .assist-transcript .bubble{ box-shadow:var(--shadow-2); max-width:60%; }
+/* Scoped to this screen on purpose: the same .bubble.in in the Clients
+   thread is already 9.0:1 over two stacked glass panels, and darkening it
+   there would only flatten it against them. No backdrop-filter here —
+   a transcript can hold dozens of these and they scroll, so blurring
+   every one of them buys identity at a real cost on a cheap phone. */
+.assist-transcript .bubble.in{ background:rgba(0,0,0,.55); }
 .typing-ind{ display:none; font-size:12px; color:var(--ink-50); padding:0 4px; }
 
 .chip-row{ display:flex; flex-wrap:wrap; gap:8px; padding:0 4px 10px; }
-.sugg-chip{ background:var(--white-15); border-radius:999px; padding:7px 13px; font-size:11.5px; color:var(--ink-70); cursor:pointer;
+.sugg-chip{ background:var(--glass-45); border-radius:999px; padding:7px 13px; font-size:11.5px; color:var(--ink-70); cursor:pointer;
   border:none; font-family:inherit; text-align:left; -webkit-appearance:none; appearance:none; }
-.sugg-chip:hover{ background:rgba(255,255,255,.24); color:#fff; }
+/* Hover deepens rather than lightens: adding white back would undo exactly the
+   thing this item fixed, on the one state a farmer is looking straight at. */
+.sugg-chip:hover{ background:rgba(0,0,0,.58); color:#fff; }
 
 .prompt-bar{ margin-top:auto; border-radius:var(--radius-lg); padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow-1); }
 .prompt-bar input{ flex:1; background:transparent; border:none; outline:none; color:#fff; font-size:13.5px; }

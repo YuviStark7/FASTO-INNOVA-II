@@ -267,6 +267,100 @@ async function callClaude(system, messages, tools, maxTokens, forceTool) {
   return data;
 }
 
+/* ================= SIGN-IN ERRORS =================
+   Supabase's auth service answers in English and only in English —
+   "Invalid login credentials", "User already registered" — and until
+   now that text went straight into the error box under the sign-in
+   form. So the very first screen a farmer sees was the one screen the
+   IT/EN layer didn't cover, and it broke exactly when something had
+   already gone wrong.
+
+   Two things are matched, in this order, and the order matters:
+
+     1. err.code — the stable, machine-readable identifier newer
+        versions of Supabase's auth library set ("invalid_credentials").
+        This is the one to trust: it is documented, and it does not
+        change when someone rewords the English.
+     2. err.message — a regex, because older versions of the library
+        (and the raw REST errors) carry no code at all, only prose.
+        A wording change upstream silently drops a rule back to the
+        generic line, which is a blemish rather than a break; that is
+        the deliberate trade for covering the older shape at all.
+
+   Anything unrecognised falls through to the generic line rather than
+   printing English at the farmer. The raw text is NOT thrown away —
+   it goes to console.warn, because "Something went wrong" with no
+   trace anywhere is unsupportable, and this is the one place where
+   the person reading the screen and the person debugging it are
+   different people.
+
+   ADDING A RULE: put the key in the dictionary in BOTH languages.
+   qa_check.js reads the keys straight out of the table below and
+   fails both ways — a rule with no dictionary entry, and an
+   auth.err.* string in the dictionary that no rule can ever reach. */
+const AUTH_ERROR_RULES = [
+  // Wrong email or wrong password. GoTrue deliberately does not say which,
+  // so that an attacker can't use the form to find out which emails exist —
+  // don't "improve" this by guessing at one or the other.
+  { key: "auth.err.invalidCredentials", codes: ["invalid_credentials", "invalid_grant"],
+    re: /invalid login credentials|invalid email or password/i },
+  // Signed up, but never clicked the link in the email.
+  { key: "auth.err.notConfirmed", codes: ["email_not_confirmed"], re: /email not confirmed/i },
+  // Sign-up against an address that already has an account.
+  { key: "auth.err.alreadyRegistered", codes: ["user_already_exists", "email_exists"],
+    re: /user already registered|already been registered/i },
+  // The server's own minimum, which can be stricter than the 6 characters
+  // this form checks for before it sends anything.
+  { key: "auth.err.weakPassword", codes: ["weak_password"], re: /password should be at least|password is too weak/i },
+  { key: "auth.err.badEmail", codes: ["email_address_invalid", "validation_failed"],
+    re: /unable to validate email address|invalid format/i },
+  // 429. The message carries the number of seconds to wait; when it can be
+  // read, waitKey says it, because "wait a moment" and "wait 51 seconds" are
+  // different instructions.
+  { key: "auth.err.rateLimit", waitKey: "auth.err.rateLimitWait",
+    codes: ["over_request_rate_limit", "over_email_send_rate_limit"],
+    re: /for security purposes|rate limit|too many requests/i },
+  { key: "auth.err.signupsClosed", codes: ["signup_disabled", "email_provider_disabled"],
+    re: /signups not allowed|signup is disabled/i },
+  { key: "auth.err.banned", codes: ["user_banned"], re: /user is banned/i },
+  // Not an auth failure at all — the request never arrived. Worth its own
+  // line because the farmer's next move is different: check the connection,
+  // not the password.
+  { key: "auth.err.offline", codes: ["request_timeout"], names: ["AuthRetryableFetchError", "TypeError"],
+    re: /failed to fetch|network ?error|load failed|networkrequestfailed/i }
+];
+
+/* Pure, and split from the DOM on purpose (same reason as buildLogisticsPayload
+   and applyProfileEdit): the mapping is the part worth testing, and it can be
+   driven with a plain object rather than a live sign-in failure. */
+function authErrorInfo(err) {
+  const code = String((err && err.code) || "");
+  const name = String((err && err.name) || "");
+  const msg = String((err && err.message) || "");
+  for (const rule of AUTH_ERROR_RULES) {
+    const byCode = code && rule.codes.indexOf(code) !== -1;
+    const byName = !!(rule.names && name && rule.names.indexOf(name) !== -1 && rule.re.test(msg));
+    const byText = !!(msg && rule.re.test(msg));
+    if (!byCode && !byName && !byText) continue;
+    if (rule.waitKey) {
+      const secs = msg.match(/(\d+)\s*second/i);
+      if (secs) return { key: rule.waitKey, vars: { seconds: secs[1] }, matched: true };
+    }
+    return { key: rule.key, vars: null, matched: true };
+  }
+  return { key: "auth.generic", vars: null, matched: false };
+}
+
+/* Unrecognised: the farmer gets the generic line, the console keeps the
+   evidence — "Something went wrong" with nothing recoverable anywhere is
+   unsupportable. Recognised ones are logged too, because the English original
+   beside the key it was mapped to is the only way to spot a mis-mapped rule
+   after the fact. */
+function logAuthError(err, info) {
+  console.warn("[auth] " + (info.matched ? "recognised as " + info.key : "UNRECOGNISED — showing the generic line") +
+    " | code=" + ((err && err.code) || "-") + " | " + ((err && err.message) || err));
+}
+
 /* ================= ACCOUNT DATA (Supabase) ================= */
 async function loadBuyers() {
   try {
@@ -2258,7 +2352,9 @@ function boot() {
     // signing UP, iOS and Android offer to fill an old password instead of
     // suggesting a new one, and never offer to save the new account.
     $("authPassword").setAttribute("autocomplete", next === "up" ? "new-password" : "current-password");
-    $("authErr").style.display = "none";
+    // Switching tabs drops the message AND what it was, or a later language
+    // switch would repaint an error the farmer has already dismissed.
+    clearAuthError();
   }
   $("authTabIn").onclick = () => setAuthMode("in");
   $("authTabUp").onclick = () => setAuthMode("up");
@@ -2279,26 +2375,42 @@ function boot() {
 
   function goToModeCard() { $("authCard").style.display = "none"; $("modeCard").style.display = "block"; }
 
+  /* The error box is written to as a KEY, never as a finished sentence, so that
+     a farmer who presses IT while the message is on screen gets the message
+     translated too — rather than the rest of the card changing language around
+     a line that doesn't. Everything the box can say goes through here. */
+  let authErrShown = null;
+  function showAuthError(key, vars) {
+    authErrShown = { key: key, vars: vars || null };
+    const b = $("authErr");
+    b.textContent = T(key, vars);
+    b.style.display = "block";
+  }
+  function clearAuthError() { authErrShown = null; $("authErr").style.display = "none"; }
+  onLangChange(() => { if (authErrShown) $("authErr").textContent = T(authErrShown.key, authErrShown.vars); });
+
   $("authSubmitBtn").onclick = async () => {
     const email = $("authEmail").value.trim();
     const password = $("authPassword").value;
-    const errBox = $("authErr"); errBox.style.display = "none";
-    if (!email || !password) { errBox.textContent = T("auth.needBoth"); errBox.style.display = "block"; return; }
-    if (password.length < 6) { errBox.textContent = T("auth.tooShort"); errBox.style.display = "block"; return; }
+    clearAuthError();
+    if (!email || !password) { showAuthError("auth.needBoth"); return; }
+    if (password.length < 6) { showAuthError("auth.tooShort"); return; }
     setAuthBusy(true, T(authMode === "up" ? "auth.creating" : "auth.signingIn"));
     try {
       const { data, error } = authMode === "up" ? await DataStore.signUp(email, password) : await DataStore.signIn(email, password);
       if (error) throw error;
       if (!data.session) {
-        errBox.textContent = T("auth.confirmEmail");
-        errBox.style.display = "block";
+        showAuthError("auth.confirmEmail");
       } else {
         state.farmerId = data.user.id;
         goToModeCard();
       }
     } catch (e) {
-      errBox.textContent = e.message || T("auth.generic");
-      errBox.style.display = "block";
+      // Was `e.message` — Supabase's own English, printed at a farmer who may
+      // not read it, on the one screen the language toggle couldn't reach.
+      const info = authErrorInfo(e);
+      logAuthError(e, info);
+      showAuthError(info.key, info.vars);
     }
     setAuthBusy(false);
   };

@@ -81,6 +81,9 @@ const i18n = require(path + "/js/i18n.js");
     ["buyers.type.", [...new Set([...require(path + "/js/data.js").DB.buyers, ...require(path + "/js/data.js").DB.channels].map(b => b.type))]],
     ["admin.stage.", ["started", "profile", "drafted", "sent"]],
     ["admin.hint.", ["started", "profile", "drafted", "sent"]],
+    // The sign-in errors are reached as T(info.key), never as a literal, so
+    // the T("…") scan above cannot see them. Read them out of the rule table.
+    ["", authRuleKeys(js)],
     ["", (js.match(/const OFFLINE_SCRIPT_KEYS = \[([^\]]+)\]/) || [, ""])[1].split(",").map(x => x.trim().replace(/"/g, "")).filter(Boolean)]
   ];
   for (const [prefix, suffixes] of built) for (const sfx of suffixes) used.add(prefix + sfx);
@@ -97,6 +100,69 @@ const i18n = require(path + "/js/i18n.js");
       if (decode(text) !== decode(i18n.STRINGS.en[key] || "")) drifted.push(where + ":" + key);
     }
   report("static English out of step with the en dictionary", drifted);
+}
+
+/* ---- the sign-in errors (queue item 15) ----
+   AUTH_ERROR_RULES in app.js and the auth.err.* block in i18n.js are two
+   lists in two files that have to stay the same length, and neither one
+   throws when they don't: a rule with no entry shows the raw key to a
+   farmer, and an entry no rule reaches is a message that can never appear.
+   The catch is that a wrong mapping is INVISIBLE at runtime — the box shows
+   a fluent Italian sentence either way, just the wrong one. So the table is
+   also required to keep matching on the actual English Supabase sends. */
+function authRuleKeys(src) {
+  const block = (src.match(/const AUTH_ERROR_RULES = \[[\s\S]*?\n\];/) || [""])[0];
+  return [...block.matchAll(/(?:key|waitKey):\s*"(auth\.[A-Za-z.]+)"/g)].map(m => m[1]);
+}
+{
+  const keys = authRuleKeys(js);
+  console.log("sign-in error rules found in app.js: " + keys.length);
+  report("sign-in error keys with no dictionary entry",
+    keys.filter(k => !(k in i18n.STRINGS.en) || !(k in i18n.STRINGS.it)));
+  // The other direction: a translated message no rule can ever produce.
+  report("auth.err.* strings no rule in app.js can reach",
+    Object.keys(i18n.STRINGS.en).filter(k => k.startsWith("auth.err.") && keys.indexOf(k) === -1));
+  report("sign-in errors: expected the handful of rules to still be there", keys.length >= 8 ? [] : ["only " + keys.length]);
+
+  // The raw English Supabase actually sends, each with the key it must reach.
+  // If a rule's regex is loosened until it swallows a neighbour, or tightened
+  // until it stops matching, this is what says so.
+  const SAMPLES = [
+    ["Invalid login credentials", "auth.err.invalidCredentials"],
+    ["Email not confirmed", "auth.err.notConfirmed"],
+    ["User already registered", "auth.err.alreadyRegistered"],
+    ["Password should be at least 6 characters.", "auth.err.weakPassword"],
+    ["Unable to validate email address: invalid format", "auth.err.badEmail"],
+    ["For security purposes, you can only request this after 51 seconds.", "auth.err.rateLimitWait"],
+    ["Signups not allowed for this instance", "auth.err.signupsClosed"],
+    ["User is banned", "auth.err.banned"],
+    ["Failed to fetch", "auth.err.offline"]
+  ];
+  // app.js can't be require()d (it runs against a DOM), so the rule table and
+  // authErrorInfo are lifted out and run on their own in a bare vm context.
+  const vm = require("vm");
+  const rulesSrc = (js.match(/const AUTH_ERROR_RULES = \[[\s\S]*?\n\];/) || [""])[0];
+  const fnSrc = (js.match(/function authErrorInfo\(err\) \{[\s\S]*?\n\}/) || [""])[0];
+  const ctx = { out: null };
+  vm.createContext(ctx);
+  vm.runInContext(rulesSrc + "\n" + fnSrc + "\nout = authErrorInfo;", ctx, { filename: "auth-rules.js" });
+  const wrong = SAMPLES.filter(([msg, key]) => ctx.out({ message: msg }).key !== key)
+    .map(([msg, key]) => msg + " → " + ctx.out({ message: msg }).key + " (want " + key + ")");
+  report("Supabase's own English no longer mapping to the right message", wrong);
+  report("an unrecognised error not falling through to the generic line",
+    ctx.out({ message: "something nobody has seen before" }).key === "auth.generic" &&
+    ctx.out({ message: "something nobody has seen before" }).matched === false ? [] : ["authErrorInfo"]);
+  // The box has to be written through showAuthError, which remembers the KEY,
+  // or a language switch repaints every other line on the card around a
+  // sentence stuck in the language it was raised in. The one exception is the
+  // onLangChange listener itself, which is what does the repainting.
+  {
+    const writes = [...js.matchAll(/^.*\$\("authErr"\)\.textContent\s*=.*$/gm)].map(m => m[0].trim());
+    report("the sign-in error box written outside showAuthError / its language listener",
+      writes.filter(l => !/authErrShown/.test(l)));
+    report("showAuthError missing, or the error box no longer repainted on a language switch",
+      /function showAuthError\(/.test(js) && /onLangChange\(\(\) => \{ if \(authErrShown\)/.test(js) ? [] : ["app.js"]);
+  }
 }
 
 /* The engine's own sentences. js/core.js is the tested engine and is not
@@ -260,6 +326,8 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
 {
   const SCRIM_TOP = [242, 242, 238];       // under the top bar (scrim is weakest there)
   const SCRIM_BOTTOM = [116, 112, 100];    // under the dashboard panel
+  const SCRIM_ASSIST = [225, 224, 225];    // the Fasto-AI screen body: everything below the top bar, scrim at its weakest
+  const W = [255, 255, 255];
   const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
   const lum = c => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
   const ratio = (f, b) => { const [hi, lo] = [lum(f), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
@@ -270,12 +338,31 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   const flat = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
   const decl = (sel, prop) => { const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{[^}]*?" + prop + ":\\s*([^;}]+)").exec(flat); return m ? m[1].trim() : null; };
 
+  const cssVar = v => { const m = /var\(\s*(--[\w-]+)\s*\)/.exec(v || ""); return m ? decl(":root", m[1]) : v; };
+  /* A surface whose tint comes from a glass class in the markup rather than
+     from a rule of its own — .glass-45 { background: var(--glass-45) } — so the
+     check follows the same two hops a browser does instead of assuming .45. */
+  const glassOf = cls => rgba(cssVar(decl("." + cls, "background")));
+  const classOn = sel => { const m = new RegExp('class="' + sel + '\\s+(glass-[\\w-]+)"').exec(html); return m ? m[1] : null; };
+
   const ink70 = rgba(decl(":root", "--ink-70")), ink50 = rgba(decl(":root", "--ink-50"));
   const topbar = rgba(decl("#topbar", "background"));
+  /* ROADMAP item 22 — the Fasto-AI screen. */
+  const pillActive = rgba(cssVar(decl(":root", "--pill-active")));
+  const railTint = rgba(cssVar(decl(".chat-history-rail", "background")));
+  const bubbleTint = rgba(cssVar(decl(".assist-transcript .bubble.in", "background")));
+  const chipTint = rgba(cssVar(decl(".sugg-chip", "background")));
+  const chipHover = rgba(cssVar(decl(".sugg-chip:hover", "background")));
+  const barClass = classOn("prompt-bar");
+  const barTint = barClass ? glassOf(barClass) : null;
   const navOpacity = parseFloat(decl(".nav-item", "opacity"));
   const warnText = hex(decl(".sync-warn", "color")), pillBlue = hex(decl(".pill-blue", "color"));
   const missing = [!ink70 && "--ink-70", !ink50 && "--ink-50", !topbar && "#topbar background",
-                   !navOpacity && ".nav-item opacity", !warnText && ".sync-warn color", !pillBlue && ".pill-blue color"].filter(Boolean);
+                   !navOpacity && ".nav-item opacity", !warnText && ".sync-warn color", !pillBlue && ".pill-blue color",
+                   !pillActive && "--pill-active", !railTint && ".chat-history-rail background",
+                   !bubbleTint && ".assist-transcript .bubble.in background", !chipTint && ".sugg-chip background",
+                   !chipHover && ".sugg-chip:hover background",
+                   !barTint && ".prompt-bar glass class in index.html"].filter(Boolean);
   report("contrast check couldn't read these values out of the CSS", missing);
 
   if (!missing.length) {
@@ -290,7 +377,32 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
       ["chip text on a panel", over(ink70.rgb, ink70.a, chip(panel)), chip(panel)],
       ["inactive nav labels on the sidebar", over([255, 255, 255], navOpacity, [150, 37, 36]), [150, 37, 36]],
       ["the “not saved” chip", warnText, over([217, 164, 65], 0.16, top)],
-      ["pill-blue on a panel", pillBlue, over([74, 134, 201], 0.22, panel)]
+      ["pill-blue on a panel", pillBlue, over([74, 134, 201], 0.22, panel)],
+      /* ---- the Fasto-AI screen (ROADMAP item 22) ----
+         The one screen with no panel between its content and the photo, so
+         until 2026-09-07 it held the app's last four AA failures: the rail at
+         3.15:1, the incoming bubbles at 2.43, the chips at 3.39 and the
+         message bar at 4.00, all of them white glass over a bright picture.
+         The rail and the transcript run from just under the top bar to the
+         bottom of the screen, so they are measured against SCRIM_ASSIST — the
+         brightest 99.9th-percentile pixel of that whole band with the scrim
+         at its weakest, measured off the same six photos as the two constants
+         above. The chips and the message bar are pinned to the bottom, where
+         SCRIM_BOTTOM already applies. Reverting any of these four tints to
+         white glass fails this check rather than merely looking fine. */
+      ["the incoming bubbles on the Fasto-AI screen", W, over(bubbleTint.rgb, bubbleTint.a, SCRIM_ASSIST)],
+      ["the conversation rail", over(ink70.rgb, ink70.a, over(railTint.rgb, railTint.a, SCRIM_ASSIST)),
+        over(railTint.rgb, railTint.a, SCRIM_ASSIST)],
+      ["the open conversation in the rail", W,
+        over(pillActive.rgb, pillActive.a, over(railTint.rgb, railTint.a, SCRIM_ASSIST))],
+      ["the example chips", over(ink70.rgb, ink70.a, over(chipTint.rgb, chipTint.a, SCRIM_BOTTOM)),
+        over(chipTint.rgb, chipTint.a, SCRIM_BOTTOM)],
+      ["the message bar placeholder", over(ink50.rgb, ink50.a, over(barTint.rgb, barTint.a, SCRIM_BOTTOM)),
+        over(barTint.rgb, barTint.a, SCRIM_BOTTOM)],
+      /* Hover is measured too: it is the one state the farmer is looking
+         straight at, and putting white back on hover would undo this item on
+         exactly the chip being read. */
+      ["a hovered example chip", W, over(chipHover.rgb, chipHover.a, SCRIM_BOTTOM)]
     ];
     const failed = cases.filter(([, f, b]) => ratio(f, b) < 4.5)
       .map(([label, f, b]) => label + " " + ratio(f, b).toFixed(2) + ":1");
@@ -298,6 +410,18 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
       cases.map(([label, f, b]) => label.replace(/^the |^a /, "").split(" ")[0] + " " + ratio(f, b).toFixed(1)).join(" · "));
     report("text below WCAG AA (4.5:1) over the brightest backdrop", failed);
   }
+
+  /* Two structural halves of the same item. A surface that carries its own
+     tint still needs a glass class in the markup for the blur AND for the
+     opaque fallback under prefers-reduced-transparency — and because that
+     override lives in app.css, which loads after base.css, it beats the
+     fallback unless it is repeated inside the media query. #topbar learned
+     this first; the conversation rail is the second one to do it. */
+  const tinted = ["#topbar", ".chat-history-rail"];
+  report("glass surfaces whose own tint has no prefers-reduced-transparency fallback",
+    tinted.filter(sel => !new RegExp("prefers-reduced-transparency[^{]*\\{\\s*" + sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{").test(flat)));
+  report("Fasto-AI surfaces missing a glass class in the markup",
+    ["chat-history-rail", "prompt-bar"].filter(c => !new RegExp('class="' + c + '\\s+glass-').test(html)));
 }
 
 /* ============================================================
