@@ -26,6 +26,9 @@ const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g,
 let state = {
   apiKey: "", model: "claude-haiku-4-5-20251001", offline: true,
   farmerId: null, isAdmin: false,
+  role: "farmer",       // "farmer" | "buyer" — read from the account row, never from the browser
+  email: "",            // the signed-in address, used only to prefill a buyer's claim
+  claims: [],           // a buyer's own claims on listed businesses (buyer_claims)
   farmerProfile: {},    // the farmer's own `farmers` row — name + the business details the logistics form needs
   chats: [],           // {id,title,phase,pct,messages:[{role,text}],apiMessages,profile,candidates,recs,offlineStep,offlineReady,ts}
   activeChatId: null,
@@ -34,7 +37,8 @@ let state = {
   screen: "dashboard",
   activeClientId: null,
   showAllResearch: false,
-  adminStage: "started"   // which funnel stage the Admin table is filtered to
+  adminStage: "started",  // which funnel stage the Admin table is filtered to
+  search: ""              // the top-bar query — see SEARCH below. It lives in state, not in the DOM
 };
 
 /* ---------- Prompts / tool schemas (Brain 1 + Brain 2) ---------- */
@@ -145,11 +149,13 @@ function setLang(lang) {
 
   updateHeaderIdentity();
   paintModePill();
+  renderBell();
   renderDashboard();
   renderChats();
   renderChatRail();
   renderTranscript();
   if (state.screen === "admin") paintAdmin();
+  if (isBuyer()) renderBuyerScreens();
 
   /* The three sheets are deliberately NOT rebuilt. Two of them are forms, and
      redrawing one would throw away a half-typed logistics request or a
@@ -507,8 +513,17 @@ function selectChat(id) { state.activeChatId = id; clearErr(); updateHeaderIdent
    the keyboard at all. aria-current marks which one is open, since "active"
    here is a background tint and nothing else. */
 function renderChatRail() {
+  renderBell();
   const el = $("chatRailList"); if (!el) return;
-  el.innerHTML = state.chats.map(c => {
+  const q = normalizeQuery(state.search);
+  const list = q ? filterChatRail(state.chats, q) : state.chats;
+  /* The open conversation stays open even when the query excludes it — the
+     rail is a way of changing conversation, not a way of losing one. */
+  if (q && !list.length) {
+    el.innerHTML = `<div class="chat-rail-empty">${esc(T("search.noneChats", { q: state.search.trim() }))}</div>`;
+    return;
+  }
+  el.innerHTML = list.map(c => {
     const on = c.id === state.activeChatId;
     return `
     <button type="button" class="chat-rail-item ${on ? "active" : ""}" data-chat-id="${esc(c.id)}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openChat", { title: c.title }))}" onclick="selectChat('${c.id}')">
@@ -885,17 +900,54 @@ async function addClientFromRecs(recs, chat) {
     flagged: !!recs.outreach.flagged_claim, status: "draft", ts: Date.now(), extra: []
   });
   if (!state.activeClientId) state.activeClientId = state.clients[0].id;
+  /* A draft lands while the farmer is still on Fasto-AI, where none of the
+     three renderers above run. Without this the badge would not appear until
+     they changed screen — which is exactly the moment it stops being news. */
+  renderBell();
 }
 function markSent(id) {
   const c = state.clients.find(x => x.id === id); if (!c) return;
   c.status = "sent"; c.sentTs = Date.now();
   toast(T("clients.markedSent", { name: c.name }));
-  renderChats(); renderDashboard();
+  renderChats(); renderDashboard(); renderBell();
   if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString() }), "save.sentMark");
+}
+
+/* ---------- Notification bell ---------- */
+/* Pure and DOM-free, like filterClients / buildLogisticsPayload: the rule for
+   what counts as waiting is the part worth testing, and it is tested without a
+   page. "draft" is the status an outreach row is born with (see the unshift in
+   the recommendation flow) and markSent is the only thing that moves it off. */
+function draftCount(clients) { return (clients || []).filter(c => c && c.status === "draft").length; }
+
+function renderBell() {
+  const btn = $("bellBtn"); if (!btn) return;
+  const n = draftCount(state.clients);
+  const badge = $("bellCount");
+  if (badge) {
+    /* Three digits would push the badge wider than the button it sits on, and
+       the exact number stops being the useful part long before 100. */
+    badge.textContent = n > 99 ? "99+" : String(n);
+    badge.style.display = n ? "flex" : "none";
+  }
+  /* The label is written here rather than by applyI18n — the same division of
+     labour as #researchEmpty, and for the same reason: it carries a number, so
+     a language switch has to re-read the count instead of painting a stale
+     sentence over it. setLang calls renderBell after applyI18n. The badge
+     itself is aria-hidden; this label is where the count is announced, and
+     reading it twice would be worse than not reading it at all. */
+  const label = n ? T("top.bellSome", { n }) : T("top.bellNone");
+  btn.setAttribute("title", label);
+  btn.setAttribute("aria-label", label);
 }
 
 /* ---------- Header identity ---------- */
 function updateHeaderIdentity() {
+  if (isBuyer()) {
+    const biz = myBusiness();
+    $("whoName").textContent = (biz ? biz.name : T("buyer.guest")).toUpperCase();
+    return;
+  }
   const chat = activeChat();
   const name = (chat && chat.profile && chat.profile.farmer_name) || T("top.guest");
   $("whoName").textContent = name.toUpperCase();
@@ -943,6 +995,84 @@ function showResearchSkeleton(rows) {
   $("researchSeeAll").style.display = "none";
 }
 
+/* ================= SEARCH =================
+   ROADMAP item 17. The top-bar box used to reach into the page after the fact:
+   it walked the rows that happened to exist and set style.display on the ones
+   that didn't match. Nothing recorded that a query was active, so the next
+   render — a new message arriving, a price corrected, a draft marked sent, a
+   language switch, arriving on the screen at all — rebuilt the list from state
+   and every hidden row came back while the words were still in the box.
+
+   The query lives in state.search now and the render functions do the
+   filtering, which is what makes it survive. Four decisions on top of that:
+
+   1. IT MATCHES FIELDS, NOT RENDERED TEXT. The old version tested the row's
+      whole textContent, so a query could match across two cells that only
+      happen to sit next to each other. Each field is matched on its own, and
+      several words all have to match (in any order, in any field) rather than
+      being one literal string — "pomodori sant" finds the row, which typing
+      the cells in the wrong order never did.
+   2. IT SEARCHES MORE THAN IS ON SCREEN where the screen is a summary: the
+      Dashboard shows only a conversation's largest product, and the client
+      list shows the first 46 characters of a draft. Both are searched in full.
+   3. A QUERY NEVER CHANGES WHAT IS SELECTED. Filtering the client list does
+      not close the thread you are reading, filtering the rail does not close
+      the conversation you are in, and neither ever writes to state beyond the
+      query itself. Clearing the box puts everything back exactly as it was.
+   4. NO MATCH SAYS SO, naming the query. An empty table with no explanation
+      reads as lost data, which is precisely the impression this app can least
+      afford to give — the empty-state line is written by the renderer for that
+      reason, so #researchEmpty carries no data-i18n of its own (one writer per
+      element, the lesson from #modePill in item 10). */
+
+function normalizeQuery(q) { return String(q == null ? "" : q).trim().toLowerCase(); }
+function searchTerms(q) { const n = normalizeQuery(q); return n ? n.split(/\s+/) : []; }
+/* The fields are joined with a space, and a term can never contain one (the
+   query is split on whitespace), so no single term can span two fields — a
+   row whose quantity ends in 80 and whose next field starts with "pomodori"
+   must not be found by typing "80pomodori". */
+function matchesSearch(fields, q) {
+  const terms = searchTerms(q);
+  if (!terms.length) return true;
+  const hay = (fields || []).filter(f => f !== null && f !== undefined && f !== "")
+    .map(f => String(f).toLowerCase()).join(" ");
+  return terms.every(t => hay.includes(t));
+}
+function researchSearchFields(c) {
+  const top = topProductCategory(c.profile);
+  const prods = (c.profile && c.profile.products) || [];
+  return [c.title, relDate(c.ts), catLabel(top), top, phaseLabel(c.phase),
+    c.profile && c.profile.village, c.profile && c.profile.farmer_name]
+    .concat(prods.map(p => p.name)).concat(prods.map(p => catLabel(p.category)))
+    .concat(prods.map(p => p.category));
+}
+function clientSearchFields(c) {
+  return [c.name, c.message_it, c.message_en,
+    T(c.status === "sent" ? "clients.sent" : "clients.draft")];
+}
+function chatSearchFields(c) { return [c.title]; }
+/* Pure and DOM-free on purpose, like buildLogisticsPayload / applyProfileEdit /
+   authErrorInfo — the filtering is the part worth testing, and it is tested
+   without a page. */
+function filterResearch(chats, q) { return chats.filter(c => matchesSearch(researchSearchFields(c), q)); }
+function filterClients(clients, q) { return clients.filter(c => matchesSearch(clientSearchFields(c), q)); }
+function filterChatRail(chats, q) { return chats.filter(c => matchesSearch(chatSearchFields(c), q)); }
+
+function setSearch(v) {
+  const next = String(v == null ? "" : v);
+  if (next === state.search) return;
+  state.search = next;
+  repaintForSearch();
+}
+/* Only the list that the query filters is redrawn. renderChats() would also
+   rebuild the thread pane, and the thread pane contains the follow-up-note box
+   — redrawing it on every keystroke would throw away a half-typed note. */
+function repaintForSearch() {
+  if (state.screen === "dashboard") renderDashboard();
+  else if (state.screen === "clients") renderClientList();
+  else if (state.screen === "assistant") renderChatRail();
+}
+
 /* ================= RENDERERS ================= */
 function phaseLabel(p) { return ["interview", "matching", "done"].indexOf(p) === -1 ? p : T("phase." + p); }
 function progClass(pct) { return pct >= 70 ? "" : pct >= 30 ? "warn" : "danger"; }
@@ -963,9 +1093,15 @@ function adjustPrice(cat) {
 }
 
 function renderDashboard() {
+  renderBell();
   if (!$("dashboardScreen")) return;
-  const rows = state.chats.filter(c => c.profile).sort((a, b) => b.ts - a.ts);
-  const shown = state.showAllResearch ? rows : rows.slice(0, 3);
+  const all = state.chats.filter(c => c.profile).sort((a, b) => b.ts - a.ts);
+  const q = normalizeQuery(state.search);
+  const rows = q ? filterResearch(all, q) : all;
+  /* "Latest 3 / see all" is a way of not drowning the screen in a long list.
+     A query is the same job done better, so while one is active every match is
+     shown and the toggle is out of the way. */
+  const shown = (q || state.showAllResearch) ? rows : rows.slice(0, 3);
 
   $("researchBody").innerHTML = shown.map(c => {
     const top = topProductCategory(c.profile);
@@ -991,10 +1127,15 @@ function renderDashboard() {
       </td>
     </tr>`;
   }).join("");
-  $("researchEmpty").style.display = shown.length ? "none" : "block";
+  const empty = $("researchEmpty");
+  empty.style.display = shown.length ? "none" : "block";
+  /* Written here rather than by a data-i18n attribute: the element has two
+     messages now, and "nothing matched your search" must never be mistaken for
+     "your research is gone". textContent, so the query is never markup. */
+  empty.textContent = (q && all.length) ? T("search.noneResearch", { q: state.search.trim() }) : T("dash.empty");
   const seeAll = $("researchSeeAll");
-  seeAll.style.display = rows.length > 3 ? "inline-flex" : "none";
-  seeAll.textContent = state.showAllResearch ? T("dash.showLatest") : T("dash.seeAllN", { n: rows.length });
+  seeAll.style.display = (!q && all.length > 3) ? "inline-flex" : "none";
+  seeAll.textContent = state.showAllResearch ? T("dash.showLatest") : T("dash.seeAllN", { n: all.length });
 }
 
 
@@ -1279,16 +1420,28 @@ function avatarHTML(name, idx) {
   return `<div class="avatar av-${idx % 5}">${esc((name || "?").slice(0, 2).toUpperCase())}</div>`;
 }
 
-function renderChats() {
-  if (!$("clientsScreen")) return;
+/* Split from renderChats() so a search keystroke can redraw the list WITHOUT
+   redrawing the thread beside it: renderThread() rebuilds the pane, and the
+   pane holds the follow-up-note box a farmer may be halfway through typing. */
+function renderClientList() {
+  renderBell();
   const list = $("clientList");
+  if (!list) return;
   if (!state.clients.length) {
     list.innerHTML = `<div class="empty-state">${esc(T("clients.emptyList"))}<br>${esc(T("clients.emptyListHint"))}</div>`;
-    $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`;
+    return;
+  }
+  const q = normalizeQuery(state.search);
+  const shown = q ? filterClients(state.clients, q) : state.clients;
+  if (!shown.length) {
+    list.innerHTML = `<div class="empty-state">${esc(T("search.noneClients", { q: state.search.trim() }))}</div>`;
     return;
   }
   // Buttons for the same reason as the chat rail: this list was mouse-only.
-  list.innerHTML = state.clients.map((c, i) => {
+  list.innerHTML = shown.map(c => {
+    /* The avatar colour is picked from the position in the FULL list, not in
+       the filtered one, or a buyer would change colour while you searched. */
+    const i = state.clients.indexOf(c);
     const on = c.id === state.activeClientId;
     return `
     <button type="button" class="client-item ${on ? "active" : ""}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openClient", { name: c.name }))}" onclick="selectClient('${c.id}')">
@@ -1299,6 +1452,17 @@ function renderChats() {
       </div>
     </button>`;
   }).join("");
+}
+function renderChats() {
+  if (!$("clientsScreen")) return;
+  renderClientList();
+  if (!state.clients.length) {
+    $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`;
+    return;
+  }
+  /* Which thread is open is chosen from the full list, never from the filtered
+     one: a search must not silently re-select a different conversation, and it
+     must not close the one being read just because its name stops matching. */
   if (!state.activeClientId) state.activeClientId = state.clients[0].id;
   renderThread();
 }
@@ -2065,11 +2229,12 @@ let adminCache = null;
 
 async function renderAdmin() {
   if (!$("adminScreen") || !state.isAdmin) return;
-  const [{ data: farmers, error: e1 }, { data: chats, error: e2 }, { data: outreach, error: e3 }] = await Promise.all([
-    DataStore.listAllFarmers(), DataStore.listAllChats(), DataStore.listAllOutreach()
+  const [{ data: farmers, error: e1 }, { data: chats, error: e2 }, { data: outreach, error: e3 }, { data: claims, error: e4 }] = await Promise.all([
+    DataStore.listAllFarmers(), DataStore.listAllChats(), DataStore.listAllOutreach(), DataStore.listAllClaims()
   ]);
-  if (e1 || e2 || e3) { console.error("admin load failed", e1, e2, e3); toast(T("admin.loadFailed")); return; }
-  adminCache = { farmers: farmers || [], chats: chats || [], outreach: outreach || [] };
+  if (e1 || e2 || e3 || e4) { console.error("admin load failed", e1, e2, e3, e4); toast(T("admin.loadFailed")); return; }
+  // The accounts table also holds buyers now; "N farmers signed up" must not count them.
+  adminCache = { farmers: (farmers || []).filter(x => x.role !== "buyer"), chats: chats || [], outreach: outreach || [], claims: claims || [] };
   paintAdmin();
 }
 
@@ -2082,8 +2247,74 @@ function setAdminStage(key) {
   paintAdmin();
 }
 
+/* ---------- buyer claims (ROADMAP item 24) ----------
+   A claim is the only way a buyer account gets anywhere: until an admin
+   approves it, RLS treats the buyer as nobody. Approving a claim for a
+   business that was not on the list creates its listing first, with the
+   same honest placeholders the rest of the database uses — low confidence,
+   no inferred needs, and a distance that scores zero rather than "right in
+   the centre of Cassino", which a missing value would quietly mean. */
+function makeBuyerId() { return "u" + Math.random().toString(36).slice(2, 8); }
+function newBuyerRowFromClaim(claim, id) {
+  return {
+    id, name: String(claim.new_business_name || "").trim(), type: "other",
+    zone: claim.new_business_zone || "Cassino area", distance_km: 25,
+    needs: [], volume: "low", quality_focus: [],
+    notes: "Registered by the business itself; details not yet provided.",
+    source: "self-registered", confidence: "low", is_channel: false
+  };
+}
+function claimBusinessLabel(c) {
+  if (c.buyer_id) { const b = DB.buyers.concat(DB.channels).find(x => x.id === c.buyer_id); if (b) return b.name; }
+  return c.new_business_name || c.buyer_id || "—";
+}
+function paintAdminClaims() {
+  const panel = $("adminClaimsPanel"); if (!panel) return;
+  const pending = ((adminCache && adminCache.claims) || []).filter(c => c.status === "pending");
+  panel.style.display = pending.length ? "" : "none";
+  $("adminClaimsTitle").textContent = T("admin.claimsTitle", { n: pending.length });
+  $("adminClaims").innerHTML = pending.map(c => {
+    const name = claimBusinessLabel(c);
+    const bits = [c.buyer_id ? null : T("admin.claimNotListed"), c.buyer_id ? null : c.new_business_zone,
+      c.contact_name, c.contact_email, relDate(new Date(c.created_at).getTime())].filter(Boolean);
+    return `<div class="claim-row">
+      <div class="claim-main"><b>${esc(name)}</b><small>${esc(bits.join(" · "))}</small></div>
+      <div class="claim-actions">
+        <button type="button" class="btn btn-primary btn-sm" onclick="decideClaimAdmin('${escAttr(c.id)}', true)" aria-label="${escAttr(T("admin.claimApproveFor", { name }))}">${esc(T("admin.claimApprove"))}</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="decideClaimAdmin('${escAttr(c.id)}', false)" aria-label="${escAttr(T("admin.claimRejectFor", { name }))}">${esc(T("admin.claimReject"))}</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+let claimDecisionBusy = false;
+async function decideClaimAdmin(id, approve) {
+  if (claimDecisionBusy || !adminCache) return;
+  const c = (adminCache.claims || []).find(x => x.id === id); if (!c) return;
+  claimDecisionBusy = true;
+  try {
+    const patch = { status: approve ? "approved" : "rejected", decided_at: new Date().toISOString() };
+    if (approve && !c.buyer_id) {
+      const made = await DataStore.createBuyer(newBuyerRowFromClaim(c, makeBuyerId()));
+      if (made.error) throw made.error;
+      patch.buyer_id = made.data.id;
+      DB.buyers.push(made.data);            // so this session's lists know about it too
+    }
+    const r = await DataStore.decideClaim(id, patch);
+    if (r && r.error) throw r.error;
+    Object.assign(c, patch);
+    paintAdminClaims();
+    toast(T(approve ? "admin.claimApproved" : "admin.claimRejected"));
+  } catch (e) {
+    console.error("claim decision failed", e);
+    // 23505 is the unique index that allows ONE approved owner per business.
+    toast(T(e && e.code === "23505" ? "admin.claimConflict" : "admin.claimFailed"));
+  }
+  claimDecisionBusy = false;
+}
+
 function paintAdmin() {
   if (!adminCache || !$("adminFunnel")) return;
+  paintAdminClaims();
   const { farmers, chats, outreach } = adminCache;
   const f = adminFunnel(chats, outreach);
   const active = ADMIN_STAGE_KEYS.indexOf(state.adminStage) !== -1 ? state.adminStage : "started";
@@ -2253,6 +2484,219 @@ function rotateBackdrop() {
   showBackdrop();
 }
 
+/* ================= BUYER SIDE (ROADMAP items 24-25) =================
+   Buyers sign up with the same form as farmers and get the same kind of
+   account row, with role = 'buyer'. What they can DO is decided in the
+   database, not here: until an admin approves their claim on a business they
+   own nothing, and RLS answers every query about it with nothing. These
+   screens only draw the state of that claim honestly.
+
+   claimState(): none -> (submit) -> pending -> approved | rejected
+   A rejected buyer is sent back to the form rather than left at a dead end.
+   An approved claim always wins over any older or newer one. */
+function isBuyer() { return state.role === "buyer"; }
+const CLAIM_NOT_LISTED = "__new";
+const CLAIM_NAME_MIN = 2, CLAIM_NAME_MAX = 120, CLAIM_FIELD_MAX = 120, CLAIM_EMAIL_MAX = 200;
+
+function claimState(claims) {
+  const list = claims || [];
+  if (list.some(c => c.status === "approved")) return "approved";
+  if (list.some(c => c.status === "pending")) return "pending";
+  return list.length ? "rejected" : "none";
+}
+function currentClaim(claims) {
+  const list = claims || [];
+  return list.find(c => c.status === "approved") || list.find(c => c.status === "pending") || list[0] || null;
+}
+function myBusiness() {
+  const c = (state.claims || []).find(x => x.status === "approved");
+  return c && c.buyer_id ? (DB.buyers.concat(DB.channels).find(b => b.id === c.buyer_id) || null) : null;
+}
+
+/* The form -> the row that is inserted. Pure, so the rules are testable
+   without a page: a listed business has to be one we actually list (channels
+   such as the weekly market are not businesses anyone owns), an unlisted one
+   needs a name, and everything is trimmed and capped to what the table allows. */
+function buildClaimRow(uid, form) {
+  const pick = String(form.pick == null ? "" : form.pick);
+  const row = { user_id: uid, buyer_id: null, new_business_name: null, new_business_zone: null,
+    contact_name: String(form.contactName || "").trim().slice(0, CLAIM_FIELD_MAX) || null,
+    contact_email: String(form.contactEmail || "").trim().slice(0, CLAIM_EMAIL_MAX) || null };
+  if (!pick) return { ok: false, errKey: "buyer.err.pick" };
+  if (pick === CLAIM_NOT_LISTED) {
+    const name = String(form.name || "").trim();
+    if (name.length < CLAIM_NAME_MIN) return { ok: false, errKey: "buyer.err.name" };
+    row.new_business_name = name.slice(0, CLAIM_NAME_MAX);
+    row.new_business_zone = String(form.zone || "").trim().slice(0, CLAIM_FIELD_MAX) || null;
+  } else {
+    if (!DB.buyers.some(b => b.id === pick)) return { ok: false, errKey: "buyer.err.pick" };
+    row.buyer_id = pick;
+  }
+  return { ok: true, row };
+}
+
+async function loadAccountRole(uid) {
+  const { data, error } = await DataStore.getMyFarmer(uid);
+  if (error) throw error;
+  state.role = data && data.role === "buyer" ? "buyer" : "farmer";
+  state.isAdmin = !!(data && data.is_admin) && state.role !== "buyer";
+  state.farmerProfile = data || {};
+}
+async function loadBuyerData(uid) {
+  const { data, error } = await DataStore.listMyClaims(uid);
+  if (error) throw error;
+  state.claims = data || [];
+}
+
+function buyerNoteHTML(kind, titleKey, bodyKey, vars) {
+  return `<div class="buyer-note ${kind}" role="status"><b>${esc(T(titleKey))}</b><p>${esc(T(bodyKey, vars))}</p></div>`;
+}
+function claimFormHTML() {
+  const options = DB.buyers.slice().sort((a, b) => a.name.localeCompare(b.name))
+    .map(b => `<option value="${escAttr(b.id)}">${esc(b.name)}</option>`).join("");
+  return `<div class="claim-form">
+    <div class="field"><label for="claimPick">${esc(T("buyer.claimPick"))}</label>
+      <select id="claimPick"><option value="">${esc(T("buyer.claimChoose"))}</option>${options}<option value="${CLAIM_NOT_LISTED}">${esc(T("buyer.claimNotListed"))}</option></select></div>
+    <div id="claimNewBlock" style="display:none">
+      <div class="field"><label for="claimName">${esc(T("buyer.claimName"))}</label><input type="text" id="claimName" maxlength="${CLAIM_NAME_MAX}" autocomplete="organization"></div>
+      <div class="field"><label for="claimZone">${esc(T("buyer.claimZone"))}</label><input type="text" id="claimZone" maxlength="${CLAIM_FIELD_MAX}"></div>
+    </div>
+    <div class="field"><label for="claimContact">${esc(T("buyer.claimContact"))}</label><input type="text" id="claimContact" maxlength="${CLAIM_FIELD_MAX}" autocomplete="name"></div>
+    <div class="field"><label for="claimEmail">${esc(T("buyer.claimEmail"))}</label><input type="email" id="claimEmail" maxlength="${CLAIM_EMAIL_MAX}" value="${escAttr(state.email)}" autocomplete="email"></div>
+    <div class="err-banner" id="claimErr" role="alert"></div>
+    <button type="button" class="btn btn-primary" id="claimSubmit" onclick="submitClaim()">${esc(T("buyer.claimSubmit"))}</button>
+  </div>`;
+}
+function bindClaimForm() {
+  const pick = $("claimPick"); if (!pick) return;
+  pick.onchange = () => { $("claimNewBlock").style.display = pick.value === CLAIM_NOT_LISTED ? "block" : "none"; };
+}
+// A language switch redraws the form; whatever was typed has to survive it.
+function claimFormSnapshot() {
+  if (!$("claimPick")) return null;
+  const ids = ["claimPick", "claimName", "claimZone", "claimContact", "claimEmail"];
+  const snap = {}; ids.forEach(id => { snap[id] = $(id) ? $(id).value : ""; });
+  return snap;
+}
+function claimFormRestore(snap) {
+  if (!snap || !$("claimPick")) return;
+  Object.keys(snap).forEach(id => { if ($(id)) $(id).value = snap[id]; });
+  if ($("claimPick").value !== snap.claimPick) $("claimPick").value = "";   // option vanished
+  $("claimNewBlock").style.display = $("claimPick").value === CLAIM_NOT_LISTED ? "block" : "none";
+}
+function showClaimError(key) { const b = $("claimErr"); if (!b) return; b.textContent = T(key); b.style.display = "block"; }
+
+let claimBusy = false;
+async function submitClaim() {
+  if (claimBusy || !$("claimPick")) return;
+  const built = buildClaimRow(state.farmerId, {
+    pick: $("claimPick").value, name: $("claimName").value, zone: $("claimZone").value,
+    contactName: $("claimContact").value, contactEmail: $("claimEmail").value
+  });
+  if (!built.ok) { showClaimError(built.errKey); return; }
+  claimBusy = true;
+  const btn = $("claimSubmit");
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>' + esc(T("buyer.claimSending")); }
+  try {
+    const { data, error } = await DataStore.createClaim(built.row);
+    if (error) throw error;
+    state.claims.unshift(data);
+    toast(T("buyer.claimSent"));
+    claimBusy = false;
+    renderBuyerScreens();
+    return;
+  } catch (e) {
+    console.error("claim failed", e);
+    // 23505: one of the unique indexes — this business already has an approved owner.
+    showClaimError(e && e.code === "23505" ? "buyer.err.taken" : "buyer.err.generic");
+  }
+  claimBusy = false;
+  if (btn) { btn.disabled = false; btn.textContent = T("buyer.claimSubmit"); }
+}
+
+function buyerFactsHTML(biz) {
+  const km = Number(biz.distance_km);
+  return `<dl class="buyer-facts">
+    <dt>${esc(T("buyer.bizType"))}</dt><dd>${esc(String(biz.type || "").replace(/_/g, " "))}</dd>
+    <dt>${esc(T("buyer.bizArea"))}</dt><dd>${esc(biz.zone || "—")}</dd>
+    <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${isFinite(km) ? esc(T("buyer.km", { n: km })) : "—"}</dd>
+    <dt>${esc(T("buyer.bizSource"))}</dt><dd>${esc(biz.source || "—")}</dd>
+  </dl>`;
+}
+function buyerAssumedHTML(biz) {
+  const needs = (biz.needs || []).map(catLabel).join(", ");
+  const vol = ["low", "medium", "high"].indexOf(biz.volume) !== -1 ? T("band." + biz.volume) : "—";
+  return `<div class="buyer-note"><b>${esc(T("buyer.bizAssumedTitle"))}</b><p>${esc(T("buyer.bizAssumedBody"))}</p>
+    <dl class="buyer-facts" style="margin-top:10px">
+      <dt>${esc(T("buyer.bizBuys"))}</dt><dd>${esc(needs || "—")}</dd>
+      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
+    </dl></div>`;
+}
+
+// What Inbox / Offers / My business show before the claim is approved.
+function buyerGateHTML() {
+  const st = claimState(state.claims);
+  if (st === "approved") return "";
+  return `<div class="empty-state">${esc(T(st === "pending" ? "buyer.gatePending" : "buyer.gateNone"))}</div>`;
+}
+
+function renderBuyerHome() {
+  const el = $("buyerHomeBody"); if (!el) return;
+  const snap = claimFormSnapshot();
+  const st = claimState(state.claims), claim = currentClaim(state.claims);
+  const name = claimBusinessLabel(claim || {});
+  let html = "";
+  if (st === "approved") {
+    const biz = myBusiness();
+    html = buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name: biz ? biz.name : name }) + (biz ? buyerFactsHTML(biz) : "");
+  } else if (st === "pending") {
+    html = buyerNoteHTML("pending", "buyer.pendingTitle", "buyer.pendingBody", { name });
+  } else {
+    if (st === "rejected") html += buyerNoteHTML("rejected", "buyer.rejectedTitle", "buyer.rejectedBody", { name });
+    html += `<p class="buyer-lead"><b>${esc(T("buyer.claimTitle"))}.</b> ${esc(T("buyer.claimIntro"))}</p>` + claimFormHTML();
+  }
+  el.innerHTML = html;
+  bindClaimForm();
+  claimFormRestore(snap);
+}
+function renderBuyerInbox() {
+  const el = $("buyerInboxBody"); if (!el) return;
+  el.innerHTML = buyerGateHTML() || `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`;
+}
+function renderBuyerOffers() {
+  const el = $("buyerOffersBody"); if (!el) return;
+  el.innerHTML = buyerGateHTML() || `<div class="empty-state">${esc(T("buyer.offersEmpty"))}</div>`;
+}
+function renderBuyerBusiness() {
+  const el = $("buyerBusinessBody"); if (!el) return;
+  const biz = myBusiness();
+  el.innerHTML = buyerGateHTML() || (biz ? buyerFactsHTML(biz) + buyerAssumedHTML(biz) : "");
+}
+function renderBuyerScreens() { renderBuyerHome(); renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
+
+/* Opening a buyer's app. Mirrors the farmer path in boot(): into the shell at
+   once, locked while the data loads, lock lifted whatever happens. */
+async function enterBuyerApp() {
+  $("onboard").style.display = "none";
+  const app = $("app");
+  app.setAttribute("data-role", "buyer");
+  app.classList.add("ready", "booting");
+  setBootLock(true);
+  showBackdrop();
+  try {
+    await loadBuyers();
+    await loadBuyerData(state.farmerId);
+  } catch (e) {
+    console.error("Failed to load the buyer account", e);
+    toast(T("boot.loadFailed"));
+  } finally {
+    app.classList.remove("booting");
+    setBootLock(false);
+  }
+  updateHeaderIdentity();
+  switchScreen("buyerHome");
+}
+
 /* ================= NAVIGATION ================= */
 function switchScreen(name) {
   const prev = state.screen;
@@ -2270,6 +2714,7 @@ function switchScreen(name) {
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
   if (name === "admin") renderAdmin();
+  if (name.indexOf("buyer") === 0) renderBuyerScreens();
 }
 
 /* ================= Offline scripted demo ================= */
@@ -2352,12 +2797,26 @@ function boot() {
     // signing UP, iOS and Android offer to fill an old password instead of
     // suggesting a new one, and never offer to save the new account.
     $("authPassword").setAttribute("autocomplete", next === "up" ? "new-password" : "current-password");
+    $("authRoleBlock").style.display = next === "up" ? "" : "none";
     // Switching tabs drops the message AND what it was, or a later language
     // switch would repaint an error the farmer has already dismissed.
     clearAuthError();
   }
   $("authTabIn").onclick = () => setAuthMode("in");
   $("authTabUp").onclick = () => setAuthMode("up");
+
+  /* Which app a NEW account opens. Only offered on the Sign up tab; the
+     database keeps it from then on and nothing here can change it later. */
+  let signupRole = "farmer";
+  function setSignupRole(next) {
+    signupRole = next;
+    $("authRoleFarmer").classList.toggle("active", next === "farmer");
+    $("authRoleBuyer").classList.toggle("active", next === "buyer");
+    $("authRoleFarmer").setAttribute("aria-pressed", next === "farmer" ? "true" : "false");
+    $("authRoleBuyer").setAttribute("aria-pressed", next === "buyer" ? "true" : "false");
+  }
+  $("authRoleFarmer").onclick = () => setSignupRole("farmer");
+  $("authRoleBuyer").onclick = () => setSignupRole("buyer");
   // The submit button's label depends on which tab is selected, so it can't be
   // a plain data-i18n attribute. Don't touch it mid-request: setAuthBusy(false)
   // relabels it when the request finishes.
@@ -2374,6 +2833,16 @@ function boot() {
   }
 
   function goToModeCard() { $("authCard").style.display = "none"; $("modeCard").style.display = "block"; }
+
+  /* After any successful sign-in: read the account's role from the database
+     (never from what the browser claims) and open the right app. If the read
+     fails the person is treated as a farmer, which is the original behaviour
+     and opens nothing that belongs to a buyer. */
+  async function afterAuth() {
+    try { await loadAccountRole(state.farmerId); }
+    catch (e) { console.error("couldn't read the account role - treating it as a farmer", e); state.role = "farmer"; }
+    if (state.role === "buyer") enterBuyerApp(); else goToModeCard();
+  }
 
   /* The error box is written to as a KEY, never as a finished sentence, so that
      a farmer who presses IT while the message is on screen gets the message
@@ -2397,13 +2866,14 @@ function boot() {
     if (password.length < 6) { showAuthError("auth.tooShort"); return; }
     setAuthBusy(true, T(authMode === "up" ? "auth.creating" : "auth.signingIn"));
     try {
-      const { data, error } = authMode === "up" ? await DataStore.signUp(email, password) : await DataStore.signIn(email, password);
+      const { data, error } = authMode === "up" ? await DataStore.signUp(email, password, signupRole) : await DataStore.signIn(email, password);
       if (error) throw error;
       if (!data.session) {
         showAuthError("auth.confirmEmail");
       } else {
         state.farmerId = data.user.id;
-        goToModeCard();
+        state.email = data.user.email || email;
+        await afterAuth();
       }
     } catch (e) {
       // Was `e.message` — Supabase's own English, printed at a farmer who may
@@ -2425,7 +2895,7 @@ function boot() {
   setAuthBusy(true, T("auth.checking"));
   const authFailsafe = setTimeout(unlockAuth, 4000);
   DataStore.getSession().then(session => {
-    if (session && session.user) { state.farmerId = session.user.id; goToModeCard(); }
+    if (session && session.user) { state.farmerId = session.user.id; state.email = session.user.email || ""; return afterAuth(); }
   }).catch(e => console.error("session check failed — falling through to the sign-in card, which is the right outcome, so nothing is shown", e))
     .finally(() => { clearTimeout(authFailsafe); unlockAuth(); });
 
@@ -2516,18 +2986,26 @@ function boot() {
   $("userInput").addEventListener("keydown", e => { if (e.key === "Enter") $("sendBtn").onclick(); });
   document.querySelectorAll(".sugg-chip").forEach(ch => ch.onclick = () => { $("userInput").value = ch.dataset.fill; $("userInput").focus(); });
 
-  // Search (filters clients list + dashboard research rows)
-  $("topSearch").addEventListener("input", e => {
-    const q = e.target.value.trim().toLowerCase();
-    if (state.screen === "clients") {
-      document.querySelectorAll(".client-item").forEach(el => { el.style.display = el.textContent.toLowerCase().includes(q) ? "" : "none"; });
-    } else if (state.screen === "dashboard") {
-      document.querySelectorAll("#researchBody tr").forEach(el => { el.style.display = el.textContent.toLowerCase().includes(q) ? "" : "none"; });
-    }
+  /* Search. The box only ever writes the query into state — the renderers do
+     the filtering (see the SEARCH section), which is what lets a filtered list
+     survive being redrawn. */
+  $("topSearch").addEventListener("input", e => setSearch(e.target.value));
+  $("topSearch").addEventListener("keydown", e => {
+    /* Escape clears the query rather than reaching the document handler, which
+       would look for a sheet to close. The box is unreachable while a sheet is
+       open (they are fixed;inset:0 above the top bar), so nothing is stolen. */
+    if (e.key === "Escape" && state.search) { e.stopPropagation(); e.preventDefault(); e.target.value = ""; setSearch(""); }
   });
 
   // Notification bell -> jump to clients
-  $("bellBtn").onclick = () => { switchScreen("clients"); toast(T("top.draftsReady", { n: state.clients.filter(c => c.status === "draft").length })); };
+  /* The bell used to say the same thing however many times it was pressed,
+     including "0 draft(s) ready to send" — a notification that is never news,
+     and the one thing a notification must never be. The count lives on the
+     button now (renderBell), so it is readable without pressing anything, and
+     the press only speaks when there is something to say. The jump to Clients
+     is unconditional either way: that is where drafts are, and a bell that
+     sometimes does nothing at all is a worse bell than a quiet one. */
+  $("bellBtn").onclick = () => { const n = draftCount(state.clients); switchScreen("clients"); if (n) toast(T("top.draftsReady", { n })); };
 
   // Avatar -> sign out (data stays in the account; this just clears the local view)
   $("profileBtn").onclick = async () => {

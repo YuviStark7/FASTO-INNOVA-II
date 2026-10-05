@@ -115,7 +115,10 @@ function fakeEl(id) {
   const classes = new Set();
   return {
     id, textContent: "", innerHTML: "", value: "", style: {}, dataset: {},
-    disabled: false, checked: false, offsetWidth: 0,
+    disabled: false, checked: false, offsetWidth: 0, attrs: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    removeAttribute(k) { delete this.attrs[k]; },
     classList: {
       add: (...c) => c.forEach(x => classes.add(x)),
       remove: (...c) => c.forEach(x => classes.delete(x)),
@@ -166,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -178,7 +181,11 @@ function loadApp(root) {
   csvSeparator, csvNumber, csvCell, toCSV, exportDate, exportFileName, organicLabel,
   researchExportRows, outreachExportRows, researchCsvCells, outreachCsvCells,
   exportHeaders, exportCsv, exportRowCount, RESEARCH_COLS, OUTREACH_COLS,
-  buildPrintReport, PRICE_ASSUMPTIONS };`;
+  buildPrintReport, PRICE_ASSUMPTIONS,
+  normalizeQuery, searchTerms, matchesSearch, filterResearch, filterClients, filterChatRail,
+  researchSearchFields, clientSearchFields, chatSearchFields, setSearch, repaintForSearch,
+  renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
+  draftCount, renderBell };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage };
 }
@@ -1012,9 +1019,9 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     sb.router = ch => ({ data: ch.table === "chats" ? chats : ch.table === "outreach" ? outreach : [{ id: "f1", farmer_name: "Marco" }], error: null });
 
     await app.renderAdmin();
-    check("the admin overview issues exactly its three reads, and none of them writes",
-      sb.chains.length === 3 &&
-      eq(sb.chains.map(c => c.table).sort(), ["chats", "farmers", "outreach"]) &&
+    check("the admin overview issues exactly its four reads (incl. buyer claims), and none of them writes",
+      sb.chains.length === 4 &&
+      eq(sb.chains.map(c => c.table).sort(), ["buyer_claims", "chats", "farmers", "outreach"]) &&
       sb.chains.every(c => c.ops.every(o => !["insert", "update", "delete"].includes(o.op))),
       JSON.stringify(sb.chains.map(c => c.table + ":" + c.ops.map(o => o.op).join(","))));
 
@@ -1627,6 +1634,324 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       return shown === app.STRINGS.it["auth.err.invalidCredentials"];
     })());
     app.setLang("en");
+  }
+
+  /* ============================================================
+     11. Search (ROADMAP item 17)
+     The bug this replaces was not in the matching, it was in WHERE the
+     result of the matching lived: the old box set style.display on the
+     rows it found, so the next render put every hidden row back while
+     the query was still on screen. So the tests come in two halves —
+     the matching itself, which is pure, and then the thing that
+     actually broke: render, render again, and the filter is still on.
+     ============================================================ */
+  console.log("\n== Test 11: the top-bar search ==");
+  {
+    const M = app.matchesSearch;
+
+    /* (a) The matcher. */
+    check("an empty query matches everything", M(["anything"], "") && M(["anything"], "   "));
+    check("a single term matches inside a field", M(["Azienda Rossi"], "ross"));
+    check("matching ignores case on both sides", M(["AZIENDA"], "azienda") && M(["azienda"], "AZIENDA"));
+    check("two terms both have to match, and the order does not matter",
+      M(["pomodori", "Terelle"], "terelle pomodori") && !M(["pomodori", "Terelle"], "terelle olio"));
+    check("a term is not allowed to span two fields",
+      !M(["80", "pomodori"], "80 pomodori".replace(" ", "")) && M(["80", "pomodori"], "80 pomodori"),
+      "a query must not match across a field boundary");
+    check("null, undefined and empty fields are skipped rather than stringified",
+      M([null, undefined, "", "rossi"], "rossi") && !M([null, undefined, ""], "null"));
+    check("normalizeQuery trims and lowercases, and survives a null",
+      app.normalizeQuery("  Ross  ") === "ross" && app.normalizeQuery(null) === "" && app.normalizeQuery(undefined) === "");
+
+    /* (b) What each list searches. The screen is a summary in two places
+       and the search deliberately reads the whole record. */
+    const chat = { id: "c1", title: "Azienda Rossi", ts: Date.now(), phase: "done", pct: 100,
+      profile: { farmer_name: "Marco", village: "Terelle", distance_km_from_cassino: 12, organic: "no",
+        available_months: [6, 7], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 },
+                                             { name: "olio evo", category: "olio", kg_per_week: 5 }] } };
+    check("a research row is searchable by its conversation title", app.filterResearch([chat], "rossi").length === 1);
+    check("...by the village, which the Dashboard never prints", app.filterResearch([chat], "terelle").length === 1);
+    /* "evo" is in the SECOND product's name and nowhere else — not in its
+       category, not in its label — so this fails if only the largest product
+       (the one the Dashboard prints) is searchable. */
+    check("...by a product the Dashboard hides (it shows only the largest)",
+      app.filterResearch([chat], "evo").length === 1, "the second product must be searchable");
+    check("...by the translated category label, not only the stored key",
+      app.filterResearch([chat], String(app.catLabel("pomodori")).toLowerCase()).length === 1);
+    check("...and something absent still finds nothing", app.filterResearch([chat], "zucchine").length === 0);
+
+    const longMsg = "Buongiorno, " + "x".repeat(60) + " consegna settimanale di pomodori";
+    const client = { id: "o1", name: "Trattoria Aurora", status: "draft", message_it: longMsg, message_en: "weekly delivery" };
+    check("a client is searchable by buyer name", app.filterClients([client], "aurora").length === 1);
+    check("...and by text past the 46 characters the list previews",
+      app.filterClients([client], "settimanale").length === 1, "the preview is truncated, the search is not");
+    check("...and by the draft/sent label as it currently reads",
+      app.filterClients([client], String(app.T("clients.draft")).toLowerCase()).length === 1);
+    check("the rail matches on the conversation title", app.filterChatRail([chat], "azienda").length === 1
+      && app.filterChatRail([chat], "aurora").length === 0);
+
+    /* (c) setSearch only ever writes the query. */
+    const before = { chats: app.state.chats, clients: app.state.clients,
+      activeChatId: app.state.activeChatId, activeClientId: app.state.activeClientId,
+      showAllResearch: app.state.showAllResearch, screen: app.state.screen };
+    app.state.screen = "nowhere";           // so repaintForSearch has nothing to draw
+    app.setSearch("ross");
+    check("setSearch puts the query in state", app.state.search === "ross");
+    check("...and changes nothing else about what is selected or shown",
+      app.state.chats === before.chats && app.state.clients === before.clients
+      && app.state.activeChatId === before.activeChatId && app.state.activeClientId === before.activeClientId
+      && app.state.showAllResearch === before.showAllResearch);
+    app.setSearch("");
+    check("clearing it puts the query back to empty", app.state.search === "");
+    app.state.screen = before.screen;
+
+    /* (d) THE REGRESSION ITSELF. Register just enough of the Dashboard,
+       the client list and the rail, exactly as test 7 does for Admin,
+       and delete them again afterwards — leaving them registered would
+       switch on rendering paths every earlier test relies on being a
+       no-op. */
+    const ids = ["dashboardScreen", "researchBody", "researchEmpty", "researchSeeAll",
+                 "clientsScreen", "clientList", "threadPane", "chatRailList"];
+    ids.forEach(id => els[id] = fakeEl(id));
+    try {
+      const other = { id: "c2", title: "Fattoria Bianchi", ts: Date.now() - 1000, phase: "matching", pct: 50,
+        profile: { farmer_name: "Lucia", village: "Sant'Elia", distance_km_from_cassino: 6, organic: "yes",
+          available_months: [7], products: [{ name: "zucchine", category: "verdure", kg_per_week: 40 }] } };
+      const savedChats = app.state.chats, savedClients = app.state.clients, savedActive = app.state.activeClientId;
+      app.state.chats = [chat, other];
+      app.state.clients = [client, { id: "o2", name: "Panificio Verdi", status: "sent", message_it: "pane", message_en: "bread" }];
+      app.state.activeClientId = "o1";
+      app.state.showAllResearch = false;
+
+      app.state.search = "rossi";
+      app.renderDashboard();
+      const firstPass = els.researchBody.innerHTML;
+      check("the Dashboard renders only the rows that match",
+        firstPass.indexOf("Azienda Rossi") !== -1 && firstPass.indexOf("Fattoria Bianchi") === -1);
+      app.renderDashboard();   // ← the whole point of item 17
+      check("...and rendering it AGAIN does not bring the other rows back",
+        els.researchBody.innerHTML === firstPass && els.researchBody.innerHTML.indexOf("Fattoria Bianchi") === -1,
+        "this is the bug: a re-render used to restore every hidden row");
+      check("nothing is hidden with style.display any more",
+        firstPass.indexOf("display:none") === -1 && firstPass.indexOf("display: none") === -1);
+
+      app.state.search = "zzzz";
+      app.renderDashboard();
+      check("a query that matches nothing says so, naming the query",
+        els.researchEmpty.style.display === "block" && els.researchEmpty.textContent.indexOf("zzzz") !== -1);
+      check("...and does not claim the research is gone",
+        els.researchEmpty.textContent !== app.T("dash.empty"));
+      check("with no query at all, the empty line is the ordinary one", (() => {
+        const keep = app.state.chats; app.state.chats = []; app.state.search = "";
+        app.renderDashboard(); const txt = els.researchEmpty.textContent;
+        app.state.chats = keep; return txt === app.T("dash.empty");
+      })());
+      check("the See all toggle is out of the way while a query is active", (() => {
+        app.state.search = "rossi"; app.renderDashboard();
+        return els.researchSeeAll.style.display === "none";
+      })());
+      check("...and every match is shown rather than only the latest three", (() => {
+        const keep = app.state.chats;
+        app.state.chats = [];
+        for (let i = 0; i < 5; i++) app.state.chats.push(Object.assign({}, chat, { id: "x" + i, title: "Rossi " + i }));
+        app.state.search = "rossi"; app.state.showAllResearch = false;
+        app.renderDashboard();
+        const n = (els.researchBody.innerHTML.match(/<tr>/g) || []).length;
+        app.state.chats = keep; return n === 5;
+      })());
+
+      app.state.search = "aurora";
+      app.renderClientList();
+      const clientsFirst = els.clientList.innerHTML;
+      check("the client list renders only the buyers that match",
+        clientsFirst.indexOf("Aurora") !== -1 && clientsFirst.indexOf("Verdi") === -1);
+      app.renderClientList();
+      check("...and survives a re-render too", els.clientList.innerHTML === clientsFirst);
+      check("a search does NOT change which thread is open",
+        app.state.activeClientId === "o1");
+      check("...not even when the only match is a DIFFERENT buyer", (() => {
+        app.state.activeClientId = "o1";
+        app.state.search = "verdi";        // matches o2, not the open o1
+        app.renderClientList();
+        return app.state.activeClientId === "o1";
+      })(), "a filter is not a selection");
+      check("filtering the list does not redraw the thread beside it", (() => {
+        els.threadPane.innerHTML = "HALF-TYPED";
+        app.state.search = "verdi"; app.renderClientList();
+        return els.threadPane.innerHTML === "HALF-TYPED";
+      })(), "renderThread would throw away a follow-up note in progress");
+      check("no buyer matching says so rather than showing an empty panel", (() => {
+        app.state.search = "zzzz"; app.renderClientList();
+        return els.clientList.innerHTML.indexOf("zzzz") !== -1;
+      })());
+      check("the avatar colour is taken from the full list, not the filtered one", (() => {
+        const avatars = () => (els.clientList.innerHTML.match(/av-\d+/g) || []);
+        app.state.search = ""; app.renderClientList();
+        const all = avatars();                       // ["av-0", "av-1"]
+        app.state.search = "verdi"; app.renderClientList();
+        const one = avatars();                       // the second buyer, alone
+        return all.length === 2 && one.length === 1 && one[0] === all[1];
+      })(), "a buyer must not change colour because you searched for them");
+
+      app.state.search = "azienda";
+      app.renderChatRail();
+      const railFirst = els.chatRailList.innerHTML;
+      check("the conversation rail filters as well",
+        railFirst.indexOf("Azienda Rossi") !== -1 && railFirst.indexOf("Fattoria Bianchi") === -1);
+      app.renderChatRail();
+      check("...and survives a re-render", els.chatRailList.innerHTML === railFirst);
+      check("a rail with no match says so rather than going blank", (() => {
+        app.state.search = "zzzz"; app.renderChatRail();
+        return els.chatRailList.innerHTML.indexOf("zzzz") !== -1;
+      })());
+      check("...and the conversation you are in stays open even when the query excludes it", (() => {
+        const keep = app.state.activeChatId;
+        app.state.activeChatId = "c2";               // Fattoria Bianchi
+        app.state.search = "azienda";                // ...which this query hides
+        app.renderChatRail();
+        const still = app.state.activeChatId;
+        app.state.activeChatId = keep;
+        return still === "c2";
+      })());
+
+      /* (e) The empty-state lines are read at render time, like every
+         other label in this app (test 8's freeze trap). */
+      check("the no-match line follows the language", (() => {
+        app.state.chats = [chat]; app.state.search = "zzzz";
+        app.setLang("it"); app.renderDashboard();
+        const it = els.researchEmpty.textContent;
+        app.setLang("en"); app.renderDashboard();
+        return it !== els.researchEmpty.textContent && it.indexOf("zzzz") !== -1;
+      })());
+      check("both languages define every search.* key", (() => {
+        const en = Object.keys(app.STRINGS.en).filter(k => k.indexOf("search.") === 0);
+        return en.length >= 3 && en.every(k => typeof app.STRINGS.it[k] === "string" && app.STRINGS.it[k].length);
+      })());
+
+      /* ============================================================
+         (f) ROADMAP #19 — the bell counts rather than announces.
+         The old bell toasted on every press, "0 draft(s) ready to
+         send" included. What is guarded here is the whole of that
+         change: the count is a pure function, the badge appears only
+         when something is waiting, the label is re-read on a language
+         switch rather than frozen, and the badge follows state without
+         being told twice.
+         ============================================================ */
+      els.bellBtn = fakeEl("bellBtn"); els.bellCount = fakeEl("bellCount");
+      /* renderThread scrolls the thread body to the bottom, so markSent needs
+         it to exist; like the rest of these, it is registered here and removed
+         in the finally so no earlier test starts rendering by accident. */
+      els.threadBody = fakeEl("threadBody");
+      ids.push("bellBtn", "bellCount", "threadBody");
+      const bellClients = [
+        { id: "b1", name: "Aurora", status: "draft", message_it: "a", message_en: "a" },
+        { id: "b2", name: "Verdi", status: "sent", message_it: "b", message_en: "b" },
+        { id: "b3", name: "Neri", status: "draft", message_it: "c", message_en: "c" }
+      ];
+      check("draftCount counts drafts and nothing else", app.draftCount(bellClients) === 2);
+      check("...and answers 0 rather than throwing when there is nothing yet",
+        app.draftCount([]) === 0 && app.draftCount(null) === 0 && app.draftCount(undefined) === 0);
+      check("...and is DOM-free, like every other rule in this app",
+        app.draftCount([{ status: "draft" }]) === 1);
+
+      check("a waiting draft puts a number on the bell", (() => {
+        app.state.clients = bellClients; app.state.search = ""; app.renderBell();
+        return els.bellCount.textContent === "2" && els.bellCount.style.display === "flex";
+      })());
+      check("nothing waiting shows no badge at all", (() => {
+        app.state.clients = [bellClients[1]]; app.renderBell();
+        return els.bellCount.style.display === "none";
+      })(), "an empty badge is the same non-news the old toast was");
+      check("a very long queue does not push the badge wider than the button", (() => {
+        const many = []; for (let i = 0; i < 120; i++) many.push({ id: "m" + i, status: "draft" });
+        app.state.clients = many; app.renderBell();
+        return els.bellCount.textContent === "99+";
+      })());
+
+      check("the bell's own label carries the count, since the badge is aria-hidden", (() => {
+        app.state.clients = bellClients; app.renderBell();
+        return els.bellBtn.getAttribute("aria-label").indexOf("2") !== -1
+          && els.bellBtn.getAttribute("title") === els.bellBtn.getAttribute("aria-label");
+      })());
+      check("...and says something different when there is nothing waiting", (() => {
+        app.state.clients = bellClients; app.renderBell();
+        const some = els.bellBtn.getAttribute("aria-label");
+        app.state.clients = []; app.renderBell();
+        return some !== els.bellBtn.getAttribute("aria-label");
+      })());
+      check("the label is read at render time, not frozen at load (test 8's trap)", (() => {
+        app.state.clients = bellClients;
+        app.setLang("it"); app.renderBell(); const it = els.bellBtn.getAttribute("aria-label");
+        app.setLang("en"); app.renderBell(); const en = els.bellBtn.getAttribute("aria-label");
+        return it !== en && it.indexOf("2") !== -1 && en.indexOf("2") !== -1;
+      })());
+      check("both languages define every top.bell* key", (() => {
+        const en = Object.keys(app.STRINGS.en).filter(k => k.indexOf("top.bell") === 0);
+        return en.length >= 2 && en.every(k => typeof app.STRINGS.it[k] === "string" && app.STRINGS.it[k].length);
+      })());
+
+      check("the last draft going out empties the badge rather than leaving a 0", (() => {
+        const c = { id: "local1", name: "Aurora", status: "draft", message_it: "a", message_en: "a" };
+        app.state.clients = [c]; app.renderBell();
+        const before = els.bellCount.style.display;
+        c.status = "sent"; app.renderBell();          // what markSent does to the row
+        return before === "flex" && els.bellCount.style.display === "none";
+      })(), "qa_check guards the other half: that markSent actually repaints the bell");
+      check("the badge updates from whichever screen is being drawn", (() => {
+        app.state.clients = bellClients;
+        els.bellCount.textContent = "stale"; app.renderDashboard();
+        const fromDash = els.bellCount.textContent;
+        els.bellCount.textContent = "stale"; app.renderClientList();
+        const fromClients = els.bellCount.textContent;
+        els.bellCount.textContent = "stale"; app.renderChatRail();
+        return fromDash === "2" && fromClients === "2" && els.bellCount.textContent === "2";
+      })(), "a draft arriving on one screen must not leave a stale count on another");
+
+      app.state.search = "";
+      app.state.chats = savedChats; app.state.clients = savedClients; app.state.activeClientId = savedActive;
+    } finally {
+      ids.forEach(id => delete els[id]);
+      app.state.search = "";
+      app.setLang("en");
+    }
+  }
+
+  /* ---- ROADMAP item 24: buyer role and claims ---- */
+  {
+    const a = app;
+    check("claimState: none / pending / approved / rejected, approved wins",
+      a.claimState([]) === "none" && a.claimState([{status:"pending"}]) === "pending" &&
+      a.claimState([{status:"rejected"}]) === "rejected" &&
+      a.claimState([{status:"rejected"},{status:"approved"},{status:"pending"}]) === "approved");
+    const listed = a.DB.buyers[0] ? a.DB.buyers[0].id : null;
+    const ok = a.buildClaimRow("u1", { pick: listed, contactName: "  Ann ", contactEmail: "a@b.it" });
+    check("a claim on a listed business carries buyer_id and no new-business fields",
+      !!listed && ok.ok && ok.row.buyer_id === listed && ok.row.new_business_name === null && ok.row.contact_name === "Ann" && ok.row.user_id === "u1");
+    check("nothing chosen, or an unknown business, is refused",
+      !a.buildClaimRow("u1", { pick: "" }).ok && !a.buildClaimRow("u1", { pick: "nope-zz" }).ok);
+    check("an unlisted business needs a real name and is capped",
+      !a.buildClaimRow("u1", { pick: a.CLAIM_NOT_LISTED, name: " x " }).ok &&
+      a.buildClaimRow("u1", { pick: a.CLAIM_NOT_LISTED, name: "A".repeat(300) }).row.new_business_name.length === 120);
+    const nb = a.newBuyerRowFromClaim({ new_business_name: " Bar Roma ", new_business_zone: "" }, "uabc");
+    check("an approved unlisted business becomes a low-confidence placeholder that cannot inflate ranking",
+      nb.name === "Bar Roma" && nb.confidence === "low" && nb.distance_km === 25 && nb.needs.length === 0 && nb.source === "self-registered");
+    sb.authCalls.length = 0;
+    await a.DataStore.signUp("x@y.it", "pw123456", "buyer");
+    await a.DataStore.signUp("x@y.it", "pw123456", "admin");
+    check("sign-up passes buyer role metadata, and anything else falls back to farmer",
+      sb.authCalls[0].args.options.data.role === "buyer" && sb.authCalls[1].args.options.data.role === "farmer", JSON.stringify(sb.authCalls));
+  }
+
+  /* ---- ROADMAP item 26 pass A: message data layer ---- */
+  {
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await app.DataStore.listOutreachMessages("o1");
+    await app.DataStore.sendOutreachMessage({ outreach_id: "o1", sender_role: "buyer", sender_id: "u1", body: "Ciao" });
+    const c = sb.chains;
+    check("messages are read oldest first from outreach_messages, filtered to one outreach",
+      c[0].table === "outreach_messages" && c[0].ops.some(o => o.op === "eq") && c[0].ops.some(o => o.op === "order"), JSON.stringify(c[0]));
+    check("sending only ever inserts (messages are never updated or deleted)",
+      c[1].table === "outreach_messages" && c[1].ops[0].op === "insert" && !c.some(x => x.ops.some(o => o.op === "update" || o.op === "delete")));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

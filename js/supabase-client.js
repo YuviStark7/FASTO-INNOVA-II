@@ -15,7 +15,10 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 const DataStore = {
   /* ---------- auth ---------- */
-  signUp(email, password) { return sb.auth.signUp({ email, password }); },
+  // The role rides along as sign-up metadata and is read by the database trigger
+  // (private.handle_new_user), which whitelists it to "buyer" or "farmer". It is
+  // a choice of WHICH app to open, never a privilege: admin cannot be set this way.
+  signUp(email, password, role) { return sb.auth.signUp({ email, password, options: { data: { role: role === "buyer" ? "buyer" : "farmer" } } }); },
   signIn(email, password) { return sb.auth.signInWithPassword({ email, password }); },
   signOut() { return sb.auth.signOut(); },
   async getSession() { const { data } = await sb.auth.getSession(); return data.session; },
@@ -59,6 +62,28 @@ const DataStore = {
 
   /* ---------- buyers (curated reference database) ---------- */
   listBuyers() { return sb.from("buyers").select("*"); },
+
+  /* ---------- buyer accounts: claiming a business (ROADMAP item 24) ----------
+     A buyer signs up with the buyer role and then CLAIMS a listed business (or
+     says theirs is missing). A claim does nothing until an admin approves it;
+     RLS only treats the buyer as the business's owner once it is 'approved'. */
+  listMyClaims(uid) { return sb.from("buyer_claims").select("*").eq("user_id", uid).order("created_at", { ascending: false }); },
+  createClaim(row) { return sb.from("buyer_claims").insert(row).select().single(); },
+  // admin only, enforced by RLS: no filter on purpose, like the other admin reads
+  listAllClaims() { return sb.from("buyer_claims").select("*").order("created_at", { ascending: false }); },
+  decideClaim(id, patch) { return sb.from("buyer_claims").update(patch).eq("id", id); },
+  // admin only: creates the listing for a business that was not on the list
+  createBuyer(row) { return sb.from("buyers").insert(row).select().single(); },
+
+  /* ---------- two-way messages on an outreach (ROADMAP item 26) ----------
+     RLS lets only the farmer who owns the outreach, the approved owner of the
+     addressed business, and admins read or write; nothing here can be edited
+     or deleted afterwards. The sender is stamped by the caller and checked by
+     the database against the signed-in user. */
+  listOutreachMessages(outreachId) {
+    return sb.from("outreach_messages").select("*").eq("outreach_id", outreachId).order("created_at", { ascending: true });
+  },
+  sendOutreachMessage(row) { return sb.from("outreach_messages").insert(row).select().single(); },
 
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },

@@ -552,6 +552,163 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   checks.forEach(([what, ok]) => { console.log((ok ? "✓ " : "✗ ") + "buyers page: " + what); if (!ok) problems++; });
 }
 
+/* ============================================================
+   The top-bar search (ROADMAP item 17).
+   The bug was that the filter lived in the DOM: the box hid rows with
+   style.display, so the next render put them all back while the query was
+   still on screen. These checks pin the shape of the fix — the query in
+   state, the filtering inside the renderers — because a regression here is
+   invisible until someone types, renders and looks.
+   ============================================================ */
+{
+  // Function bodies by brace-counting, same technique as buyers.js row() above.
+  function bodyOf(src, sig) {
+    const start = src.indexOf(sig);
+    if (start === -1) return "";
+    let i = src.indexOf("{", start), depth = 0;
+    for (let j = i; j < src.length; j++) {
+      if (src[j] === "{") depth++;
+      else if (src[j] === "}" && --depth === 0) return src.slice(i, j + 1);
+    }
+    return "";
+  }
+  const dash = bodyOf(js, "function renderDashboard()");
+  const clist = bodyOf(js, "function renderClientList()");
+  const rail = bodyOf(js, "function renderChatRail()");
+  const repaint = bodyOf(js, "function repaintForSearch()");
+  const setS = bodyOf(js, "function setSearch(");
+  // The input listener, from the addEventListener to the end of its arrow body.
+  const listener = js.slice(js.indexOf('$("topSearch").addEventListener("input"'),
+                            js.indexOf('$("topSearch").addEventListener("input"') + 300);
+  const stateLit = bodyOf(js, "let state = {");
+  /* Every max-width:900px block, joined. There is more than one, and the
+     block is found by counting braces rather than by looking for a "}" at the
+     start of a line — a lazy regex stops at the first nested rule's close. */
+  let mobile = "";
+  for (const m of css.matchAll(/@media \(max-width:\s*900px\)\s*\{/g)) {
+    let depth = 0;
+    for (let j = m.index + m[0].length - 1; j < css.length; j++) {
+      if (css[j] === "{") depth++;
+      else if (css[j] === "}" && --depth === 0) { mobile += css.slice(m.index, j + 1) + "\n"; break; }
+    }
+  }
+  const searchKeys = Object.keys(i18n.STRINGS.en).filter(k => k.indexOf("search.") === 0);
+
+  const checks = [
+    ["the query lives in state, not in the DOM", /\bsearch:\s*""/.test(stateLit)],
+    ["the box only writes the query (no style.display filtering left in it)",
+      /setSearch\(/.test(listener) && !/style\.display/.test(listener)],
+    ["...and nothing anywhere still hides a client row or a research row by hand",
+      !/querySelectorAll\("\.client-item"\)[\s\S]{0,120}style\.display/.test(js)
+      && !/querySelectorAll\("#researchBody tr"\)[\s\S]{0,120}style\.display/.test(js)],
+    ["renderDashboard filters from state.search", /state\.search/.test(dash) && /filterResearch\(/.test(dash)],
+    ["renderClientList filters from state.search", /state\.search/.test(clist) && /filterClients\(/.test(clist)],
+    ["renderChatRail filters from state.search", /state\.search/.test(rail) && /filterChatRail\(/.test(rail)],
+    // renderChats() also rebuilds the thread pane, which holds a half-typed note.
+    ["a keystroke redraws the client LIST only, never the thread beside it",
+      /renderClientList\(\)/.test(repaint) && !/renderChats\(\)/.test(repaint)],
+    ["setSearch is the only thing that writes state.search",
+      /state\.search\s*=/.test(setS)
+      && (js.match(/state\.search\s*=/g) || []).length === 1],
+    // Two messages, one element: an attribute could only ever name one of them.
+    ["#researchEmpty has no data-i18n of its own (renderDashboard is its writer)",
+      /id="researchEmpty"/.test(html) && !/id="researchEmpty"[^>]*data-i18n/.test(html)
+      && /researchEmpty[\s\S]{0,400}textContent/.test(dash)],
+    ["a no-match line exists in both languages for all three lists",
+      searchKeys.length >= 3 && searchKeys.every(k => typeof i18n.STRINGS.it[k] === "string" && i18n.STRINGS.it[k].length)],
+    ["...and each one names the query back rather than just saying nothing found",
+      searchKeys.every(k => i18n.STRINGS.en[k].indexOf("{q}") !== -1 && i18n.STRINGS.it[k].indexOf("{q}") !== -1)],
+    ["the rail's no-match line has a style to render with",
+      !/class="chat-rail-empty"/.test(js) || /\.chat-rail-empty\{/.test(css)],
+    // Item 17 also made the box exist on a phone at all.
+    ["the search box is no longer hidden on mobile",
+      /<div class="search-wrap[ "]/.test(html) && !/class="search-wrap[^"]*hide-mobile/.test(html)],
+    ["...it wraps onto its own row rather than squeezing the top bar",
+      /#topbar\{[^}]*flex-wrap:wrap/.test(mobile) && /\.search-wrap\{[^}]*flex:1 1 100%/.test(mobile)],
+    ["...and is 16px there (or iOS zooms in on focus and never back out)",
+      /\.search-wrap input\{[^}]*font-size:16px/.test(mobile)],
+    // Item 11's rule: the boot lock has to hold for a keyboard too.
+    ["the search box is still disabled during boot, not merely dimmed",
+      /BOOT_LOCK_SEL[^;]*#topSearch/.test(js)],
+    /* Not about search as such, but this is where it was found: an editor put
+       a literal NUL into a string in app.js while this item was being written.
+       It runs perfectly — and makes the file "binary", so grep stops reporting
+       matches in it and a diff shows nothing useful. Cheap to rule out. */
+    ["no source file contains a control character that makes it read as binary",
+      [html, js, i18njs, corejs, sbjs, css, bhtml, bjs, bcss]
+        .every(s => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(s))]
+  ];
+  checks.forEach(([what, ok]) => { console.log((ok ? "✓ " : "✗ ") + "search: " + what); if (!ok) problems++; });
+}
+
+/* ============================================================
+   ROADMAP #19 — the bell reports rather than announces.
+   The failure this guards is not a crash: it is a badge that is right
+   when it is drawn and wrong ten seconds later, which nobody notices
+   until they trust it. So most of these ask the same question in
+   different places — does every path that can change the number of
+   waiting drafts also repaint the bell.
+   ============================================================ */
+{
+  function bodyOf(src, sig) {
+    const start = src.indexOf(sig);
+    if (start === -1) return "";
+    let i = src.indexOf("{", start), depth = 0;
+    for (let j = i; j < src.length; j++) {
+      if (src[j] === "{") depth++;
+      else if (src[j] === "}" && --depth === 0) return src.slice(i, j + 1);
+    }
+    return "";
+  }
+  const bellClick = js.slice(js.indexOf('$("bellBtn").onclick'), js.indexOf('$("bellBtn").onclick') + 260);
+  const bellBtnTag = (html.match(/<button[^>]*id="bellBtn"[\s\S]*?<\/button>/) || [""])[0];
+  const checks = [
+    ["the count is a rule, not a rendering detail (pure, testable, exported)",
+      /function draftCount\(/.test(js) && /function renderBell\(/.test(js)
+      && /draftCount\(clients\)[\s\S]{0,120}status === "draft"/.test(js)],
+    ["the badge exists in the markup, inside the bell so it can hang off it",
+      /id="bellCount"/.test(bellBtnTag)],
+    ["...and is aria-hidden, because the button's own label already says the number",
+      /id="bellCount"[^>]*aria-hidden="true"|aria-hidden="true"[^>]*id="bellCount"/.test(bellBtnTag)],
+    ["...and starts hidden, so a farmer with nothing waiting never sees a 0",
+      /id="bellCount"[^>]*display:none/.test(bellBtnTag)],
+    ["the badge has a style to render with",
+      /\.bell-badge\{/.test(css)],
+    ["...positioned on the button rather than in the flow of the top bar",
+      /\.bell-badge\{[^}]*position:absolute/.test(css) && /\.icon-btn\{[^}]*position:relative/.test(css)],
+    /* Item 22's rule. .pill-amber is a tint measured for 13px text; this is
+       10px in a 17px circle, so it uses solid --warn with dark text instead. */
+    ["...in solid amber with dark text, not the tint used for 13px pill text",
+      /\.bell-badge\{[^}]*background:var\(--warn\)/.test(css) && !/\.bell-badge\{[^}]*color:#f0c375/.test(css)],
+    ["the click no longer speaks when there is nothing to say",
+      /if \(n\)\s*toast\(/.test(bellClick)],
+    ["...but still goes to Clients either way",
+      /switchScreen\("clients"\)/.test(bellClick) && !/if \(n\)[^;]*switchScreen/.test(bellClick)],
+    ["...and asks draftCount rather than re-deriving the number inline",
+      /draftCount\(state\.clients\)/.test(bellClick) && !/filter\(/.test(bellClick)],
+    ["a draft arriving repaints the bell, even from the Fasto-AI screen",
+      /renderBell\(\);\s*\n\}\s*\nfunction markSent/.test(js)],
+    ["a draft going out repaints it too",
+      /renderBell\(\)/.test(bodyOf(js, "function markSent("))],
+    ["every screen's renderer repaints it, so no screen shows a stale count",
+      ["function renderDashboard()", "function renderClientList()", "function renderChatRail()"]
+        .every(sig => /renderBell\(\)/.test(bodyOf(js, sig)))],
+    /* The label carries a number, so applyI18n must not be its writer — the
+       same division of labour as #researchEmpty, and the same trap. */
+    ["the label is renderBell's to write, not applyI18n's",
+      !/id="bellBtn"[^>]*data-i18n/.test(bellBtnTag) && /btn\.setAttribute\("aria-label"/.test(bodyOf(js, "function renderBell()"))],
+    ["...and a language switch re-reads the count instead of painting over it",
+      /renderBell\(\);[\s\S]{0,80}renderDashboard\(\);/.test(bodyOf(js, "function setLang("))],
+    ["both languages define every top.bell* key", (() => {
+      const keys = Object.keys(i18n.STRINGS.en).filter(k => k.indexOf("top.bell") === 0);
+      return keys.length >= 2 && keys.every(k => typeof i18n.STRINGS.it[k] === "string" && i18n.STRINGS.it[k].length);
+    })()],
+    ["...and no dead bell key is left behind",
+      !/top\.bellTitle/.test(i18njs) && !/top\.bellTitle/.test(html)]
+  ];
+  checks.forEach(([what, ok]) => { console.log((ok ? "\u2713 " : "\u2717 ") + "bell: " + what); if (!ok) problems++; });
+}
+
 // Every DataStore.X( call in app.js must exist in supabase-client.js
 const dsMethodsUsed = new Set();
 for (const m of js.matchAll(/DataStore\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) dsMethodsUsed.add(m[1]);

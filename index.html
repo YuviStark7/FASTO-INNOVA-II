@@ -46,6 +46,13 @@
       <button id="authTabUp" type="button" aria-pressed="false" data-i18n="auth.tabUp">Sign up</button>
     </div>
 
+    <!-- Only shown on the Sign up tab. Which app opens is decided by this, once,
+         at sign-up; the database stores it and nobody can change it afterwards. -->
+    <div class="mode-toggle" id="authRoleBlock" role="group" data-i18n-aria="a11y.authRole" aria-label="Which kind of account" style="display:none">
+      <button id="authRoleFarmer" class="active" type="button" aria-pressed="true" data-i18n="auth.roleFarmer">I'm a farmer</button>
+      <button id="authRoleBuyer" type="button" aria-pressed="false" data-i18n="auth.roleBuyer">I'm a buyer</button>
+    </div>
+
     <div class="field">
       <label for="authEmail" data-i18n="auth.email">Email</label>
       <input type="email" id="authEmail" placeholder="you@example.com" data-i18n-ph="auth.emailPh" autocomplete="email">
@@ -115,12 +122,22 @@
   <nav id="sidebar" data-i18n-aria="a11y.mainNav" aria-label="Main navigation">
     <div class="side-brand"><img src="assets/logo-mark.svg" alt=""><span class="wordmark"><b>FASTO</b><span> INNOVA</span></span></div>
 
-    <button type="button" class="nav-item" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
-    <button type="button" class="nav-item" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
-    <button type="button" class="nav-item" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
+    <button type="button" class="nav-item role-farmer" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
+    <button type="button" class="nav-item role-farmer" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
+    <button type="button" class="nav-item role-farmer" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
     <button type="button" class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></button>
 
-    <div class="side-bottom">
+    <!-- Buyer navigation (ROADMAP item 25). Same sidebar, different buttons:
+         #app[data-role="buyer"] hides everything marked role-farmer and
+         everything else hides these, so neither role ever sees the other's
+         screens. The data-screen values are the section ids below, minus
+         "Screen". -->
+    <button type="button" class="nav-item role-buyer" data-screen="buyerHome"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.bHome">Dashboard</span></button>
+    <button type="button" class="nav-item role-buyer" data-screen="buyerInbox"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.bInbox">Inbox</span></button>
+    <button type="button" class="nav-item role-buyer" data-screen="buyerOffers"><img class="ic-svg" src="assets/icon-chat-item.svg" alt=""><span class="label" data-i18n="nav.bOffers">Offers</span></button>
+    <button type="button" class="nav-item role-buyer" data-screen="buyerBusiness"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.bBusiness">My business</span></button>
+
+    <div class="side-bottom role-farmer">
       <div class="status-item"><img class="ic-svg" src="assets/icon-offline.svg" alt=""><span class="label" id="modePill">Offline demo</span></div>
     </div>
   </nav>
@@ -140,7 +157,9 @@
       <div class="spacer hide-mobile"></div>
       <!-- A placeholder is not a label: it disappears as soon as anything is
            typed, and several screen readers never announce it at all. -->
-      <div class="search-wrap hide-mobile"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="search" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh" data-i18n-aria="top.searchPh" aria-label="Search chats, research…"></div>
+      <!-- No longer hide-mobile: on a phone it wraps onto its own row of the
+           top bar (see the media query in app.css) rather than not existing. -->
+      <div class="search-wrap role-farmer"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="search" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh" data-i18n-aria="top.searchPh" aria-label="Search chats, research…"></div>
       <!-- The only control that has to be reachable on every screen AND on a
            phone, where .side-bottom is hidden and the sidebar becomes a row of
            icons. It is deliberately NOT reachable while a sheet is open: the
@@ -157,7 +176,10 @@
            beside "Not saved" is decorative, and the word itself is hidden on a
            phone, so that button would otherwise announce as nothing there. -->
       <button class="sync-warn" id="syncWarn" onclick="explainSyncWarn()" title="Some changes couldn't be saved to your account" data-i18n-title="top.notSavedTitle" data-i18n-aria="top.notSavedTitle" aria-label="Some changes couldn't be saved to your account"><span class="sync-warn-dot" aria-hidden="true"></span><span class="hide-mobile" data-i18n="top.notSaved">Not saved</span></button>
-      <button class="icon-btn" id="bellBtn" title="Drafts ready" data-i18n-title="top.bellTitle" data-i18n-aria="top.bellTitle" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""></button>
+      <!-- No data-i18n-title/-aria here on purpose: the label carries a count, so
+           renderBell() is its writer, the way renderDashboard() writes #researchEmpty.
+           The badge is aria-hidden because that label already says the number. -->
+      <button class="icon-btn role-farmer" id="bellBtn" title="Drafts ready" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""><span class="bell-badge" id="bellCount" aria-hidden="true" style="display:none">0</span></button>
       <button class="icon-btn" id="profileBtn" title="Restart / change mode" data-i18n-title="top.profileTitle" data-i18n-aria="top.profileTitle" aria-label="Restart / change mode" style="padding:0;overflow:hidden">
         <img src="assets/avatar-profile.png" alt="" style="width:100%;height:100%;object-fit:cover">
       </button>
@@ -180,7 +202,9 @@
           <thead><tr><th scope="col" data-i18n="dash.colConversation">Conversation</th><th scope="col" data-i18n="dash.colProduct">Targeted product</th><th scope="col" data-i18n="dash.colQuantity">Quantity pledged</th><th scope="col" data-i18n="dash.colPrice">Price</th><th scope="col" style="width:150px" data-i18n="dash.colProgress">Progress</th></tr></thead>
           <tbody id="researchBody"></tbody>
         </table>
-        <div class="empty-state" id="researchEmpty" data-i18n="dash.empty">No research yet — start a conversation in the Fasto-AI tab.</div>
+        <!-- No data-i18n: this element has two messages (nothing yet / nothing
+             matched) and renderDashboard is its single writer. -->
+        <div class="empty-state" id="researchEmpty">No research yet — start a conversation in the Fasto-AI tab.</div>
       </div>
     </section>
 
@@ -221,8 +245,41 @@
       </div>
     </section>
 
+    <!-- ---------- BUYER SCREENS (ROADMAP items 24-25) ----------
+         Each body is written by one function in js/app.js; the claim state
+         (none / pending / rejected / approved) decides what goes in it. -->
+    <section class="screen" id="buyerHomeScreen">
+      <div class="research-panel glass-45 buyer-panel">
+        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.homeTitle">Dashboard</span></div>
+        <div class="buyer-body" id="buyerHomeBody"></div>
+      </div>
+    </section>
+    <section class="screen" id="buyerInboxScreen">
+      <div class="research-panel glass-45 buyer-panel">
+        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.inboxTitle">Inbox</span></div>
+        <div class="buyer-body" id="buyerInboxBody"></div>
+      </div>
+    </section>
+    <section class="screen" id="buyerOffersScreen">
+      <div class="research-panel glass-45 buyer-panel">
+        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.offersTitle">Offers</span></div>
+        <div class="buyer-body" id="buyerOffersBody"></div>
+      </div>
+    </section>
+    <section class="screen" id="buyerBusinessScreen">
+      <div class="research-panel glass-45 buyer-panel">
+        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.bizTitle">My business</span></div>
+        <div class="buyer-body" id="buyerBusinessBody"></div>
+      </div>
+    </section>
+
     <!-- ---------- ADMIN (visible only when is_admin = true) ---------- -->
     <section class="screen" id="adminScreen">
+      <!-- Hidden until there is something to decide. Written by paintAdminClaims(). -->
+      <div class="research-panel glass-45 admin-panel-claims" id="adminClaimsPanel" style="display:none">
+        <div class="research-panel-head"><span class="title-md" id="adminClaimsTitle">Buyer claims waiting for approval</span></div>
+        <div id="adminClaims"></div>
+      </div>
       <div class="research-panel glass-45 admin-panel-stats">
         <div class="research-panel-head"><span class="title-md" data-i18n="admin.funnelTitle">Funnel — where conversations stop</span></div>
         <!-- Every bar counts CONVERSATIONS, never drafts; see the note above

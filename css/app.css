@@ -170,6 +170,32 @@
    rule short of !important. */
 .admin-panel-stats{ margin-bottom:14px; flex-shrink:0; }
 .admin-panel-main{ flex:1; min-height:0; }
+.admin-panel-claims{ margin-bottom:14px; flex-shrink:0; max-height:40%; overflow-y:auto; }
+
+/* ---- roles (ROADMAP items 24-25) ----
+   One shell, two apps. The attribute is set when a buyer's account opens; a
+   farmer's #app never carries it. !important because .nav-item and friends set
+   their own display, and "hidden for the other role" must win everywhere. */
+#app[data-role="buyer"] .role-farmer{ display:none !important; }
+#app:not([data-role="buyer"]) .role-buyer{ display:none !important; }
+
+.buyer-panel{ flex:1; min-height:0; }
+.buyer-body{ display:flex; flex-direction:column; gap:14px; padding:2px 0 14px; max-width:720px; }
+.buyer-lead{ color:var(--ink-70); font-size:13.5px; margin:0; }
+.buyer-note{ border-radius:var(--radius-md); padding:12px 14px; background:var(--glass-30); border:1px solid var(--hairline); }
+.buyer-note b{ display:block; margin-bottom:4px; }
+.buyer-note p{ margin:0; color:var(--ink-70); font-size:13px; }
+.buyer-note.pending{ border-color:rgba(217,164,65,.45); }
+.buyer-note.rejected{ border-color:rgba(217,83,79,.45); }
+.buyer-facts{ display:grid; grid-template-columns:max-content 1fr; gap:6px 16px; margin:0; font-size:13.5px; }
+.buyer-facts dt{ color:var(--ink-50); font-weight:700; font-size:12px; letter-spacing:.02em; padding-top:1px; }
+.buyer-facts dd{ margin:0; }
+.claim-form{ max-width:460px; }
+.claim-form .btn{ margin-top:4px; }
+.claim-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--hairline); }
+.claim-main{ flex:1; min-width:0; }
+.claim-main small{ display:block; color:var(--ink-50); font-size:11.5px; margin-top:2px; }
+.claim-actions{ display:flex; gap:8px; flex-shrink:0; }
 
 /* ---- admin funnel ----
    Bar width is the entire signal, so every bar is the same colour. The brand
@@ -261,6 +287,10 @@
 .chat-rail-item{ display:flex; align-items:center; gap:9px; padding:9px 8px; border-radius:var(--radius-sm); font-size:12px; color:var(--ink-70); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   width:100%; border:none; background:none; text-align:left; font-family:inherit; flex-shrink:0; -webkit-appearance:none; appearance:none; }
 .chat-rail-item .ic-svg{ opacity:.6; flex-shrink:0; }
+/* "nothing matched" inside the rail (item 17). --ink-70 rather than --ink-50:
+   the rail sits high on the screen where the scrim is weakest, which is the
+   same reason the rail carries its own tint. */
+.chat-rail-empty{ padding:10px 8px; font-size:12px; line-height:1.45; color:var(--ink-70); }
 .chat-rail-item:hover{ background:rgba(255,255,255,.08); }
 .chat-rail-item.active{ background:var(--pill-active); color:#fff; }
 /* Reusing an empty chat instead of making another one: a short outline pulse
@@ -412,6 +442,18 @@
 .sync-warn.show{ display:flex; }
 .sync-warn:hover{ background:rgba(217,164,65,.26); }
 .sync-warn-dot{ width:7px; height:7px; border-radius:50%; background:var(--warn); flex-shrink:0; }
+
+/* ---------- Notification bell badge (ROADMAP #19) ----------
+   .icon-btn is already position:relative, so this hangs off the bell itself
+   rather than needing a wrapper. Solid --warn with near-black text, NOT the
+   .pill-amber tint the draft pill uses: that tint is measured for 13px text,
+   and this is 10px inside a 17px circle, where the same ratio does not carry.
+   #1c1414 on #d9a441 is ~9:1. The dark ring is what keeps the badge legible
+   where it overlaps the bell glyph instead of the bar behind it. */
+.bell-badge{ position:absolute; top:-3px; right:-3px; min-width:17px; height:17px; padding:0 4px;
+  border-radius:9px; background:var(--warn); color:#1c1414; border:2px solid #1c1414;
+  font-family:var(--font); font-size:10px; font-weight:800; line-height:1; letter-spacing:0;
+  align-items:center; justify-content:center; box-sizing:border-box; pointer-events:none; }
 
 /* ================= LOGISTICS REQUEST =================
    Shares the match sheet's panel chrome (#matchSheet rules above) so there is
@@ -611,6 +653,16 @@
   .nav-item span.label{ font-size:9px; letter-spacing:.02em; text-align:center; }
   #main{ border-radius:0; height:100vh; margin:0; }
   #topbar{ margin:12px 12px 0; gap:10px; }
+  /* Item 17: the search box exists on a phone now. There is no room for it on
+     the same line as the greeting, the language toggle and three icon buttons,
+     so the bar wraps and the box takes a row of its own underneath. order:9
+     puts it last whatever the source order, and flex-basis:100% is what forces
+     the wrap; the greeting keeps flex:1 above it. */
+  #topbar{ flex-wrap:wrap; row-gap:8px; }
+  .search-wrap{ order:9; flex:1 1 100%; min-width:0; padding:7px 12px; }
+  /* Below 16px iOS Safari zooms the page in on focus and does not zoom back,
+     the same rule the sheet inputs follow. */
+  .search-wrap input{ font-size:16px; min-width:0; }
   /* A 26px-tall button is not a tap target. The row's tallest item is the 38px
      avatar, so going to 40 costs 2px of bar height and buys a target close to
      the 44px minimum the auth tabs already follow. Width is held down instead:
@@ -652,7 +704,11 @@
      roughly 350px tall while the page behind it stayed put, so a flick in the
      wrong place moved nothing. The whole screen scrolls now. */
   #adminScreen{ overflow-y:auto; }
-  .admin-panel-stats,.admin-panel-main{ flex:none; max-height:none; overflow:visible; }
+  .admin-panel-stats,.admin-panel-main,.admin-panel-claims{ flex:none; max-height:none; overflow:visible; }
+  .claim-row{ flex-direction:column; align-items:stretch; gap:8px; }
+  .claim-actions .btn{ flex:1; justify-content:center; }
+  .buyer-panel{ flex:none; }
+  #app[data-role="buyer"] .screen.active{ overflow-y:auto; }
   .admin-panel-stats{ margin-bottom:12px; }
 
   /* Funnel: claw back the horizontal padding a phone can't spare, and let the
