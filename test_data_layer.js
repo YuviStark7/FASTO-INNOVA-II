@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2156,6 +2156,31 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("a buyer-started thread (no AI draft) previews its latest message instead of crashing",
       a.clientPreview({ message_it: "", messages: [{ text: "Buongiorno a tutti" }] }) === "Buongiorno a tutti" && a.clientPreview({ message_it: "x".repeat(80) }).length === 46 && a.clientPreview({}) === "");
     check("offer cards escape what the farmer typed", !a.offerCardHTML({ id: "x", village: "<img src=x>", products: [{ name: "<svg>", kg_per_week: 1 }], months: [] }).match(/<img|<svg/));
+  }
+
+  /* ---- ROADMAP item 30: buyer dashboard ---- */
+  {
+    const a = app, now = Date.parse("2026-10-20T00:00:00Z");
+    const offers = [
+      { id: "n1", created_at: "2026-10-18T00:00:00Z", products: [{ category: "olio" }] },
+      { id: "o2", created_at: "2026-08-01T00:00:00Z", products: [{ category: "olio" }] },
+      { id: "n3", created_at: "2026-10-19T00:00:00Z", products: [{ category: "vino" }] }];
+    const declared = { declared_by_buyer: true, needs: ["olio"], volume: "low", quality_focus: ["km0"] };
+    check("matching offers: recent, selling something declared, nothing else",
+      a.matchingOffers(offers, declared, now).map(o => o.id).join() === "n1");
+    check("an undeclared (inferred) profile matches nothing: a guess is not a request",
+      a.matchingOffers(offers, { needs: ["olio"], declared_by_buyer: false }, now).length === 0 && a.matchingOffers(offers, null, now).length === 0);
+    check("completeness counts only declared data", a.profileCompleteness(declared).pct === 100 &&
+      a.profileCompleteness({ needs: ["olio"], volume: "low", quality_focus: ["km0"], declared_by_buyer: false }).pct === 0 &&
+      a.profileCompleteness({ declared_by_buyer: true, needs: ["olio"], volume: "low", quality_focus: [] }).missing.join() === "quality" &&
+      a.profileCompleteness(null).pct === 0);
+    a.state.inbox = [{ messages: [{ role: "farmer", readAt: null }] }, { messages: [{ role: "farmer", readAt: "t" }] }];
+    a.state.offerFeed = offers.map(o => Object.assign({ village: "Atina" }, o, { created_at: new Date().toISOString() }));
+    const html = a.buyerDashboardHTML(declared);
+    check("the dashboard shows conversation, unread and matching counts and a progress bar",
+      /<b>2<\/b><span>Conversations/.test(html) && /<b>1<\/b><span>Unread/.test(html) && /<b>2<\/b><span>New offers matching/.test(html) && /aria-valuenow="100"/.test(html), html.slice(0, 400));
+    check("an undeclared buyer is asked to declare instead of shown a zero without explanation",
+      a.buyerDashboardHTML({ needs: ["olio"] }).includes("Tell us what you buy"));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

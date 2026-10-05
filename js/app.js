@@ -2832,6 +2832,47 @@ function buyerGateHTML() {
   return `<div class="empty-state">${esc(T(st === "pending" ? "buyer.gatePending" : "buyer.gateNone"))}</div>`;
 }
 
+/* ---------- Buyer dashboard (ROADMAP item 30) ----------
+   Read-only: everything here is already in state, loaded when the buyer
+   signed in. Pure functions first so the numbers are testable without a page. */
+const NEW_OFFER_DAYS = 14;
+// Offers that sell something the business says it buys, published recently.
+// Only meaningful once the buyer has declared its needs (item 28): matching
+// against our own guess would present an inference as the buyer's request.
+function matchingOffers(offers, biz, now) {
+  if (!biz || !biz.declared_by_buyer || !(biz.needs || []).length) return [];
+  const cutoff = (now || Date.now()) - NEW_OFFER_DAYS * 86400000;
+  return (offers || []).filter(o => new Date(o.created_at).getTime() >= cutoff &&
+    (o.products || []).some(p => biz.needs.indexOf(p.category) !== -1));
+}
+function profileCompleteness(biz) {
+  if (!biz) return { done: 0, total: 4, pct: 0, missing: [] };
+  const checks = [
+    ["declared", !!biz.declared_by_buyer],
+    ["needs", (biz.needs || []).length > 0 && !!biz.declared_by_buyer],
+    ["volume", VOLUME_BANDS.indexOf(biz.volume) !== -1 && !!biz.declared_by_buyer],
+    ["quality", (biz.quality_focus || []).length > 0 && !!biz.declared_by_buyer]
+  ];
+  const done = checks.filter(c => c[1]).length;
+  return { done, total: checks.length, pct: Math.round(100 * done / checks.length), missing: checks.filter(c => !c[1]).map(c => c[0]) };
+}
+function buyerDashboardHTML(biz) {
+  const unread = inboxUnread(state.inbox), convos = (state.inbox || []).length;
+  const match = matchingOffers(state.offerFeed, biz);
+  const comp = profileCompleteness(biz);
+  const tile = (n, labelKey, screen, extra) => `<button type="button" class="stat-tile" onclick="switchScreen('${screen}')"><b>${n}</b><span>${esc(T(labelKey))}</span>${extra || ""}</button>`;
+  const offersHint = biz.declared_by_buyer ? "" : `<small>${esc(T("buyer.dashDeclareHint"))}</small>`;
+  const list = match.slice(0, 3).map(o => `<li>${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}: ${(o.products || []).map(p => esc(p.name)).join(", ")}</li>`).join("");
+  return `<div class="stat-row">
+      ${tile(convos, "buyer.dashConvos", "buyerInbox")}
+      ${tile(unread, "buyer.dashUnread", "buyerInbox")}
+      ${tile(match.length, "buyer.dashMatching", "buyerOffers", offersHint)}
+    </div>
+    ${list ? `<ul class="dash-list">${list}</ul>` : ""}
+    <div class="buyer-note"><b>${esc(T("buyer.dashComplete", { pct: comp.pct }))}</b>
+      <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${comp.pct}" aria-label="${escAttr(T("buyer.dashComplete", { pct: comp.pct }))}"><span style="width:${comp.pct}%"></span></div>
+      ${comp.pct < 100 ? `<p>${esc(T("buyer.dashCompleteHint"))} <button type="button" class="btn btn-ghost btn-sm" onclick="switchScreen('buyerBusiness')">${esc(T("nav.bBusiness"))}</button></p>` : ""}</div>`;
+}
 function renderBuyerHome() {
   const el = $("buyerHomeBody"); if (!el) return;
   const snap = claimFormSnapshot();
@@ -2840,7 +2881,7 @@ function renderBuyerHome() {
   let html = "";
   if (st === "approved") {
     const biz = myBusiness();
-    html = buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name: biz ? biz.name : name }) + (biz ? buyerFactsHTML(biz) : "");
+    html = buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name: biz ? biz.name : name }) + (biz ? buyerDashboardHTML(biz) + buyerFactsHTML(biz) : "");
   } else if (st === "pending") {
     html = buyerNoteHTML("pending", "buyer.pendingTitle", "buyer.pendingBody", { name });
   } else {
