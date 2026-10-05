@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -187,10 +187,10 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
-  return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage };
+  return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document };
 }
 
-const { app, sb, els, logs, storage } = loadApp(path);
+const { app, sb, els, logs, storage, doc } = loadApp(path);
 
 /* ============================================================
    1. Query shape — table, filter, sort, single-row flags
@@ -2044,6 +2044,53 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.state.claims = [{ status: "pending", buyer_id: a.DB.buyers[0].id }];
     sb.reset(); await a.loadBuyerInbox();
     check("a buyer without an approved claim loads nothing and asks nothing", a.state.inbox.length === 0 && sb.chains.length === 0);
+  }
+
+  /* ---- ROADMAP item 28: buyer declares own profile ---- */
+  {
+    const a = app, g = a.guardianValidateBuyerProfile;
+    check("a valid declaration is accepted and deduplicated", (() => { const r = g({ needs: ["verdure", "verdure", "olio"], volume: "low", quality_focus: ["km0"] }); return r.ok && r.row.needs.length === 2; })());
+    check("no products, an unknown product, or more than 8 are refused",
+      g({ needs: [], volume: "low" }).bad.includes("needs") && g({ needs: ["pizza"], volume: "low" }).bad.includes("needsBad") &&
+      g({ needs: ["verdure","pomodori","frutta","legumi","olio","vino","uova","formaggi","carne"], volume: "low" }).bad.includes("needsBad"));
+    check("an unknown volume band or quality tag, or more than 4 tags, is refused",
+      g({ needs: ["olio"], volume: "huge" }).bad.includes("volume") && g({ needs: ["olio"], volume: "low", quality_focus: ["<script>"] }).bad.includes("quality") &&
+      g({ needs: ["olio"], volume: "low", quality_focus: ["km0","bio","prezzo","eventi","genuino"] }).bad.includes("quality"));
+    check("nothing but needs, volume and quality_focus can come out of the validator",
+      JSON.stringify(Object.keys(g({ needs: ["olio"], volume: "low", name: "Hacked", distance_km: 0 }).row)) === '["needs","volume","quality_focus"]');
+    // ranking prefers declared data, only when it overlaps
+    const prof = { products: [{ name: "olio", category: "olio", kg_per_week: 30 }], available_months: [1,2,3,4,5,6,7,8,9,10,11,12], organic: "no" };
+    const base = { id: "z", name: "Z", type: "ristorante", zone: "Cassino", distance_km: 2, needs: ["olio"], volume: "low", quality_focus: [], notes: "n", source: "s", confidence: "low" };
+    const r0 = a.rankMatches(prof, { buyers: [base], channels: [] }, 6)[0];
+    const r1 = a.rankMatches(prof, { buyers: [Object.assign({}, base, { declared_by_buyer: true })], channels: [] }, 6)[0];
+    const r2 = a.rankMatches(prof, { buyers: [Object.assign({}, base, { declared_by_buyer: true, needs: ["vino"] })], channels: [] }, 6)[0];
+    check("a declaring buyer that overlaps ranks 5 higher; one that does not overlap gets no bonus",
+      r1.score - r0.score === 5 && r1.declared_by_buyer === true && r2.score < r0.score && r1.reasons.includes("This business confirmed what it buys"), [r0.score, r1.score, r2.score].join());
+    // saving
+    const biz = a.DB.buyers[0];
+    a.state.claims = [{ status: "approved", buyer_id: biz.id }];
+    els.buyerBusinessBody = fakeEl("buyerBusinessBody"); els.bpErr = fakeEl("bpErr"); els.bpSave = fakeEl("bpSave"); els.bpVolume = fakeEl("bpVolume");
+    els.bpVolume.value = "high";
+    const realQSA = doc.querySelectorAll;
+    doc.querySelectorAll = sel => sel.includes("bpNeed") ? [{ value: "olio" }, { value: "uova" }] : sel.includes("bpQual") ? [{ value: "km0" }] : [];
+    sb.reset(); sb.router = () => ({ data: {}, error: null });
+    await a.saveBuyerProfile();
+    const uc = sb.chains.find(x => x.table === "buyers");
+    const upd = uc && uc.ops.find(o => o.op === "update");
+    check("saving writes only the declarable columns, to the owner's own row",
+      upd && JSON.stringify(Object.keys(upd.args[0]).sort()) === JSON.stringify(["declared_at", "declared_by_buyer", "needs", "quality_focus", "volume"]) &&
+      uc.ops.some(o => o.op === "eq" && o.args[0] === "id" && o.args[1] === biz.id) && upd.args[0].declared_by_buyer === true);
+    check("and this session's listing now carries the declared values", biz.declared_by_buyer === true && biz.volume === "high" && biz.needs.join() === "olio,uova");
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
+    biz.volume = "low";
+    els.bpVolume.value = "medium";
+    await a.saveBuyerProfile();
+    check("a refused save changes nothing locally", biz.volume === "low");
+    doc.querySelectorAll = () => [];
+    sb.reset(); await a.saveBuyerProfile();
+    check("an empty form is stopped before the database is touched", sb.chains.length === 0);
+    check("declared values are escaped on the page", !a.buyerDeclaredHTML({ needs: ["<img src=x>"], volume: "low", quality_focus: ["<svg>"] }).match(/<img|<svg/));
+    doc.querySelectorAll = realQSA;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

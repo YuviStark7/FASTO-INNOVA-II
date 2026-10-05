@@ -91,7 +91,13 @@ function scoreBuyer(profile, buyer, month) {
   if (inSeason && catInSeason) reasons.push("In season now");
   else if (!inSeason) reasons.push("Supply starts later — plan ahead");
 
-  var score = Math.round(catPts + volPts + distPts + qPts + seaPts);
+  // 6. Declared by the buyer itself (+5, ROADMAP item 28). Inferred needs are a
+  //    guess from reviews; what a business says about itself is better evidence,
+  //    so it is preferred, but only when it actually overlaps with this farmer.
+  var declPts = 0;
+  if (buyer.declared_by_buyer && matched.length) { declPts = 5; reasons.push("This business confirmed what it buys"); }
+
+  var score = Math.round(catPts + volPts + distPts + qPts + seaPts + declPts);
   return { score: Math.max(0, Math.min(100, score)), reasons: reasons };
 }
 
@@ -102,7 +108,7 @@ function rankMatches(profile, db, month) {
     return {
       id: b.id, name: b.name, type: b.type, zone: b.zone, distance_km: b.distance_km,
       needs: b.needs, volume: b.volume, quality_focus: b.quality_focus, notes: b.notes,
-      confidence: b.confidence, is_channel: (db.channels || []).indexOf(b) !== -1,
+      confidence: b.confidence, declared_by_buyer: !!b.declared_by_buyer, is_channel: (db.channels || []).indexOf(b) !== -1,
       score: r.score, reasons: r.reasons
     };
   });
@@ -202,6 +208,26 @@ function guardianVerifyRecs(recs, candidateIds, profile) {
   return { verified: out, issues: issues };
 }
 
+/* ---------- Buyer-declared profile (ROADMAP item 28) ----------
+   What a buyer types about its own business reaches Brain 2's ranking, so it is
+   checked like a farmer's profile: only known categories, a known volume band,
+   a short list of known quality tags, sane counts. Pure. */
+var QUALITY_TAGS = ["km0","bio","alta_qualità","qualità","territorio","solo_produttori","tradizionale","prezzo","genuino","casalingo","stagionale","eventi"];
+var VOLUME_BANDS = ["low","medium","high"];
+var BUYER_NEEDS_MAX = 8, BUYER_QUALITY_MAX = 4;
+function guardianValidateBuyerProfile(input) {
+  var bad = [];
+  input = input || {};
+  var needs = (Array.isArray(input.needs) ? input.needs : []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+  if (!needs.length) bad.push("needs");
+  else if (needs.length > BUYER_NEEDS_MAX || needs.some(function (c) { return CATEGORIES.indexOf(c) === -1; })) bad.push("needsBad");
+  if (VOLUME_BANDS.indexOf(input.volume) === -1) bad.push("volume");
+  var q = (Array.isArray(input.quality_focus) ? input.quality_focus : []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+  if (q.length > BUYER_QUALITY_MAX || q.some(function (t) { return QUALITY_TAGS.indexOf(t) === -1; })) bad.push("quality");
+  if (bad.length) return { ok: false, bad: bad };
+  return { ok: true, row: { needs: needs, volume: input.volume, quality_focus: q } };
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -209,6 +235,6 @@ if (typeof module !== "undefined" && module.exports) {
     volumeBand: volumeBand, totalKg: totalKg, farmerCategories: farmerCategories,
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
-    guardianVerifyRecs: guardianVerifyRecs
+    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, QUALITY_TAGS: QUALITY_TAGS
   };
 }

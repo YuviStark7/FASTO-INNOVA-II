@@ -2715,6 +2715,60 @@ function buyerAssumedHTML(biz) {
     </dl></div>`;
 }
 
+/* ---------- My business: what the buyer declares (ROADMAP item 28) ----------
+   The listing's needs/volume/quality are our desk-research guesses. Here the
+   owner replaces them with what the business actually says. Everything typed or
+   ticked is validated by guardianValidateBuyerProfile() and escaped on output;
+   "declared" stays visibly different from "assumed" on every screen. */
+function buyerDeclaredHTML(biz) {
+  const needs = (biz.needs || []).map(catLabel).join(", ");
+  const vol = VOLUME_BANDS.indexOf(biz.volume) !== -1 ? T("band." + biz.volume) : "—";
+  const q = (biz.quality_focus || []).map(t => T("qtag." + t)).join(", ");
+  return `<div class="buyer-note"><b>${esc(T("buyer.declaredTitle"))}</b><p>${esc(T("buyer.declaredBody"))}</p>
+    <dl class="buyer-facts" style="margin-top:10px">
+      <dt>${esc(T("buyer.bizBuys"))}</dt><dd>${esc(needs || "—")}</dd>
+      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
+      <dt>${esc(T("buyer.bizQuality"))}</dt><dd>${esc(q || "—")}</dd>
+    </dl></div>`;
+}
+function buyerProfileFormHTML(biz) {
+  const has = (arr, v) => (arr || []).indexOf(v) !== -1;
+  const needs = CATEGORIES.map(c => `<label class="chk"><input type="checkbox" name="bpNeed" value="${escAttr(c)}"${has(biz.needs, c) ? " checked" : ""}><span>${esc(catLabel(c))}</span></label>`).join("");
+  const quals = QUALITY_TAGS.map(t => `<label class="chk"><input type="checkbox" name="bpQual" value="${escAttr(t)}"${has(biz.quality_focus, t) ? " checked" : ""}><span>${esc(T("qtag." + t))}</span></label>`).join("");
+  const vols = VOLUME_BANDS.map(v => `<option value="${v}"${biz.volume === v ? " selected" : ""}>${esc(T("band." + v))}</option>`).join("");
+  return `<form class="buyer-form" id="bpForm" onsubmit="return false">
+    <fieldset class="chk-group"><legend>${esc(T("buyer.formNeeds"))}</legend><div class="chk-grid">${needs}</div></fieldset>
+    <div class="field"><label for="bpVolume">${esc(T("buyer.formVolume"))}</label><select id="bpVolume">${vols}</select></div>
+    <fieldset class="chk-group"><legend>${esc(T("buyer.formQuality"))}</legend><div class="chk-grid">${quals}</div></fieldset>
+    <div class="auth-err" id="bpErr" role="alert" style="display:none"></div>
+    <button type="button" class="btn btn-primary" id="bpSave">${esc(T("buyer.formSave"))}</button>
+    <p class="buyer-lead">${esc(T("buyer.formFoot"))}</p></form>`;
+}
+function readBuyerProfileForm() {
+  const picked = name => Array.prototype.map.call(document.querySelectorAll('input[name="' + name + '"]:checked'), i => i.value);
+  return { needs: picked("bpNeed"), volume: $("bpVolume") ? $("bpVolume").value : "", quality_focus: picked("bpQual") };
+}
+async function saveBuyerProfile() {
+  const biz = myBusiness(); if (!biz) return;
+  const v = guardianValidateBuyerProfile(readBuyerProfileForm());
+  const err = $("bpErr");
+  if (!v.ok) {
+    const key = v.bad.indexOf("needs") !== -1 ? "buyer.err.needs" : v.bad.indexOf("volume") !== -1 ? "buyer.err.volume" : v.bad.indexOf("quality") !== -1 ? "buyer.err.quality" : "buyer.err.needsBad";
+    if (err) { err.textContent = T(key); err.style.display = "block"; }
+    return;
+  }
+  if (err) err.style.display = "none";
+  const btn = $("bpSave"); if (btn) btn.disabled = true;
+  const patch = Object.assign({}, v.row, { declared_by_buyer: true, declared_at: new Date().toISOString() });
+  try {
+    const { error } = await DataStore.updateMyBusiness(biz.id, patch);
+    if (error) throw error;
+    Object.assign(biz, patch);        // this session's listings read the new values too
+    toast(T("buyer.formSaved"));
+  } catch (e) { saveFailedWithOwnMessage("save.businessProfile", e, T("buyer.formFailed")); }
+  renderBuyerBusiness();
+}
+
 // What Inbox / Offers / My business show before the claim is approved.
 function buyerGateHTML() {
   const st = claimState(state.claims);
@@ -2844,7 +2898,8 @@ function renderBuyerOffers() {
 function renderBuyerBusiness() {
   const el = $("buyerBusinessBody"); if (!el) return;
   const biz = myBusiness();
-  el.innerHTML = buyerGateHTML() || (biz ? buyerFactsHTML(biz) + buyerAssumedHTML(biz) : "");
+  el.innerHTML = buyerGateHTML() || (biz ? buyerFactsHTML(biz) + (biz.declared_by_buyer ? buyerDeclaredHTML(biz) : buyerAssumedHTML(biz)) + buyerProfileFormHTML(biz) : "");
+  const save = $("bpSave"); if (save) save.onclick = saveBuyerProfile;
 }
 function renderBuyerScreens() { renderBuyerHome(); renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
 

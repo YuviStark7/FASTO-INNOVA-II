@@ -452,6 +452,13 @@
    #1c1414 on #d9a441 is ~9:1. The dark ring is what keeps the badge legible
    where it overlaps the bell glyph instead of the bar behind it. */
 .nav-item .nav-badge{ position:static; margin-left:auto; }
+.buyer-form{ display:flex; flex-direction:column; gap:14px; }
+.chk-group{ border:1px solid var(--hairline); border-radius:var(--radius-md); padding:10px 12px; margin:0; }
+.chk-group legend{ font-size:12px; font-weight:700; color:var(--ink-70); padding:0 6px; }
+.chk-grid{ display:flex; flex-wrap:wrap; gap:8px; }
+.chk{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:var(--radius-sm); background:var(--glass-30); font-size:13px; cursor:pointer; }
+.chk input{ width:auto; accent-color:var(--red); }
+.chk:focus-within{ outline:2px solid #fff; outline-offset:2px; }
 .inbox-list{ display:flex; flex-direction:column; gap:6px; }
 .inbox-row{ display:flex; align-items:center; gap:10px; text-align:left; padding:10px 12px; border-radius:var(--radius-sm); background:var(--glass-30); border:1px solid var(--hairline); color:#fff; font-family:var(--font); cursor:pointer; }
 .inbox-row.active{ border-color:var(--red); }

@@ -96,6 +96,12 @@ const DataStore = {
       .eq("outreach_id", outreachId).eq("sender_role", "farmer").is("read_at", null);
   },
 
+  // The approved owner of a business declares what it buys (ROADMAP item 28).
+  // Only these columns are writable by anyone but an admin, enforced by column grants.
+  updateMyBusiness(buyerId, patch) {
+    return sb.from("buyers").update(patch).eq("id", buyerId).select().single();
+  },
+
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },
   listAllChats() { return sb.from("chats").select("*").order("updated_at", { ascending: false }); },
