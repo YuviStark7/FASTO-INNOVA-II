@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -187,10 +187,10 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
-  return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document };
+  return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
 }
 
-const { app, sb, els, logs, storage, doc } = loadApp(path);
+const { app, sb, els, logs, storage, doc, box } = loadApp(path);
 
 /* ============================================================
    1. Query shape — table, filter, sort, single-row flags
@@ -2272,6 +2272,93 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     const reloads = []; 
     await a.signOutNow();
     check("log out signs out through Supabase auth", sb.authCalls.some(c => c.fn === "signOut"));
+  }
+
+  /* ---- match cards in the chat, buyer detail, drafted message ---- */
+  {
+    const a = app;
+    const profile = { farmer_name: "Rahul", village: "Isola del Liri", distance_km_from_cassino: 15, organic: "no", available_months: [6, 7, 8, 9],
+      products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }, { name: "zucchine", category: "verdure", kg_per_week: 40 }] };
+    const chat = { id: "c-cards", title: "Pomodori & Zucchine", phase: "done", ts: 1, messages: [], recs: null, profile, candidates: a.rankMatches(profile, a.DB, 7).slice(0, 8) };
+    a.state.chats = [chat]; a.state.activeChatId = null; a.state.clients = []; a.state.farmerId = "uf"; a.state.farmerProfile = { first_name: "Rahul" };
+    const html = a.matchCardsHTML(chat);
+    check("the chat shows exactly four cards, each a real button, best first",
+      (html.match(/class="mcard"/g) || []).length === 4 && html.indexOf(chat.candidates[0].name.replace(/&/g, "&amp;")) < html.indexOf(chat.candidates[3].name.replace(/&/g, "&amp;")) && (html.match(/<button type="button" class="mcard"/g) || []).length === 4);
+    check("there is no edit-details button any more, only the hint to ask in the chat", !/openProfileEdit/.test(html) && /make it 100 kg/.test(html));
+    check("no cards before there is a profile or any ranking", a.matchCardsHTML({ id: "x", phase: "interview", profile: null, candidates: [] }) === "" && a.matchCardsHTML({ id: "x", phase: "interview", profile, candidates: [] }) === "");
+    const evil = Object.assign({}, chat, { candidates: chat.candidates.map((c, i) => i === 0 ? Object.assign({}, c, { name: "<img src=x onerror=1>" }) : c) });
+    check("a buyer name is escaped on its card", !/<img src=x/.test(a.matchCardsHTML(evil)));
+
+    check("the map is a lazy, titled embed of a search for the business; a self-registered listing gets none",
+      /<iframe[^>]+title="[^"]+"[^>]+loading="lazy"/.test(a.mapHTML({ name: "Trattoria La Cantina", zone: "Cassino centro" })) && a.mapHTML({ name: "Trattoria La Cantina", zone: "Cassino centro" }).includes("Trattoria%20La%20Cantina") &&
+      a.mapHTML({ name: "Bar Roma", source: "self-registered" }) === "" && a.mapHTML(null) === "");
+
+    const d = a.templateDraft(profile, { name: "Trattoria La Cantina" }, "Rahul");
+    check("the plain draft uses the farmer's own details in Italian and English and signs with the account name",
+      /Rahul/.test(d.message_it) && /80 kg a settimana di pomodori/.test(d.message_it) && /Isola del Liri/.test(d.message_it) && /from Isola del Liri/.test(d.message_en) && /from June to September/.test(d.message_en) && /da giugno a settembre/.test(d.message_it));
+    check("the plain draft never claims organic unless the profile says so",
+      !/biologic/i.test(d.message_it) && !/organic/i.test(d.message_en) && /biologica certificata/.test(a.templateDraft(Object.assign({}, profile, { organic: "yes" }), { name: "X" }, "").message_it));
+    check("no months means all year round", /tutto l'anno/.test(a.templateDraft(Object.assign({}, profile, { available_months: [] }), { name: "X" }, "").message_it));
+
+    // opening a card: offline -> template draft; brain 2 path -> one candidate, guardian-checked
+    for (const id of ["matchSheet", "matchTitle", "matchSubtitle", "matchBody", "cardMsgBox"]) els[id] = fakeEl(id);
+    a.state.offline = true;
+    await a.openBuyerCard("c-cards", chat.candidates[0].id);
+    check("opening a card fills the sheet and shows the drafted message in an editable box",
+      els.matchTitle.textContent === chat.candidates[0].name && els.matchSubtitle.textContent.includes("#1") && els.cardMsgBox.innerHTML.includes("<textarea"));
+    check("the sheet has details, the chips, the map link and an editable message ready on open",
+      els.matchBody.innerHTML.includes("bmap") && els.matchBody.innerHTML.includes("mc-reasons") && els.cardMsgBox.innerHTML.includes("<textarea") && els.cardMsgBox.innerHTML.includes("cardSendBtn"), els.cardMsgBox.innerHTML.slice(0, 200));
+    check("the sheet says honestly whether the buyer's needs are an estimate", els.matchBody.innerHTML.includes("estimated") && els.matchBody.innerHTML.includes("not something the business told us"));
+
+    a.state.offline = false; a.state.apiKey = "k"; a.state.model = "m";
+    const target = chat.candidates[1];
+    let sent = null;
+    box.fetch = async (url, init) => { sent = JSON.parse(init.body); return { ok: true, json: async () => ({ content: [{ type: "tool_use", name: "submit_recommendations", input: {
+      ranked: [{ buyer_id: target.id, pitch_reason: "x" }], creative_suggestions: [],
+      outreach: { buyer_id: target.id, message_it: "Buongiorno da Brain 2", message_en: "Hello from Brain 2" } } }] }) }; };
+    chat.cardDrafts = {};
+    const live = await a.draftFor(chat, target);
+    check("a draft made on demand asks Brain 2 about this ONE buyer and keeps its Guardian-checked answer",
+      sent && JSON.parse(sent.messages[0].content).candidates.length === 1 && JSON.parse(sent.messages[0].content).candidates[0].buyer_id === target.id && live.source === "brain2" && live.it === "Buongiorno da Brain 2");
+    box.fetch = async () => ({ ok: true, json: async () => ({ content: [{ type: "tool_use", name: "submit_recommendations", input: {
+      ranked: [], creative_suggestions: [], outreach: { buyer_id: "some-other-buyer", message_it: "Ciao", message_en: "Hi" } } }] }) });
+    chat.cardDrafts = {};
+    const wrong = await a.draftFor(chat, target);
+    check("an answer addressed to a buyer we did not ask about is thrown away for the plain draft", wrong.source === "template" && wrong.it !== "Ciao");
+    box.fetch = () => Promise.reject(new Error("offline"));
+    chat.cardDrafts = {};
+    check("if Brain 2 is unreachable the farmer still gets an editable draft", (await a.draftFor(chat, target)).source === "template");
+    chat.cardDrafts = {};
+    const first = await a.draftFor(chat, target);
+    box.fetch = () => { throw new Error("must not be called again"); };
+    check("reopening the same card reuses the draft instead of asking again", (await a.draftFor(chat, target)) === first);
+    chat.ts = 2;
+    check("but a draft written before the farmer changed their details is redone", (await a.draftFor(chat, target)) !== first);
+
+    // sending
+    a.state.offline = true; chat.cardDrafts = {};
+    await a.openBuyerCard("c-cards", target.id);
+    els.cardMsgText = fakeEl("cardMsgText"); els.cardSendBtn = fakeEl("cardSendBtn"); els.cardMsgText.value = "Buongiorno, ecco la mia offerta";
+    sb.reset();
+    sb.router = (ch) => ch.table === "outreach" && ch.ops[0].op === "insert" ? { data: { id: "o-card" }, error: null }
+      : ch.table === "outreach_messages" ? { data: { id: "m1", sender_role: "farmer", body: "Buongiorno, ecco la mia offerta", created_at: "2026-10-05T10:00:00Z", read_at: null }, error: null } : { data: null, error: null };
+    await a.sendCardMessage();
+    const created = sb.chains.find(x => x.table === "outreach" && x.ops[0].op === "insert");
+    const msg = sb.chains.find(x => x.table === "outreach_messages" && x.ops[0].op === "insert");
+    check("Send creates the thread for that buyer with the edited text, posts it to the inbox and marks it sent",
+      created && created.ops[0].args[0].message_it === "Buongiorno, ecco la mia offerta" && created.ops[0].args[0].buyer_id === target.id &&
+      msg && msg.ops[0].args[0].body === "Buongiorno, ecco la mia offerta" && msg.ops[0].args[0].sender_role === "farmer" &&
+      a.state.clients.find(c => c.buyerId === target.id).status === "sent", JSON.stringify(sb.chains.map(c => c.table)));
+    check("the card then says it was sent and offers the conversation", els.cardMsgBox.innerHTML.includes("already messaged") || els.cardMsgBox.innerHTML.includes("openSentThread"));
+    sb.reset();
+    await a.sendCardMessage();
+    check("pressing Send again does nothing (no second thread, no second message)", sb.chains.length === 0);
+    els.cardMsgText.value = "   ";
+    a.state.clients = []; chat.cardDrafts = {};
+    await a.openBuyerCard("c-cards", chat.candidates[2].id);
+    els.cardMsgText.value = "   "; sb.reset();
+    await a.sendCardMessage();
+    check("an empty message is not sent", sb.chains.length === 0);
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

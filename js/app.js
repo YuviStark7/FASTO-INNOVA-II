@@ -717,19 +717,11 @@ function renderTranscript() {
     if (m.role === "sys") return `<div class="bubble meta">${esc(m.text)}</div>`;
     return `<div class="bubble ${m.role === "user" ? "out" : "in"}">${esc(m.text)}</div>`;
   }).join("");
-  // once matching is finished the transcript ends with a way into the match
-  // view, and — as soon as Brain 1 has captured anything at all — a way to
-  // correct what it captured without starting the interview over.
-  const acts = [];
-  if (chat.phase === "done" || (chat.profile && chat.candidates && chat.candidates.length)) {
-    acts.push(`<button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">${esc(T("assist.why"))}</button>`);
-  }
-  if (offerCanPublish(chat)) {
-    const on = offerFor(chat.id) && offerFor(chat.id).status === "published";
-    acts.push(`<button class="btn btn-ghost btn-sm" onclick="toggleOffer('${chat.id}')">${esc(T(on ? "offer.unpublish" : "offer.publish"))}</button>`);
-  }
-  if (chat.profile) acts.push(`<button class="btn btn-ghost btn-sm" onclick="openProfileEdit('${chat.id}')">${esc(T("assist.editDetails"))}</button>`);
-  const cta = acts.length ? `<div class="match-cta">${acts.join("")}</div>` : "";
+  // Once matching has produced something the transcript ends with the best
+  // buyers as cards, and (if the farmer wants it) a way to publish an offer.
+  // There is no "edit details" button on purpose: changes are made by asking in
+  // the chat, and the cards below are redrawn when the ranking changes.
+  const cta = matchCardsHTML(chat);
   el.innerHTML = bubbles + cta;
   el.scrollTop = el.scrollHeight;
 }
@@ -1002,69 +994,254 @@ function matchRowsFor(chat) {
   return rows.slice(0, 5);
 }
 
-function openMatchView(chatId) {
-  const chat = state.chats.find(c => c.id === chatId);
-  const sheet = $("matchSheet");
-  if (!chat || !sheet) return;
-
-  const rows = matchRowsFor(chat);
-  const p = chat.profile;
-  const poolSize = (DB.buyers || []).length + (DB.channels || []).length;
-
-  // textContent, so no escaping needed here (unlike the innerHTML below)
-  $("matchSubtitle").textContent = rows.length
-    ? T("match.subtitle", { title: chat.title, n: rows.length, pool: poolSize })
-    : chat.title;
-
-  const profileBits = !p ? "" : `<div class="match-profile-row">
-    <div class="match-profile">
-      ${p.village ? `<span class="pill pill-muted">${esc(p.village)}</span>` : ""}
-      ${isFinite(Number(p.distance_km_from_cassino)) ? `<span class="pill pill-muted">${esc(T("match.kmFrom", { n: Math.round(Number(p.distance_km_from_cassino)) }))}</span>` : ""}
-      <span class="pill pill-muted">${esc(T("match.kgWeek", { n: Math.round(totalKg(p)) }))}</span>
-      <span class="pill ${p.organic === "yes" ? "pill-accent" : "pill-muted"}">${esc(p.organic === "yes" ? T("match.organic") : p.organic === "partial" ? T("match.partlyOrganic") : T("match.notOrganic"))}</span>
-      ${(p.products || []).map(pr => `<span class="pill pill-blue">${esc(pr.name)} · ${Math.round(Number(pr.kg_per_week))} kg</span>`).join("")}
-    </div>
-    <button class="btn btn-ghost btn-sm mp-edit" onclick="openProfileEdit('${chat.id}', true)">${esc(T("assist.editDetails"))}</button>
-  </div>`;
-
+/* ---------- Match cards (in the chat) and the buyer detail sheet ----------
+   The best buyers appear as cards under the conversation as soon as Brain 2 has
+   ranked them. A card opens that buyer's detail: where it is, what we know, every
+   reason chip, and a message already drafted for the farmer to read and send.
+   Asking for a change in the chat re-ranks, and the cards are redrawn. */
+const MATCH_CARDS = 4;
+function matchCardsHTML(chat) {
+  const ready = chat.phase === "done" || (chat.candidates && chat.candidates.length);
+  if (!ready || !chat.profile) return "";
+  const rows = matchRowsFor(chat).slice(0, MATCH_CARDS);
+  if (!rows.length) return "";
   const cards = rows.map((r, i) => {
     const c = r.cand;
     const where = [c.zone, (c.type || "").replace(/_/g, " ")].filter(Boolean).map(esc).join(" · ");
     const km = isFinite(Number(c.distance_km)) ? " · " + Math.round(Number(c.distance_km)) + " km" : "";
-    return `<div class="match-card">
-      <div class="mc-head">
-        <span class="mc-rank">${i + 1}</span>
-        <div style="min-width:0;flex:1">
-          <div class="title-sm">${esc(c.name)}</div>
-          <div class="foot">${where}${km}</div>
-        </div>
-        ${c.is_channel ? `<span class="pill pill-blue">${esc(T("match.channel"))}</span>` : ""}
-        <span class="pill ${scorePillClass(c.score)}">${c.score}/100</span>
-      </div>
-      ${r.pitch ? `<div class="mc-pitch">${esc(r.pitch)}</div>` : ""}
-      <div class="mc-reasons">${(c.reasons || []).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("")}</div>
-    </div>`;
+    const chips = (c.reasons || []).slice(0, 2).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("");
+    return `<button type="button" class="mcard" onclick="openBuyerCard('${esc(chat.id)}','${esc(c.id)}')" aria-label="${escAttr(T("card.open", { name: c.name, score: c.score }))}">
+      <span class="mcard-top"><span class="mc-rank">${i + 1}</span><span class="pill ${scorePillClass(c.score)}">${c.score}/100</span></span>
+      <b class="mcard-name">${esc(c.name)}</b>
+      <span class="mcard-sub">${where}${km}</span>
+      <span class="mcard-chips">${chips}</span>
+    </button>`;
   }).join("");
-
   const suggs = (!chat.recsStale && chat.recs && chat.recs.creative_suggestions) || [];
-  let tail = "";
-  if (suggs.length) {
-    tail = `<div class="eyebrow" style="margin-top:6px">${esc(T("match.ideas"))}</div>` +
-      suggs.map((s, i) => `<div class="sugg-card"><span class="sugg-num">${i + 1}</span><span>${esc(s)}</span></div>`).join("");
-  } else if (chat.recsStale) {
-    tail = `<div class="foot" style="margin-top:6px">${esc(T("match.stale"))}</div>`;
-  } else if (!chat.recs) {
-    tail = `<div class="foot" style="margin-top:6px">${esc(T("match.noNotes"))}</div>`;
-  }
-
-  $("matchBody").innerHTML = rows.length
-    ? profileBits + `<div class="eyebrow">${esc(T("match.best"))}</div>` + cards + tail
-    : `<div class="empty-state">${esc(T("match.none"))}</div>`;
-
-  openSheet("matchSheet");
+  const ideas = suggs.length ? `<details class="match-ideas"><summary>${esc(T("match.ideas"))}</summary>${
+    suggs.map((x, i) => `<div class="sugg-card"><span class="sugg-num">${i + 1}</span><span>${esc(x)}</span></div>`).join("")}</details>` : "";
+  const offer = offerCanPublish(chat) ? (() => {
+    const on = offerFor(chat.id) && offerFor(chat.id).status === "published";
+    return `<button type="button" class="btn btn-ghost btn-sm" onclick="toggleOffer('${esc(chat.id)}')">${esc(T(on ? "offer.unpublish" : "offer.publish"))}</button>`;
+  })() : "";
+  return `<div class="match-block"><div class="eyebrow">${esc(T("match.best"))}</div>
+    <div class="match-cards">${cards}</div>${ideas}
+    <div class="match-cta">${offer}</div>
+    <div class="foot match-hint">${esc(T("card.editHint"))}</div></div>`;
 }
 
-function closeMatchView() { closeSheet("matchSheet"); }
+/* A map for a business we know by name and area. No coordinates are stored, so
+   this is a keyless Google Maps search embed (the same lookup anyone would type
+   in); it is loaded only when a farmer opens a card. A placeholder listing a
+   buyer registered themselves has no public address to find, so it gets none. */
+function mapQuery(b) { return [b.name, b.zone, "Cassino", "Italia"].filter(Boolean).join(", "); }
+function mapHTML(b) {
+  if (!b || b.source === "self-registered") return "";
+  const q = encodeURIComponent(mapQuery(b));
+  return `<div class="bmap-wrap"><iframe class="bmap" title="${escAttr(T("card.mapTitle", { name: b.name }))}" loading="lazy" referrerpolicy="no-referrer"
+      src="https://www.google.com/maps?q=${q}&output=embed"></iframe>
+    <a class="bmap-link" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener noreferrer">${esc(T("card.mapOpen"))}</a></div>`;
+}
+
+/* ---------- The drafted message ----------
+   Pure first: a plain starting message built only from what the farmer's own
+   profile says (never claims organic unless the profile does). It is the
+   fallback when Brain 2 can't be reached, and the whole thing in the offline
+   demo. The live path asks Brain 2 and Guardian-checks the answer exactly like
+   the original draft (same allowlist of one buyer id, same false-claim check). */
+function templateDraft(profile, buyer, firstName) {
+  const prods = (profile.products || []);
+  const itList = prods.map(p => Math.round(Number(p.kg_per_week)) + " kg a settimana di " + p.name).join(" e ");
+  const enList = prods.map(p => "about " + Math.round(Number(p.kg_per_week)) + " kg a week of " + p.name).join(" and ");
+  const months = (profile.available_months || []).length;
+  const itWhen = months ? " Il prodotto è disponibile " + monthsLabelFor("it", profile.available_months) + "." : " Il prodotto è disponibile tutto l'anno.";
+  const enWhen = months ? " Available " + monthsLabelFor("en", profile.available_months) + "." : " Available all year round.";
+  const bio = profile.organic === "yes";
+  const who = firstName ? "sono " + firstName + ", " : "sono ";
+  const whoEn = firstName ? "I'm " + firstName + ", " : "I'm ";
+  const place = profile.village ? " di " + profile.village : "";
+  const placeEn = profile.village ? " from " + profile.village : "";
+  const it = "Buongiorno " + (buyer.name || "") + ", " + who + "un piccolo produttore" + place + ". Ogni settimana ho circa " + itList + (bio ? ", da agricoltura biologica certificata" : "") + "." +
+    itWhen + " Mi piacerebbe proporvi una fornitura diretta, con consegna gestita dal partner logistico di Fasto Innova. Possiamo sentirci per un campione? Grazie!";
+  const en = "Good morning " + (buyer.name || "") + ", " + whoEn + "a small producer" + placeEn + ". Every week I have " + enList + (bio ? ", certified organic" : "") + "." +
+    enWhen + " I would love to propose a direct supply, with delivery handled by Fasto Innova's logistics partner. Could we arrange a sample? Thank you!";
+  return { message_it: it, message_en: en, flagged_claim: false };
+}
+function monthsLabelFor(lang, arr) {
+  const names = { it: ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"],
+    en: ["January","February","March","April","May","June","July","August","September","October","November","December"] }[lang];
+  const ms = (arr || []).map(Number).filter(m => m >= 1 && m <= 12).sort((x, y) => x - y);
+  if (!ms.length) return "";
+  const first = names[ms[0] - 1], last = names[ms[ms.length - 1] - 1];
+  const consecutive = ms.length > 2 && ms.every((m, i) => i === 0 || m === ms[i - 1] + 1);
+  if (ms.length === 1) return (lang === "it" ? "a " : "in ") + first;
+  if (consecutive) return lang === "it" ? "da " + first + " a " + last : "from " + first + " to " + last;
+  return (lang === "it" ? "in " : "in ") + ms.map(m => names[m - 1]).join(", ");
+}
+
+// One draft per (conversation, buyer), cached for the session; a draft written
+// from figures the farmer has since changed is thrown away and redone.
+async function draftFor(chat, cand) {
+  chat.cardDrafts = chat.cardDrafts || {};
+  const cached = chat.cardDrafts[cand.id];
+  if (cached && cached.stampTs === chat.ts) return cached;
+  const existing = state.clients.find(x => x.chatId === chat.id && x.buyerId === cand.id);
+  if (existing && existing.status === "sent") return { sent: true, client: existing, stampTs: chat.ts };
+  if (existing && existing.message_it && !existing.profileEdited) {
+    return (chat.cardDrafts[cand.id] = { it: existing.message_it, en: existing.message_en || "", flagged: !!existing.flagged, source: "saved", client: existing, stampTs: chat.ts });
+  }
+  const first = accountFirstName();
+  let out = null, source = "template";
+  if (!state.offline) {
+    try {
+      const month = new Date().getMonth() + 1;
+      const payload = { farmer_profile: chat.profile, current_month: month, candidates: [{ buyer_id: cand.id, name: cand.name, type: cand.type, zone: cand.zone,
+        distance_km: cand.distance_km, buys: cand.needs, volume_capacity: cand.volume, quality_focus: cand.quality_focus, notes: cand.notes,
+        engine_score: cand.score, engine_reasons: cand.reasons, is_channel: cand.is_channel }] };
+      const resp = await callClaude(SYSTEM_MATCH, [{ role: "user", content: JSON.stringify(payload) }], [TOOL_RECS], 1200, "submit_recommendations");
+      const tu = resp.content.find(b => b.type === "tool_use");
+      if (tu) {
+        const check = guardianVerifyRecs(tu.input, [cand.id], chat.profile);
+        check.issues.forEach(i => addLog(i.level, "Guardian · " + i.msg));
+        if (check.verified.outreach && check.verified.outreach.buyer_id === cand.id) { out = check.verified.outreach; source = "brain2"; }
+      }
+    } catch (e) { addLog("warn", "Brain 2 · on-demand draft failed, using the plain template: " + e.message); }
+  }
+  if (!out) out = templateDraft(chat.profile, cand, first);
+  return (chat.cardDrafts[cand.id] = { it: out.message_it, en: out.message_en || "", flagged: !!out.flagged_claim, source, client: existing || null, stampTs: chat.ts });
+}
+
+let cardView = null; // { chatId, buyerId, draft | null (loading) }
+function cardMessageHTML(v) {
+  if (!v.draft) return `<div class="foot"><span class="spinner"></span> ${esc(T("card.drafting"))}</div>`;
+  const d = v.draft;
+  if (d.sent) return `<div class="buyer-note"><b>${esc(T("card.alreadySent"))}</b><p>${esc(T("card.sentBody"))}</p></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="openSentThread()">${esc(T("card.openClients"))}</button>`;
+  return `<label class="eyebrow" for="cardMsgText">${esc(T("card.msgLabel"))}</label>
+    ${d.source === "template" && !state.offline ? `<div class="foot">${esc(T("card.templateNote"))}</div>` : ""}
+    ${d.flagged ? `<div class="foot" style="color:var(--warn)">${esc(T("clients.flagged"))}</div>` : ""}
+    <textarea id="cardMsgText" class="input-glass card-msg" rows="7" maxlength="2000">${esc(d.it)}</textarea>
+    ${d.en ? `<details class="card-en"><summary>${esc(T("clients.englishTranslation"))}</summary><p id="cardMsgEn">${esc(d.en)}</p></details>` : ""}
+    <div class="row gap-8"><button type="button" class="btn btn-primary" id="cardSendBtn" onclick="sendCardMessage()">${esc(T("card.send"))}</button></div>
+    <div class="foot">${esc(T("card.sendNote"))}</div>`;
+}
+function renderCardMessage() {
+  const el = $("cardMsgBox"); if (!el || !cardView) return;
+  el.innerHTML = cardMessageHTML(cardView);
+}
+
+async function openBuyerCard(chatId, buyerId) {
+  const chat = state.chats.find(c => c.id === chatId);
+  const sheet = $("matchSheet");
+  if (!chat || !chat.profile || !sheet) return;
+  const row = matchRowsFor(chat).find(r => r.cand.id === buyerId);
+  if (!row) return;
+  const cand = row.cand;
+  // The latest record for this business, not the copy taken when it was ranked.
+  const live = DB.buyers.concat(DB.channels).find(b => b.id === buyerId) || cand;
+  const rank = matchRowsFor(chat).findIndex(r => r.cand.id === buyerId) + 1;
+  const declared = !!live.declared_by_buyer;
+  const km = isFinite(Number(live.distance_km)) ? T("buyer.km", { n: Math.round(Number(live.distance_km)) }) : "—";
+  const vol = VOLUME_BANDS.indexOf(live.volume) !== -1 ? T("band." + live.volume) : "—";
+  const needs = (live.needs || []).map(n => `<span class="reason-chip">${esc(catLabel(n) || n)}</span>`).join("");
+  const quals = (live.quality_focus || []).map(t => `<span class="reason-chip">${esc(STRINGS.en["qtag." + t] ? T("qtag." + t) : String(t).replace(/_/g, " "))}</span>`).join("");
+  const reasons = (cand.reasons || []).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("");
+
+  $("matchTitle").textContent = live.name;
+  $("matchSubtitle").textContent = T("card.subtitle", { rank: rank, score: cand.score });
+  $("matchBody").innerHTML = `
+    <div class="mc-head">
+      <div style="min-width:0;flex:1"><div class="foot">${esc([live.zone, (live.type || "").replace(/_/g, " ")].filter(Boolean).join(" · "))}</div></div>
+      ${live.is_channel ? `<span class="pill pill-blue">${esc(T("match.channel"))}</span>` : ""}
+      <span class="pill ${scorePillClass(cand.score)}">${cand.score}/100</span>
+    </div>
+    ${row.pitch ? `<div class="mc-pitch">${esc(row.pitch)}</div>` : ""}
+    ${mapHTML(live)}
+    <div class="eyebrow">${esc(T("card.details"))}</div>
+    <dl class="buyer-facts">
+      <dt>${esc(T("buyer.bizType"))}</dt><dd>${esc((live.type || "").replace(/_/g, " ") || "—")}</dd>
+      <dt>${esc(T("buyer.bizArea"))}</dt><dd>${esc(live.zone || "—")}</dd>
+      <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${esc(km)}</dd>
+      <dt>${esc(T("buyer.bizSource"))}</dt><dd>${esc(live.source || "—")}</dd>
+      <dt>${esc(T("card.confidence"))}</dt><dd>${esc(live.confidence || "—")}</dd>
+      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
+    </dl>
+    <div class="eyebrow">${esc(T("card.whyChips"))}</div>
+    <div class="mc-reasons" style="margin-top:0">${reasons}</div>
+    <div class="eyebrow">${esc(T(declared ? "card.buysDeclared" : "card.buysGuess"))}</div>
+    <div class="mc-reasons" style="margin-top:0">${needs || "—"}</div>
+    ${quals ? `<div class="mc-reasons" style="margin-top:0">${quals}</div>` : ""}
+    <div class="foot">${esc(T(declared ? "card.declaredNote" : "card.guessNote"))}</div>
+    <div class="card-msg-box" id="cardMsgBox"></div>`;
+
+  cardView = { chatId, buyerId, draft: null };
+  renderCardMessage();
+  openSheet("matchSheet");
+  // Draft while the sheet is already open, with a loading line: it can take a few seconds.
+  const mine = cardView;
+  const draft = await draftFor(chat, cand);
+  if (cardView === mine) { mine.draft = draft; renderCardMessage(); }
+}
+/* "Send" = the same thing as Mark as sent in Clients: make sure a thread exists
+   for this buyer, put the (possibly edited) text in it, and place it in the
+   buyer's inbox. Nothing is ever sent without this press. */
+async function ensureClientRow(chat, cand, d, text) {
+  let c = state.clients.find(x => x.chatId === chat.id && x.buyerId === cand.id);
+  const unchanged = text === d.it;
+  if (c) {
+    c.message_it = text; if (!unchanged) c.message_en = "";
+    if (!isLocalId(c.id)) bgSave(DataStore.updateOutreach(c.id, { message_it: c.message_it, message_en: c.message_en || null }), "save.outreachUpdate");
+    c.profileEdited = false;
+    return c;
+  }
+  let id = "local" + Date.now();
+  if (!isLocalId(chat.id)) {
+    try {
+      const { data, error } = await DataStore.createOutreach(state.farmerId, chat.id, cand.id, text, unchanged ? d.en : "", !!d.flagged);
+      if (error) throw error;
+      id = data.id;
+    } catch (e) { saveFailedWithOwnMessage("save.outreach", e, T("save.outreachMsg")); }
+  }
+  c = { id, buyerId: cand.id, chatId: chat.id, name: cand.name, type: cand.type, zone: cand.zone, message_it: text,
+    message_en: unchanged ? d.en : "", flagged: !!d.flagged, status: "draft", initiatedBy: "farmer", offerId: null, ts: Date.now(), extra: [], messages: [] };
+  state.clients.unshift(c);
+  if (!state.activeClientId) state.activeClientId = c.id;
+  renderBell();
+  return c;
+}
+let cardSending = false;
+async function sendCardMessage() {
+  if (!cardView || !cardView.draft || cardView.draft.sent || cardSending) return;
+  const chat = state.chats.find(c => c.id === cardView.chatId); if (!chat) return;
+  const cand = (chat.candidates || []).find(c => c.id === cardView.buyerId) || (matchRowsFor(chat).find(r => r.cand.id === cardView.buyerId) || {}).cand;
+  const ta = $("cardMsgText"); const text = ta ? String(ta.value).trim().slice(0, 2000) : "";
+  if (!cand) return;
+  if (!text) { toast(T("card.empty")); return; }
+  cardSending = true;
+  const btn = $("cardSendBtn"); if (btn) btn.disabled = true;
+  try {
+    const c = await ensureClientRow(chat, cand, cardView.draft, text);
+    await markSent(c.id);
+    if (c.status === "sent") {
+      cardView.draft = { sent: true, client: c };
+      if (chat.cardDrafts) delete chat.cardDrafts[cand.id];
+      renderCardMessage(); renderChats(); renderDashboard();
+    } else if (btn) btn.disabled = false;
+  } finally { cardSending = false; }
+}
+function openSentThread() {
+  const c = cardView && cardView.draft && cardView.draft.client;
+  closeMatchView();
+  if (c) { state.activeClientId = c.id; switchScreen("clients"); }
+}
+// Callers that used to open the old "why these buyers" list (the Dashboard row)
+// now land on the conversation, where the cards are.
+function openMatchView(chatId) {
+  const chat = state.chats.find(c => c.id === chatId); if (!chat) return;
+  switchScreen("assistant"); selectChat(chatId);
+}
+
+function closeMatchView() { cardView = null; closeSheet("matchSheet"); }
 
 /* ---------- Clients ("chats with clients") ---------- */
 async function addClientFromRecs(recs, chat) {

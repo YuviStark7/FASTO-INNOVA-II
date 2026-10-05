@@ -538,6 +538,30 @@
 #profileSheet.open{ display:flex; }
 #profileSheet .match-panel{ max-width:760px; }
 
+/* ================= MATCH CARDS (chat) + BUYER DETAIL ================= */
+.match-block{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+.match-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+.mcard{ display:flex; flex-direction:column; align-items:flex-start; gap:6px; text-align:left; padding:12px 13px;
+  border-radius:var(--radius-md); background:rgba(0,0,0,.55); border:1px solid var(--hairline); color:#fff;
+  font-family:var(--font); cursor:pointer; min-width:0; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+.mcard:hover{ border-color:rgba(255,255,255,.4); }
+.mcard:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.mcard-top{ display:flex; align-items:center; justify-content:space-between; width:100%; }
+.mcard-name{ font-size:14px; line-height:1.25; }
+.mcard-sub{ font-size:12px; color:var(--ink-70); }
+.mcard-chips{ display:flex; flex-wrap:wrap; gap:5px; }
+.match-ideas{ font-size:13px; color:var(--ink-70); }
+.match-ideas summary{ cursor:pointer; padding:4px 0; }
+.match-hint{ text-align:center; }
+.bmap-wrap{ display:flex; flex-direction:column; gap:6px; }
+.bmap{ width:100%; height:220px; border:0; border-radius:var(--radius-md); background:rgba(255,255,255,.08); }
+.bmap-link{ font-size:12px; color:var(--ink-70); }
+.card-msg-box{ display:flex; flex-direction:column; gap:10px; margin-top:6px; border-top:1px solid var(--hairline); padding-top:14px; }
+.card-msg{ width:100%; resize:vertical; min-height:150px; font-size:16px; line-height:1.5; padding:10px 12px; }
+.card-en{ font-size:13px; color:var(--ink-70); }
+.card-en summary{ cursor:pointer; }
+@media (max-width:700px){ .mcard:nth-child(n+4){ display:none; } }
+
 /* ================= ACCOUNT MENU + EDIT PROFILE ================= */
 .avatar-wrap{ position:relative; }
 .avatar-menu{ position:absolute; right:0; top:calc(100% + 10px); z-index:60; min-width:190px; padding:6px;
