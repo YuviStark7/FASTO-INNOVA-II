@@ -687,7 +687,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
     ["...and asks draftCount rather than re-deriving the number inline",
       /draftCount\(state\.clients\)/.test(bellClick) && !/filter\(/.test(bellClick)],
     ["a draft arriving repaints the bell, even from the Fasto-AI screen",
-      /renderBell\(\);\s*\n\}\s*\nfunction markSent/.test(js)],
+      /renderBell\(\);\s*\n\}\s*\n(async )?function markSent/.test(js)],
     ["a draft going out repaints it too",
       /renderBell\(\)/.test(bodyOf(js, "function markSent("))],
     ["every screen's renderer repaints it, so no screen shows a stale count",

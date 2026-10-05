@@ -306,6 +306,9 @@ var STRINGS = {
     "clients.logiAria": "Set up logistics",
     "clients.copied": "Copied",
     "clients.markedSent": "Marked as sent to {name}",
+    "clients.tickInbox": "✓ In their inbox",
+    "clients.tickSeen": "✓✓ Seen",
+    "clients.sendFirst": "Press \"Mark as sent\" first. The buyer receives your draft, then you can write.",
 
     /* ---- Fasto-AI screen ---- */
     "assist.newChat": "Start New Chat",
@@ -497,6 +500,8 @@ var STRINGS = {
     "save.outreachMsg": "Couldn't save the outreach draft to your account — it will only last this session.",
     "save.outreachUpdate": "the updated outreach draft",
     "save.sentMark": "the \"sent\" mark on this draft",
+    "save.message": "your message",
+    "save.messageMsg": "Your message could not be sent. Check your connection and try again.",
     "save.business": "your business details",
 
     /* ---- category labels (the stored value is always the Italian key) ---- */
@@ -839,6 +844,9 @@ var STRINGS = {
     "clients.logiAria": "Organizza la logistica",
     "clients.copied": "Copiato",
     "clients.markedSent": "Segnato come inviato a {name}",
+    "clients.tickInbox": "✓ Nella loro posta",
+    "clients.tickSeen": "✓✓ Visto",
+    "clients.sendFirst": "Premi prima «Segna come inviato». L'acquirente riceve la bozza, poi puoi scrivere.",
 
     "assist.newChat": "Nuova chat",
     "assist.thinking": "Fasto sta pensando…",
@@ -1023,6 +1031,8 @@ var STRINGS = {
     "save.outreachMsg": "Non sono riuscito a salvare la bozza del messaggio nel tuo account — durerà solo per questa sessione.",
     "save.outreachUpdate": "la bozza aggiornata",
     "save.sentMark": "il segno «inviato» su questa bozza",
+    "save.message": "il tuo messaggio",
+    "save.messageMsg": "Non è stato possibile inviare il messaggio. Controlla la connessione e riprova.",
     "save.business": "i dati della tua attività",
 
     "cat.verdure": "verdure", "cat.pomodori": "pomodori", "cat.frutta": "frutta",

@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -1952,6 +1952,54 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       c[0].table === "outreach_messages" && c[0].ops.some(o => o.op === "eq") && c[0].ops.some(o => o.op === "order"), JSON.stringify(c[0]));
     check("sending only ever inserts (messages are never updated or deleted)",
       c[1].table === "outreach_messages" && c[1].ops[0].op === "insert" && !c.some(x => x.ops.some(o => o.op === "update" || o.op === "delete")));
+  }
+
+  /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */
+  {
+    const a = app;
+    const mm = a.mapThreadMessages([
+      { id: "m1", sender_role: "farmer", body: "Ciao", created_at: "2026-10-05T10:00:00Z", read_at: null },
+      { id: "m2", sender_role: "buyer", body: "Salve", created_at: "2026-10-05T11:00:00Z", read_at: null },
+      { id: "m3", sender_role: "farmer", body: "Grazie", created_at: "2026-10-05T12:00:00Z", read_at: "2026-10-05T12:05:00Z" }]);
+    check("thread rows map to farmer/buyer messages", mm.length === 3 && mm[1].role === "buyer" && mm[2].readAt && !mm[0].readAt);
+    const items = a.threadItems({ message_it: "Ciao", messages: mm, extra: [{ text: "local" }] });
+    check("the posted draft is not drawn twice; buyer messages are kept; local notes come last",
+      items.length === 3 && items[0].who === "buyer" && items[1].text === "Grazie" && items[2].persisted === false, JSON.stringify(items));
+    check("a farmer who repeats the draft word for word later still sees the second one",
+      a.threadItems({ message_it: "Ciao", messages: [mm[0], mm[0]], extra: [] }).length === 1);
+    check("one tick until the buyer reads it, two after", a.tickKey({ readAt: null }) === "clients.tickInbox" && a.tickKey({ readAt: "x" }) === "clients.tickSeen");
+    a.state.farmerId = "u1";
+    const row = a.buildMessageRow("o1", "u1", "  ciao  ");
+    check("an outgoing row is stamped as the farmer, trimmed, and empty text is refused",
+      row.sender_role === "farmer" && row.sender_id === "u1" && row.body === "ciao" && a.buildMessageRow("o1", "u1", "   ") === null &&
+      a.buildMessageRow("o1", "u1", "x".repeat(3000)).body.length === 2000);
+
+    // markSent: only becomes sent if the database accepted the message
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
+    const c1 = { id: "o1", name: "Aurora", status: "draft", message_it: "Ciao", message_en: "Hi", messages: [], extra: [] };
+    a.state.clients = [c1]; a.state.activeClientId = null;
+    await a.markSent("o1");
+    check("a refused message leaves the draft a draft (nothing falsely 'sent')", c1.status === "draft" && c1.messages.length === 0);
+    sb.reset(); sb.router = () => ({ data: { id: "m9", sender_role: "farmer", body: "Ciao", created_at: "2026-10-05T10:00:00Z", read_at: null }, error: null });
+    await a.markSent("o1");
+    check("an accepted message marks it sent and the draft is its first message",
+      c1.status === "sent" && c1.messages.length === 1 && sb.chains.some(x => x.table === "outreach_messages" && x.ops[0].op === "insert"));
+    check("the sent mark itself is still saved on the outreach row", sb.chains.some(x => x.table === "outreach" && x.ops.some(o => o.op === "update")));
+
+    // notes
+    els.clientInput = fakeEl("clientInput"); els.threadPane = fakeEl("threadPane"); els.threadBody = fakeEl("threadBody");
+    const c2 = { id: "o2", name: "Verdi", status: "draft", message_it: "Ciao", messages: [], extra: [] };
+    a.state.clients = [c1, c2];
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    els.clientInput.value = "nota";
+    await a.sendClientNote("o2");
+    check("a note on an unsent draft is not posted (the buyer would see it without context)",
+      !sb.chains.some(x => x.table === "outreach_messages") && c2.messages.length === 0 && els.clientInput.value === "nota");
+    const c3 = { id: "local5", name: "Neri", status: "draft", message_it: "x", messages: [], extra: [] };
+    a.state.clients = [c3]; sb.reset();
+    await a.sendClientNote("local5");
+    check("a local-only conversation keeps notes on the device and never touches the database",
+      c3.extra.length === 1 && !sb.chains.some(x => x.table === "outreach_messages"));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

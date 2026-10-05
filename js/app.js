@@ -417,9 +417,56 @@ async function loadFarmerData(uid) {
     const b = byId[o.buyer_id] || {};
     return { id: o.id, buyerId: o.buyer_id, chatId: o.chat_id, name: b.name || o.buyer_id, type: b.type || "", zone: b.zone || "",
       message_it: o.message_it, message_en: o.message_en, flagged: o.flagged, status: o.status,
-      ts: new Date(o.created_at).getTime(), extra: [] };
+      ts: new Date(o.created_at).getTime(), extra: [], messages: [] };
   });
   state.activeClientId = state.clients.length ? state.clients[0].id : null;
+  /* The two-way thread (ROADMAP item 26 pass B). One read per conversation;
+     RLS returns only this farmer's own threads. A failed read just leaves the
+     thread showing the draft, as before, rather than blocking sign-in. */
+  await Promise.all(state.clients.map(async c => {
+    try {
+      const res = await DataStore.listOutreachMessages(c.id);
+      if (res && !res.error && res.data) c.messages = mapThreadMessages(res.data);
+    } catch (e) { console.warn("couldn't load the messages of one conversation", e); }
+  }));
+}
+
+/* ---------- Two-way thread helpers (pure, DOM-free) ---------- */
+function mapThreadMessages(rows) {
+  return (rows || []).map(m => ({ id: m.id, role: m.sender_role === "buyer" ? "buyer" : "farmer",
+    text: String(m.body || ""), ts: new Date(m.created_at).getTime(), readAt: m.read_at || null }));
+}
+/* What the thread shows after the draft: persisted messages in order, then any
+   local-only notes (offline mode, or a draft whose save failed). The first
+   farmer message equal to the draft is the draft itself, posted by "Mark as
+   sent", and is already drawn as the big bubble, so it is skipped once. */
+function threadItems(c) {
+  let skipped = false;
+  const items = [];
+  for (const m of (c.messages || [])) {
+    if (!skipped && m.role === "farmer" && m.text === c.message_it) { skipped = true; continue; }
+    items.push({ who: m.role, text: m.text, readAt: m.readAt, persisted: true });
+  }
+  for (const m of (c.extra || [])) items.push({ who: "farmer", text: m.text, readAt: null, persisted: false });
+  return items;
+}
+/* One tick = it is in the buyer's inbox; two = the buyer has opened it. */
+function tickKey(item) { return item.readAt ? "clients.tickSeen" : "clients.tickInbox"; }
+function buildMessageRow(outreachId, uid, body) {
+  const text = String(body || "").trim().slice(0, 2000);
+  return text ? { outreach_id: outreachId, sender_role: "farmer", sender_id: uid, body: text } : null;
+}
+/* Places one farmer message in the thread. Resolves true only if the database
+   accepted it, so callers never show something as sent that is not. */
+async function postThreadMessage(c, text) {
+  const row = buildMessageRow(c.id, state.farmerId, text); if (!row) return false;
+  try {
+    const { data, error } = await DataStore.sendOutreachMessage(row);
+    if (error) throw error;
+    c.messages = c.messages || [];
+    c.messages.push(mapThreadMessages([data])[0]);
+    return true;
+  } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); return false; }
 }
 
 /* ================= MULTI-CHAT (Fasto-AI screen) ================= */
@@ -897,7 +944,7 @@ async function addClientFromRecs(recs, chat) {
   state.clients.unshift({
     id: outreachId, buyerId: c.id, chatId: chat.id, name: c.name, type: c.type, zone: c.zone,
     message_it: recs.outreach.message_it, message_en: recs.outreach.message_en,
-    flagged: !!recs.outreach.flagged_claim, status: "draft", ts: Date.now(), extra: []
+    flagged: !!recs.outreach.flagged_claim, status: "draft", ts: Date.now(), extra: [], messages: []
   });
   if (!state.activeClientId) state.activeClientId = state.clients[0].id;
   /* A draft lands while the farmer is still on Fasto-AI, where none of the
@@ -905,8 +952,16 @@ async function addClientFromRecs(recs, chat) {
      they changed screen — which is exactly the moment it stops being news. */
   renderBell();
 }
-function markSent(id) {
+async function markSent(id) {
   const c = state.clients.find(x => x.id === id); if (!c) return;
+  /* "Sent" means placed in the buyer's inbox: post the draft as the first
+     message and only mark it sent if the database accepted it. */
+  if (!isLocalId(id)) {
+    if (c.posting) return; c.posting = true;
+    const ok = await postThreadMessage(c, c.message_it);
+    c.posting = false;
+    if (!ok) return;
+  }
   c.status = "sent"; c.sentTs = Date.now();
   toast(T("clients.markedSent", { name: c.name }));
   renderChats(); renderDashboard(); renderBell();
@@ -1275,7 +1330,7 @@ function outreachExportRows(clients, chats) {
     // outreach row whose conversation isn't there.
     conversation: (c.chatId && titleById[c.chatId]) || T("export.orphanChat"),
     date: exportDate(c.ts),
-    notes: (c.extra || []).map(m => m.text).join(" | "),
+    notes: threadItems(c).filter(m => m.who === "farmer").map(m => m.text).join(" | "),
     message_it: c.message_it || "", message_en: c.message_en || ""
   }));
 }
@@ -1494,7 +1549,9 @@ function renderThread() {
       </div>
       <div class="bubble meta">${esc(T("clients.englishTranslation"))}</div>
       <div class="bubble in">${esc(c.message_en)}</div>
-      ${(c.extra || []).map(m => `<div class="bubble out">${esc(m.text)}</div>`).join("")}
+      ${threadItems(c).map(m => m.who === "buyer"
+        ? `<div class="bubble in">${esc(m.text)}</div>`
+        : `<div class="bubble out">${esc(m.text)}</div>${m.persisted ? `<div class="bubble-tick">${esc(T(tickKey(m)))}</div>` : ""}`).join("")}
     </div>
     <div class="thread-input-row">
       <button class="round-icon-btn" title="${escAttr(T("clients.attachTitle"))}"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
@@ -1507,12 +1564,21 @@ function renderThread() {
   $("clientLogisticsBtn").onclick = () => openLogistics(c.id);
   $("clientInput").addEventListener("keydown", e => { if (e.key === "Enter") sendClientNote(c.id); });
 }
-function sendClientNote(id) {
-  // Kept local-only for now (no dedicated table yet) — a real, user-authored
-  // follow-up note, never a fabricated buyer reply.
+async function sendClientNote(id) {
+  // A real, user-authored follow-up, never a fabricated buyer reply. Saved
+  // conversations post it to the shared thread; local ones stay on this device.
   const input = $("clientInput"); if (!input) return;
   const text = input.value.trim(); if (!text) return;
   const c = state.clients.find(x => x.id === id); if (!c) return;
+  if (!isLocalId(id)) {
+    // The buyer only sees a thread once the draft is in it, so a note cannot go first.
+    if (c.status !== "sent") { toast(T("clients.sendFirst")); return; }
+    if (c.posting) return; c.posting = true;
+    const ok = await postThreadMessage(c, text);
+    c.posting = false;
+    if (ok) { input.value = ""; renderThread(); }
+    return;
+  }
   c.extra = c.extra || []; c.extra.push({ text, ts: Date.now() });
   input.value = "";
   renderThread();
