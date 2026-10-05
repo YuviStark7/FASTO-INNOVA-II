@@ -53,8 +53,8 @@ const SYSTEM_INTERVIEW = `You are the friendly voice of Fasto Innova, a service 
 Rules:
 - Mirror the user's language (Italian or English).
 - Be warm and simple. No jargon, no forms. ONE question per message. Keep every reply under 65 words.
-- Early on, ask the farmer's first name so we can personalise the dashboard — don't block on it if they skip it.
-- Collect: (1) name (optional), (2) products grown, (3) roughly how many kg per WEEK of each, (4) months of availability, (5) village/area and rough km from Cassino, (6) organic certification: yes / no / partial.
+- NEVER ask the farmer's name: it was given when they signed up and is passed to you below. Use their first name naturally, now and then.
+- Collect: (1) products grown, (2) roughly how many kg per WEEK of each, (3) months of availability, (4) village/area and rough km from Cassino, (5) organic certification: yes / no / partial.
 - If something is vague, gently ask once, then accept an estimate.
 - Never promise prices, never name specific buyers yourself — that is Brain 2's job with verified data only.
 - If asked about transport: our logistics partner arranges pickup and delivery, the farmer does not need a van.
@@ -66,7 +66,6 @@ const TOOL_PROFILE = {
   input_schema: {
     type: "object",
     properties: {
-      farmer_name: { type: "string", description: "Farmer's first name, if given" },
       village: { type: "string", description: "Village or area of the farm" },
       distance_km_from_cassino: { type: "number" },
       products: { type: "array", items: { type: "object", properties: {
@@ -416,6 +415,16 @@ async function loadFarmerData(uid) {
       ts: new Date(row.created_at).getTime()
     });
   }
+  /* Chats saved before conversations were named after their topic carry the
+     farmer's own name as the title (every chat in the rail said "Rahul").
+     Rename those once, to what they are about. */
+  (chatRows || []).forEach(row => {
+    const chat = state.chats.find(c => c.id === row.id);
+    if (chat && chat.profile && row.farmer_name && row.title === row.farmer_name) {
+      const t = chatTitle(chat);
+      if (t !== chat.title) { chat.title = t; bgSave(DataStore.updateChat(chat.id, { title: t }), "save.profile"); }
+    }
+  });
   state.activeChatId = state.chats.length ? state.chats[0].id : null;
 
   const byId = {}; DB.buyers.concat(DB.channels).forEach(b => byId[b.id] = b);
@@ -549,10 +558,52 @@ function activeChat() { return state.chats.find(c => c.id === state.activeChatId
    that wording when the app is reopened in the other. Rebuilding every stored
    title on a language switch would rewrite rows on a display preference, which
    is a much worse trade than one stale label in a list. */
+/* A conversation is named after WHAT it is about (the products), never after
+   the farmer: the farmer's name is on the account and is the same in every chat,
+   so a rail full of "Rahul, Rahul, Rahul" tells you nothing about which is which. */
 function chatTitle(chat) {
-  if (chat.profile && chat.profile.farmer_name) return chat.profile.farmer_name;
+  const names = ((chat.profile && chat.profile.products) || []).map(p => String(p.name || "").trim()).filter(Boolean);
+  if (names.length) {
+    const first = names.slice(0, 2).map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(" & ");
+    return first.length > 40 ? first.slice(0, 39) + "…" : first;
+  }
   if (chat.profile) { const top = topProductCategory(chat.profile); if (top) return T("assist.chatCat", { cat: catLabel(top) || top }); }
   return T("assist.newChatTitle");
+}
+
+/* ---------- Who the signed-in person is ----------
+   Asked once at sign-up (first name, surname, optional nickname) and kept on the
+   account. Nothing in a chat ever asks for it again. The display name prefers the
+   nickname, then the first name; accounts that pre-date sign-up names fall back to
+   the name Brain 1 once captured. */
+function accountNames() {
+  const f = state.farmerProfile || {};
+  const clean = v => String(v == null ? "" : v).trim();
+  return { first: clean(f.first_name), last: clean(f.last_name), nickname: clean(f.nickname), legacy: clean(f.farmer_name) };
+}
+function accountDisplayName() { const n = accountNames(); return n.nickname || n.first || n.legacy || ""; }
+function accountFirstName() { const n = accountNames(); return n.first || n.legacy || ""; }
+const NAME_MIN = 2, NAME_MAX = 60, NICK_MAX = 40;
+// Sign-up form -> the three values, or the key of what is wrong. Pure.
+function validateSignupNames(form) {
+  const first = String(form.first || "").trim(), last = String(form.last || "").trim(), nickname = String(form.nickname || "").trim();
+  if (first.length < NAME_MIN || last.length < NAME_MIN) return { ok: false, errKey: "auth.needName" };
+  return { ok: true, names: { first: first.slice(0, NAME_MAX), last: last.slice(0, NAME_MAX), nickname: nickname.slice(0, NICK_MAX) } };
+}
+/* Brain 1's instructions for THIS chat: the account name (so it is never asked),
+   and, once a profile exists, the current profile, so that "make it 100 kg" or
+   "I also grow courgettes" is understood as an edit. A profile that survives a
+   reload is not in Brain 1's memory (only the transcript persists), which is why
+   it is restated here rather than assumed. */
+function interviewSystem(chat) {
+  let s = SYSTEM_INTERVIEW;
+  const first = accountFirstName();
+  s += first ? `\n\nThe farmer's first name is "${first}" (from their account). Never ask for it.` : "\n\nThe farmer's name is unknown. Do not ask for it; just carry on.";
+  if (chat && chat.profile) {
+    s += "\n\nThis farmer's profile has ALREADY been captured and matched. Current profile: " + JSON.stringify(chat.profile) +
+      "\nIf they ask to change anything (a quantity, a product, months, village, organic status), apply it and immediately call submit_farmer_profile again with the COMPLETE updated profile (no need to ask \"Shall I search for matches?\" again), after one short sentence saying what you changed. Do not restart the interview. For any other question, answer briefly.";
+  }
+  return s;
 }
 
 /* Offline mode is the one place the "Fasto answers in your language" promise
@@ -560,7 +611,9 @@ function chatTitle(chat) {
    the greeting and the script below DO follow the UI language, while anything
    a real Brain wrote is left exactly as it came out. */
 function greetingText() {
-  return state.offline ? T("assist.greetOffline") : T("assist.greetLive");
+  if (state.offline) return T("assist.greetOffline");
+  const name = accountDisplayName();
+  return name ? T("assist.greetLiveNamed", { name }) : T("assist.greetLive");
 }
 
 /* ---------- duplicate / idle chat guard ----------
@@ -700,7 +753,7 @@ async function sendUserMessage(text) {
   chat.apiMessages.push({ role: "user", content: text });
   setTyping(true);
   try {
-    const resp = await callClaude(SYSTEM_INTERVIEW, chat.apiMessages, [TOOL_PROFILE], 600);
+    const resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE], 600);
     setTyping(false);
     chat.apiMessages.push({ role: "assistant", content: resp.content });
 
@@ -713,7 +766,8 @@ async function sendUserMessage(text) {
 
     if (toolUse) {
       chat.apiMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUse.id, content: "Profile received by Guardian for validation." }] });
-      await onProfileCaptured(toolUse.input, chat);
+      // A profile that already exists means this is an edit asked for in the chat.
+      if (chat.profile) onProfileRevised(toolUse.input, chat); else await onProfileCaptured(toolUse.input, chat);
     }
   } catch (e) {
     setTyping(false);
@@ -724,8 +778,33 @@ async function sendUserMessage(text) {
 }
 
 /* ---------- Handoff: Guardian validates, Brain 2 runs ---------- */
+/* The farmer's name always comes from the account, never from the conversation. */
+function withAccountName(raw) {
+  const first = accountFirstName();
+  const out = Object.assign({}, raw || {});
+  if (first) out.farmer_name = first; else delete out.farmer_name;
+  return out;
+}
+
+/* An edit asked for in the chat ("make it 100 kg", "add honey, 20 kg"). It goes
+   through exactly the checks the old edit form did (applyProfileEdit: Guardian,
+   change detection, re-scoring, stale drafts, saving), and the match cards
+   below the conversation are redrawn from the re-ranked buyers. */
+function onProfileRevised(raw, chat) {
+  addLog("info", "Brain 1 → Guardian · profile edit asked for in the chat");
+  const res = applyProfileEdit(chat, withAccountName(raw));
+  if (!res.ok) { addMsg(chat, "sys", T("assist.guardianRejected", { errors: res.errors.map(engineText).join("; ") })); return res; }
+  if (!res.changed.length) { addMsg(chat, "sys", T("assist.nothingChanged")); return res; }
+  if (chat.id === state.activeChatId) updateHeaderIdentity();
+  renderChatRail(); renderDashboard(); renderChats();
+  addMsg(chat, "sys", T(res.rescored ? "assist.rematched" : "assist.updatedNoRematch", { list: humanList(res.changed.map(profileFieldLabel)) }));
+  renderTranscript();
+  return res;
+}
+
 async function onProfileCaptured(raw, chat) {
   addLog("info", "Brain 1 → Guardian · profile handoff");
+  raw = withAccountName(raw);
   const v = guardianValidateProfile(raw);
   v.warnings.forEach(w => addLog("warn", "Guardian · " + w));
 
@@ -749,7 +828,6 @@ async function onProfileCaptured(raw, chat) {
       organic: v.profile.organic || null, available_months: v.profile.available_months || []
     }), "save.profile");
     bgSave(DataStore.saveProducts(chat.id, v.profile.products), "save.products");
-    if (v.profile.farmer_name) bgSave(DataStore.updateFarmerName(state.farmerId, v.profile.farmer_name), "save.name");
   }
 
   const month = new Date().getMonth() + 1;
@@ -1070,9 +1148,7 @@ function updateHeaderIdentity() {
     $("whoName").textContent = (biz ? biz.name : T("buyer.guest")).toUpperCase();
     return;
   }
-  const chat = activeChat();
-  const name = (chat && chat.profile && chat.profile.farmer_name) || T("top.guest");
-  $("whoName").textContent = name.toUpperCase();
+  $("whoName").textContent = (accountDisplayName() || T("top.guest")).toUpperCase();
 }
 
 /* ---------- first-paint skeleton ----------
@@ -3151,10 +3227,13 @@ function switchScreen(name) {
    translations must have the same number of lines, which qa_check.js checks. */
 const OFFLINE_SCRIPT_KEYS = ["offline.q1", "offline.q2", "offline.q3", "offline.q4", "offline.q5", "offline.q6"];
 function offlineScript() { return OFFLINE_SCRIPT_KEYS.map(k => T(k)); }
-const OFFLINE_PROFILE = { farmer_name: "Marco", village: "Sant'Elia Fiumerapido", distance_km_from_cassino: 6, organic: "no", available_months: [6,7,8,9,10],
+const OFFLINE_PROFILE = { village: "Sant'Elia Fiumerapido", distance_km_from_cassino: 6, organic: "no", available_months: [6,7,8,9,10],
   products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }, { name: "zucchine", category: "verdure", kg_per_week: 40 }] };
 
 function offlineTurn(chat) {
+  // Once matched, the offline stand-in cannot understand an edit: only the live
+  // Brain 1 can. Say so, rather than staying silent.
+  if (chat.phase === "done") { setTimeout(() => addMsg(chat, "sys", T("assist.offlineNoEdit")), 350); return; }
   const script = offlineScript();
   const step = chat.offlineStep++;
   if (step < script.length) {
@@ -3224,6 +3303,7 @@ function boot() {
     // suggesting a new one, and never offer to save the new account.
     $("authPassword").setAttribute("autocomplete", next === "up" ? "new-password" : "current-password");
     $("authRoleBlock").style.display = next === "up" ? "" : "none";
+    $("authNameBlock").style.display = next === "up" ? "" : "none";
     // Switching tabs drops the message AND what it was, or a later language
     // switch would repaint an error the farmer has already dismissed.
     clearAuthError();
@@ -3290,9 +3370,15 @@ function boot() {
     clearAuthError();
     if (!email || !password) { showAuthError("auth.needBoth"); return; }
     if (password.length < 6) { showAuthError("auth.tooShort"); return; }
+    let signupNames = null;
+    if (authMode === "up") {
+      const nv = validateSignupNames({ first: $("authFirst").value, last: $("authLast").value, nickname: $("authNick").value });
+      if (!nv.ok) { showAuthError(nv.errKey); return; }
+      signupNames = nv.names;
+    }
     setAuthBusy(true, T(authMode === "up" ? "auth.creating" : "auth.signingIn"));
     try {
-      const { data, error } = authMode === "up" ? await DataStore.signUp(email, password, signupRole) : await DataStore.signIn(email, password);
+      const { data, error } = authMode === "up" ? await DataStore.signUp(email, password, signupRole, signupNames) : await DataStore.signIn(email, password);
       if (error) throw error;
       if (!data.session) {
         showAuthError("auth.confirmEmail");

@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2181,6 +2181,48 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       /<b>2<\/b><span>Conversations/.test(html) && /<b>1<\/b><span>Unread/.test(html) && /<b>2<\/b><span>New offers matching/.test(html) && /aria-valuenow="100"/.test(html), html.slice(0, 400));
     check("an undeclared buyer is asked to declare instead of shown a zero without explanation",
       a.buyerDashboardHTML({ needs: ["olio"] }).includes("Tell us what you buy"));
+  }
+
+  /* ---- names: asked once at sign-up, never in a chat; chats named by topic ---- */
+  {
+    const a = app;
+    a.state.farmerProfile = { first_name: "Rahul", last_name: "Sharma", nickname: "Rahi", farmer_name: "Rahul" };
+    check("the display name prefers the nickname, then the first name, then the old captured name",
+      a.accountDisplayName() === "Rahi" && (a.state.farmerProfile.nickname = "", a.accountDisplayName() === "Rahul") &&
+      (a.state.farmerProfile.first_name = "", a.accountDisplayName() === "Rahul") && (a.state.farmerProfile = {}, a.accountDisplayName() === ""));
+    check("sign-up needs a first name and a surname; the nickname is optional and everything is capped",
+      !a.validateSignupNames({ first: "R", last: "Sharma" }).ok && !a.validateSignupNames({ first: "Rahul", last: " " }).ok &&
+      a.validateSignupNames({ first: " Rahul ", last: "Sharma" }).names.first === "Rahul" && a.validateSignupNames({ first: "Rahul", last: "S", nickname: "x" }).ok === false &&
+      a.validateSignupNames({ first: "R".repeat(90), last: "Sharma", nickname: "n".repeat(90) }).names.nickname.length === 40);
+    a.state.farmerProfile = { first_name: "Rahul", last_name: "Sharma" };
+    const sysNoProfile = a.interviewSystem({ profile: null });
+    check("Brain 1 is told the name and told never to ask for it, and its checklist has no name step",
+      sysNoProfile.includes("\"Rahul\"") && /NEVER ask the farmer's name/.test(sysNoProfile) && !/ask the farmer's first name so/.test(sysNoProfile) && !/\(1\) name/.test(sysNoProfile));
+    check("once a profile exists, Brain 1 gets it and is told to treat changes as edits",
+      a.interviewSystem({ profile: { village: "Isola del Liri", products: [] } }).includes("Isola del Liri") && /COMPLETE updated profile/.test(a.interviewSystem({ profile: { products: [] } })));
+    check("the account name overrides whatever Brain 1 wrote, and is dropped when the account has none",
+      a.withAccountName({ farmer_name: "Someone Else", village: "x" }).farmer_name === "Rahul" && (a.state.farmerProfile = {}, a.withAccountName({ farmer_name: "x" }).farmer_name === undefined));
+    a.state.farmerProfile = { first_name: "Rahul", nickname: "Rahi" };
+    a.state.offline = false;
+    check("the greeting uses the nickname and does not ask for a name", a.greetingText().includes("Rahi") && !/name/i.test(a.greetingText()));
+    els.whoName = fakeEl("whoName"); a.state.role = "farmer"; a.updateHeaderIdentity();
+    check("the header shows the account's display name, whatever chat is open", els.whoName.textContent === "RAHI");
+    check("chats are named after what they are about, not the farmer",
+      a.chatTitle({ profile: { farmer_name: "Rahul", products: [{ name: "cow's milk", category: "formaggi" }] } }) === "Cow's milk" &&
+      a.chatTitle({ profile: { farmer_name: "Rahul", products: [{ name: "pomodori" }, { name: "zucchine" }, { name: "miele" }] } }) === "Pomodori & Zucchine" &&
+      a.chatTitle({ profile: null }) === "New chat");
+    // an edit asked for in the chat goes through the same checks and re-ranks
+    const chat = { id: "local-t1", title: "Cow's milk", phase: "done", messages: [], recs: { ranked: [] },
+      profile: { farmer_name: "Rahul", village: "Isola del Liri", distance_km_from_cassino: 15, organic: "yes", available_months: [], products: [{ name: "latte", category: "formaggi", kg_per_week: 35 }] }, candidates: [] };
+    a.state.chats = [chat]; a.state.activeChatId = null; a.state.clients = [];
+    a.state.farmerProfile = { first_name: "Rahul" };
+    const r = a.onProfileRevised({ village: "Isola del Liri", distance_km_from_cassino: 15, organic: "yes", available_months: [], products: [{ name: "latte", category: "formaggi", kg_per_week: 120 }] }, chat);
+    check("a chat-asked quantity change is applied, re-ranks the buyers and marks the old prose stale",
+      r.ok && r.rescored && chat.profile.products[0].kg_per_week === 120 && chat.candidates.length > 0 && chat.recsStale === true);
+    const r2 = a.onProfileRevised({ village: "Isola del Liri", distance_km_from_cassino: 15, organic: "yes", available_months: [], products: [{ name: "latte", category: "formaggi", kg_per_week: 120 }] }, chat);
+    check("repeating the same details changes nothing", r2.ok && r2.changed.length === 0);
+    const r3 = a.onProfileRevised({ village: "", products: [{ name: "latte", category: "formaggi", kg_per_week: -5 }] }, chat);
+    check("a bad edit is refused and the profile is untouched", r3.ok === false && chat.profile.products[0].kg_per_week === 120);
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

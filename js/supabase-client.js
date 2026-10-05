@@ -18,7 +18,14 @@ const DataStore = {
   // The role rides along as sign-up metadata and is read by the database trigger
   // (private.handle_new_user), which whitelists it to "buyer" or "farmer". It is
   // a choice of WHICH app to open, never a privilege: admin cannot be set this way.
-  signUp(email, password, role) { return sb.auth.signUp({ email, password, options: { data: { role: role === "buyer" ? "buyer" : "farmer" } } }); },
+  // Name, surname and nickname ride along the same way: the trigger copies them
+  // into the account row once. After that name and surname cannot be changed by
+  // the account holder (database trigger), only the nickname can.
+  signUp(email, password, role, names) {
+    const n = names || {};
+    return sb.auth.signUp({ email, password, options: { data: { role: role === "buyer" ? "buyer" : "farmer",
+      first_name: n.first || "", last_name: n.last || "", nickname: n.nickname || "" } } });
+  },
   signIn(email, password) { return sb.auth.signInWithPassword({ email, password }); },
   signOut() { return sb.auth.signOut(); },
   async getSession() { const { data } = await sb.auth.getSession(); return data.session; },
@@ -29,6 +36,10 @@ const DataStore = {
   // Business details for the logistics partner (company_name / vat_number /
   // address / phone). Per-account, not per-chat: unlike the crop profile these
   // don't change between conversations, and Brain 1 never asks for them.
+  // Contact details and nickname (the only account columns a person may edit).
+  // A name or surname can be written once for an older account that has none;
+  // the database refuses any later change.
+  updateMyAccount(uid, patch) { return sb.from("farmers").update(patch).eq("id", uid).select().single(); },
   updateFarmerDetails(uid, patch) { return sb.from("farmers").update(patch).eq("id", uid); },
 
   /* ---------- chats (each chat carries its own captured profile) ---------- */

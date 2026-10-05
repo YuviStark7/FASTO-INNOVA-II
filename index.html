@@ -53,6 +53,21 @@
       <button id="authRoleBuyer" type="button" aria-pressed="false" data-i18n="auth.roleBuyer">I'm a buyer</button>
     </div>
 
+    <!-- Sign up only. Asked once here, kept on the account, never asked in a chat. -->
+    <div id="authNameBlock" style="display:none">
+      <div class="field">
+        <label for="authFirst" data-i18n="auth.first">First name</label>
+        <input type="text" id="authFirst" maxlength="60" autocomplete="given-name">
+      </div>
+      <div class="field">
+        <label for="authLast" data-i18n="auth.last">Surname</label>
+        <input type="text" id="authLast" maxlength="60" autocomplete="family-name">
+      </div>
+      <div class="field">
+        <label for="authNick" data-i18n="auth.nick">Nickname (optional)</label>
+        <input type="text" id="authNick" maxlength="40" autocomplete="nickname" placeholder="What we should call you" data-i18n-ph="auth.nickPh">
+      </div>
+    </div>
     <div class="field">
       <label for="authEmail" data-i18n="auth.email">Email</label>
       <input type="email" id="authEmail" placeholder="you@example.com" data-i18n-ph="auth.emailPh" autocomplete="email">
