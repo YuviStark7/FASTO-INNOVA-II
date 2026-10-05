@@ -30,6 +30,10 @@ let state = {
   email: "",            // the signed-in address, used only to prefill a buyer's claim
   inbox: [],            // a buyer's conversations from farmers (item 27)
   openThreadId: null,
+  offers: [],           // a farmer's own published/unpublished offers (item 29)
+  offerFeed: [],        // what a buyer can browse: published offers
+  offerFilter: { category: "", maxKm: "", month: "" },
+  contactOfferId: null, // the offer whose Contact box is open
   claims: [],           // a buyer's own claims on listed businesses (buyer_claims)
   farmerProfile: {},    // the farmer's own `farmers` row — name + the business details the logistics form needs
   chats: [],           // {id,title,phase,pct,messages:[{role,text}],apiMessages,profile,candidates,recs,offlineStep,offlineReady,ts}
@@ -418,9 +422,14 @@ async function loadFarmerData(uid) {
   state.clients = (outreachRows || []).map(o => {
     const b = byId[o.buyer_id] || {};
     return { id: o.id, buyerId: o.buyer_id, chatId: o.chat_id, name: b.name || o.buyer_id, type: b.type || "", zone: b.zone || "",
-      message_it: o.message_it, message_en: o.message_en, flagged: o.flagged, status: o.status,
+      message_it: o.message_it || "", message_en: o.message_en || "", flagged: o.flagged, status: o.status,
+      initiatedBy: o.initiated_by === "buyer" ? "buyer" : "farmer", offerId: o.offer_id || null,
       ts: new Date(o.created_at).getTime(), extra: [], messages: [] };
   });
+  try {
+    const res = await DataStore.listMyOffers(uid);
+    state.offers = (res && !res.error && res.data) ? res.data : [];
+  } catch (e) { state.offers = []; console.warn("couldn't load offers", e); }
   state.activeClientId = state.clients.length ? state.clients[0].id : null;
   /* The two-way thread (ROADMAP item 26 pass B). One read per conversation;
      RLS returns only this farmer's own threads. A failed read just leaves the
@@ -431,6 +440,44 @@ async function loadFarmerData(uid) {
       if (res && !res.error && res.data) c.messages = mapThreadMessages(res.data);
     } catch (e) { console.warn("couldn't load the messages of one conversation", e); }
   }));
+}
+
+/* ---------- Offers (ROADMAP item 29) ----------
+   Opt-in and never automatic: nothing is published until the farmer presses
+   the button on a finished conversation, and unpublishing is one more press.
+   An offer is a snapshot (buildFarmerSummary), so it shows exactly what the
+   farmer saw at that moment; republishing refreshes it. */
+function offerFor(chatId) { return (state.offers || []).find(o => o.chat_id === chatId) || null; }
+function offerCanPublish(chat) {
+  return !!(chat && chat.profile && (chat.profile.products || []).length && !isLocalId(chat.id) &&
+    (chat.phase === "done" || (chat.candidates && chat.candidates.length)));
+}
+function buildOfferRow(uid, chat) {
+  const s = buildFarmerSummary(chat.profile); if (!s || !s.products.length) return null;
+  return { farmer_id: uid, chat_id: chat.id, status: "published", village: s.village, distance_km: s.distance_km,
+    organic: s.organic, months: s.months, products: s.products };
+}
+async function toggleOffer(chatId) {
+  const chat = state.chats.find(c => c.id === chatId); if (!chat || !offerCanPublish(chat)) return;
+  const cur = offerFor(chatId);
+  try {
+    let res;
+    if (!cur) {
+      const row = buildOfferRow(state.farmerId, chat); if (!row) return;
+      res = await DataStore.createOffer(row);
+    } else {
+      const publishing = cur.status !== "published";
+      const fresh = buildOfferRow(state.farmerId, chat) || {};
+      const patch = publishing
+        ? { status: "published", village: fresh.village, distance_km: fresh.distance_km, organic: fresh.organic, months: fresh.months, products: fresh.products, updated_at: new Date().toISOString() }
+        : { status: "unpublished", updated_at: new Date().toISOString() };
+      res = await DataStore.updateOffer(cur.id, patch);
+    }
+    if (res.error) throw res.error;
+    state.offers = (state.offers || []).filter(o => o.chat_id !== chatId).concat([res.data]);
+    toast(T(res.data.status === "published" ? "offer.published" : "offer.unpublished"));
+  } catch (e) { saveFailedWithOwnMessage("save.offer", e, T("offer.failed")); }
+  renderTranscript();
 }
 
 /* ---------- Two-way thread helpers (pure, DOM-free) ---------- */
@@ -623,6 +670,10 @@ function renderTranscript() {
   const acts = [];
   if (chat.phase === "done" || (chat.profile && chat.candidates && chat.candidates.length)) {
     acts.push(`<button class="btn btn-ghost btn-sm" onclick="openMatchView('${chat.id}')">${esc(T("assist.why"))}</button>`);
+  }
+  if (offerCanPublish(chat)) {
+    const on = offerFor(chat.id) && offerFor(chat.id).status === "published";
+    acts.push(`<button class="btn btn-ghost btn-sm" onclick="toggleOffer('${chat.id}')">${esc(T(on ? "offer.unpublish" : "offer.publish"))}</button>`);
   }
   if (chat.profile) acts.push(`<button class="btn btn-ghost btn-sm" onclick="openProfileEdit('${chat.id}')">${esc(T("assist.editDetails"))}</button>`);
   const cta = acts.length ? `<div class="match-cta">${acts.join("")}</div>` : "";
@@ -1519,7 +1570,7 @@ function renderClientList() {
       ${avatarHTML(c.name, i)}
       <div style="min-width:0;flex:1">
         <div class="ci-top"><span class="ci-name">${esc(c.name)}</span>${c.status === "sent" ? `<span class="pill pill-accent" style="margin-left:auto">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber" style="margin-left:auto">${esc(T("clients.draft"))}</span>`}</div>
-        <div class="ci-prev">${esc(c.message_it.slice(0, 46))}…</div>
+        <div class="ci-prev">${esc(clientPreview(c))}…</div>
       </div>
     </button>`;
   }).join("");
@@ -1551,20 +1602,20 @@ function renderThread() {
         <div class="title-sm">${esc(c.name)}</div>
         <div class="foot">${esc(c.zone)} · ${esc((c.type || "").replace(/_/g, " "))}</div>
       </div>
-      ${c.status === "sent" ? `<span class="pill pill-accent">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber">${esc(T("clients.draft"))}</span>`}
+      ${c.initiatedBy === "buyer" ? `<span class="pill pill-accent">${esc(T("clients.inquiry"))}</span>` : c.status === "sent" ? `<span class="pill pill-accent">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber">${esc(T("clients.draft"))}</span>`}
     </div>
     <div class="thread-body" id="threadBody">
       <div class="day-divider">${esc(T("date.today"))}</div>
-      <div class="bubble meta">${esc(T("clients.draftedBy"))}</div>
+      ${c.initiatedBy === "buyer" ? `<div class="bubble meta">${esc(T("clients.fromOffer"))}</div>` : `<div class="bubble meta">${esc(T("clients.draftedBy"))}</div>`}
       ${c.flagged ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.flagged"))}</div>` : ""}
       ${c.profileEdited ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.profileEdited"))}</div>` : ""}
-      <div class="bubble out">${esc(c.message_it)}</div>
+      ${c.initiatedBy === "buyer" ? "" : `<div class="bubble out">${esc(c.message_it)}</div>
       <div class="bubble-actions">
         ${c.status === "sent" ? "" : `<button class="btn btn-ghost btn-sm" onclick="markSent('${c.id}')">${esc(T("clients.markSent"))}</button>`}
         <button class="btn btn-ghost btn-sm" onclick="copyClientMsg('${c.id}')">${esc(T("clients.copyIt"))}</button>
       </div>
       <div class="bubble meta">${esc(T("clients.englishTranslation"))}</div>
-      <div class="bubble in">${esc(c.message_en)}</div>
+      <div class="bubble in">${esc(c.message_en)}</div>`}
       ${threadItems(c).map(m => m.who === "buyer"
         ? `<div class="bubble in">${esc(m.text)}</div>`
         : `<div class="bubble out">${esc(m.text)}</div>${m.persisted ? `<div class="bubble-tick">${esc(T(tickKey(m)))}</div>` : ""}`).join("")}
@@ -1598,6 +1649,11 @@ async function sendClientNote(id) {
   c.extra = c.extra || []; c.extra.push({ text, ts: Date.now() });
   input.value = "";
   renderThread();
+}
+// A buyer-started thread has no AI draft, so its preview is the latest message.
+function clientPreview(c) {
+  const last = (c.messages || [])[(c.messages || []).length - 1];
+  return (c.message_it || (last && last.text) || "").slice(0, 46);
 }
 function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if (c) { navigator.clipboard.writeText(c.message_it); toast(T("clients.copied")); } }
 
@@ -2806,7 +2862,7 @@ async function loadBuyerInbox() {
   const { data, error } = await DataStore.listBuyerOutreach(biz.id);
   if (error) throw error;
   state.inbox = await Promise.all((data || []).map(async o => {
-    const t = { id: o.id, ts: new Date(o.created_at).getTime(), summary: o.farmer_summary || null, messages: [] };
+    const t = { id: o.id, ts: new Date(o.created_at).getTime(), summary: o.farmer_summary || null, offerId: o.offer_id || null, messages: [] };
     try {
       const res = await DataStore.listOutreachMessages(o.id);
       if (res && !res.error && res.data) t.messages = mapThreadMessages(res.data);
@@ -2891,9 +2947,107 @@ async function sendBuyerReply(id) {
   } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); }
   t.posting = false;
 }
+/* ---------- Buyer: browse offers (ROADMAP item 29) ----------
+   Pure filter first, so the rules are testable without a page. Distance is the
+   farmer's stated km from Cassino; month matches an offer available that month
+   (an offer with no months listed is available all year). */
+function filterOffers(offers, f) {
+  f = f || {};
+  const maxKm = f.maxKm === "" || f.maxKm == null ? null : Number(f.maxKm);
+  const month = f.month === "" || f.month == null ? null : Number(f.month);
+  return (offers || []).filter(o => {
+    if (f.category && !(o.products || []).some(p => p.category === f.category)) return false;
+    if (maxKm != null && !(o.distance_km != null && Number(o.distance_km) <= maxKm)) return false;
+    if (month != null && (o.months || []).length && (o.months || []).map(Number).indexOf(month) === -1) return false;
+    return true;
+  });
+}
+async function loadOfferFeed() {
+  state.offerFeed = [];
+  if (claimState(state.claims) !== "approved") return;
+  const { data, error } = await DataStore.listPublishedOffers();
+  if (error) throw error;
+  state.offerFeed = (data || []).map(o => Object.assign({}, o, { distance_km: o.distance_km != null ? Number(o.distance_km) : null }));
+}
+function offerCardHTML(o) {
+  const prods = (o.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
+  const thread = (state.inbox || []).find(t => t.offerId === o.id);
+  const open = state.contactOfferId === o.id;
+  return `<div class="buyer-note offer-card"><b>${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}</b>
+    <dl class="buyer-facts" style="margin-top:8px">
+      <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
+      <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${o.distance_km != null && isFinite(o.distance_km) ? esc(T("buyer.km", { n: o.distance_km })) : "—"}</dd>
+      <dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(o.months) || T("buyer.sumAllYear"))}</dd>
+      <dt>${esc(T("offer.organic"))}</dt><dd>${esc(o.organic ? organicLabel(o.organic) : "—")}</dd>
+    </dl>
+    ${thread ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openInboxFromOffer('${thread.id}')">${esc(T("offer.openThread"))}</button>`
+      : open ? `<div class="inbox-reply" style="margin-top:10px"><input type="text" class="input-glass" id="offerMsgInput" maxlength="2000" aria-label="${escAttr(T("offer.msgLabel"))}" placeholder="${escAttr(T("offer.msgLabel"))}">
+        <button type="button" class="btn btn-primary btn-sm" onclick="contactOffer('${o.id}')">${esc(T("buyer.replySend"))}</button></div>`
+      : `<button type="button" class="btn btn-primary btn-sm" style="margin-top:10px" onclick="openOfferContact('${o.id}')">${esc(T("offer.contact"))}</button>`}
+  </div>`;
+}
+function renderOfferList() {
+  const el = $("offersList"); if (!el) return;
+  const shown = filterOffers(state.offerFeed, state.offerFilter);
+  el.innerHTML = shown.length ? shown.map(offerCardHTML).join("")
+    : `<div class="empty-state">${esc(T((state.offerFeed || []).length ? "offer.noMatch" : "buyer.offersEmpty"))}</div>`;
+}
+function setOfferFilter(key, value) { state.offerFilter[key] = value; state.contactOfferId = null; renderOfferList(); }
+function openOfferContact(id) { state.contactOfferId = id; renderOfferList(); const i = $("offerMsgInput"); if (i && i.focus) i.focus(); }
+function openInboxFromOffer(threadId) { switchScreen("buyerInbox"); openInboxThread(threadId); }
+// One conversation per offer per business (a database rule too). The id is made
+// here because the buyer cannot read the row back until a message is on it.
+const pendingInquiries = {};
+function newUuid() {
+  return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID()
+    : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); });
+}
+async function contactOffer(offerId) {
+  const o = (state.offerFeed || []).find(x => x.id === offerId), biz = myBusiness(); if (!o || !biz) return;
+  const input = $("offerMsgInput");
+  const text = input ? input.value : "";
+  if (!buildMessageRow("x", state.farmerId, text, "buyer")) { toast(T("offer.msgEmpty")); return; }
+  if (contactBusy) return; contactBusy = true;
+  try {
+    const id = pendingInquiries[offerId] || newUuid();
+    if (!pendingInquiries[offerId]) {
+      const { error } = await DataStore.createInquiry({ id, farmer_id: o.farmer_id, chat_id: o.chat_id, buyer_id: biz.id, status: "sent", initiated_by: "buyer",
+        offer_id: o.id, flagged: false, farmer_summary: buildOfferSummary(o) });
+      if (error) throw error;
+      pendingInquiries[offerId] = id;    // a failed first message must retry on THIS row
+    }
+    const { error: mErr } = await DataStore.sendOutreachMessage(buildMessageRow(id, state.farmerId, text, "buyer"));
+    if (mErr) throw mErr;
+    delete pendingInquiries[offerId];
+    state.contactOfferId = null;
+    await loadBuyerInbox();
+    toast(T("offer.sent"));
+    switchScreen("buyerInbox"); openInboxThread(id);
+  } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); }
+  contactBusy = false;
+}
+let contactBusy = false;
+function buildOfferSummary(o) {
+  return { village: o.village || null, distance_km: o.distance_km != null ? Number(o.distance_km) : null, organic: o.organic || null,
+    months: o.months || [], products: o.products || [] };
+}
 function renderBuyerOffers() {
   const el = $("buyerOffersBody"); if (!el) return;
-  el.innerHTML = buyerGateHTML() || `<div class="empty-state">${esc(T("buyer.offersEmpty"))}</div>`;
+  const gate = buyerGateHTML();
+  if (gate) { el.innerHTML = gate; return; }
+  const f = state.offerFilter;
+  const cats = CATEGORIES.map(c => `<option value="${escAttr(c)}"${f.category === c ? " selected" : ""}>${esc(catLabel(c))}</option>`).join("");
+  const kms = ["5", "10", "20"].map(k => `<option value="${k}"${String(f.maxKm) === k ? " selected" : ""}>${esc(T("offer.within", { n: k }))}</option>`).join("");
+  const months = monthNames().map((n, i) => `<option value="${i + 1}"${String(f.month) === String(i + 1) ? " selected" : ""}>${esc(n)}</option>`).join("");
+  el.innerHTML = `<div class="offer-filters">
+    <div class="field"><label for="ofCat">${esc(T("offer.fCategory"))}</label><select id="ofCat"><option value="">${esc(T("offer.any"))}</option>${cats}</select></div>
+    <div class="field"><label for="ofKm">${esc(T("offer.fDistance"))}</label><select id="ofKm"><option value="">${esc(T("offer.any"))}</option>${kms}</select></div>
+    <div class="field"><label for="ofMonth">${esc(T("offer.fMonth"))}</label><select id="ofMonth"><option value="">${esc(T("offer.any"))}</option>${months}</select></div>
+  </div><div id="offersList" class="offers-list"></div><p class="buyer-lead">${esc(T("offer.foot"))}</p>`;
+  $("ofCat").onchange = e => setOfferFilter("category", e.target.value);
+  $("ofKm").onchange = e => setOfferFilter("maxKm", e.target.value);
+  $("ofMonth").onchange = e => setOfferFilter("month", e.target.value);
+  renderOfferList();
 }
 function renderBuyerBusiness() {
   const el = $("buyerBusinessBody"); if (!el) return;
@@ -2916,6 +3070,7 @@ async function enterBuyerApp() {
     await loadBuyers();
     await loadBuyerData(state.farmerId);
     await loadBuyerInbox();
+    await loadOfferFeed();
   } catch (e) {
     console.error("Failed to load the buyer account", e);
     toast(T("boot.loadFailed"));

@@ -102,6 +102,19 @@ const DataStore = {
     return sb.from("buyers").update(patch).eq("id", buyerId).select().single();
   },
 
+  /* ---------- offers (ROADMAP item 29) ----------
+     A farmer publishes a snapshot of what they can supply (never phone or
+     address). RLS: the farmer reads and edits their own; approved buyers read
+     only the published ones; nothing is ever deleted, only unpublished. */
+  listMyOffers(uid) { return sb.from("offers").select("*").eq("farmer_id", uid); },
+  createOffer(row) { return sb.from("offers").insert(row).select().single(); },
+  updateOffer(id, patch) { return sb.from("offers").update(patch).eq("id", id).select().single(); },
+  listPublishedOffers() { return sb.from("offers").select("*").eq("status", "published").order("created_at", { ascending: false }); },
+  // A buyer starting a conversation from an offer. No .select(): the buyer can
+  // only read an outreach row once a message exists on it, so the id is made by
+  // the caller and the first message is sent next.
+  createInquiry(row) { return sb.from("outreach").insert(row); },
+
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },
   listAllChats() { return sb.from("chats").select("*").order("updated_at", { ascending: false }); },

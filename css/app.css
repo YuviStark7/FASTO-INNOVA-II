@@ -459,6 +459,8 @@
 .chk{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:var(--radius-sm); background:var(--glass-30); font-size:13px; cursor:pointer; }
 .chk input{ width:auto; accent-color:var(--red); }
 .chk:focus-within{ outline:2px solid #fff; outline-offset:2px; }
+.offer-filters{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+.offers-list{ display:flex; flex-direction:column; gap:10px; }
 .inbox-list{ display:flex; flex-direction:column; gap:6px; }
 .inbox-row{ display:flex; align-items:center; gap:10px; text-align:left; padding:10px 12px; border-radius:var(--radius-sm); background:var(--glass-30); border:1px solid var(--hairline); color:#fff; font-family:var(--font); cursor:pointer; }
 .inbox-row.active{ border-color:var(--red); }

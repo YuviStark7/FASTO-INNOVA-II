@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2091,6 +2091,71 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("an empty form is stopped before the database is touched", sb.chains.length === 0);
     check("declared values are escaped on the page", !a.buyerDeclaredHTML({ needs: ["<img src=x>"], volume: "low", quality_focus: ["<svg>"] }).match(/<img|<svg/));
     doc.querySelectorAll = realQSA;
+  }
+
+  /* ---- ROADMAP item 29: offers and buyer browse ---- */
+  {
+    const a = app;
+    const offers = [
+      { id: "f1", village: "Terelle", distance_km: 12, months: [6, 7], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] },
+      { id: "f2", village: "Cassino", distance_km: 3, months: [], products: [{ name: "olio", category: "olio", kg_per_week: 20 }] },
+      { id: "f3", village: "Atina", distance_km: null, months: [1], products: [{ name: "uova", category: "uova", kg_per_week: 5 }] }];
+    const ids = f => a.filterOffers(offers, f).map(o => o.id).join();
+    check("no filter shows every offer", ids({}) === "f1,f2,f3");
+    check("category filter matches any product of the offer", ids({ category: "olio" }) === "f2" && ids({ category: "vino" }) === "");
+    check("distance filter is a ceiling, and an offer with no stated distance never passes it", ids({ maxKm: "5" }) === "f2" && ids({ maxKm: "20" }) === "f1,f2");
+    check("month filter keeps offers available then, and offers with no months (all year)", ids({ month: "6" }) === "f1,f2" && ids({ month: "1" }) === "f2,f3");
+    check("filters combine", ids({ maxKm: "20", month: "7", category: "pomodori" }) === "f1");
+
+    const chat = { id: "c1", phase: "done", candidates: [], profile: { village: "Terelle", distance_km_from_cassino: 12, organic: "yes", available_months: [6], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] } };
+    check("an offer can be published only from a finished, saved conversation with a product",
+      a.offerCanPublish(chat) && !a.offerCanPublish(Object.assign({}, chat, { id: "local9" })) && !a.offerCanPublish(Object.assign({}, chat, { phase: "interview" })) &&
+      !a.offerCanPublish(Object.assign({}, chat, { profile: { products: [] } })) && !a.offerCanPublish(null));
+    const row = a.buildOfferRow("u1", chat);
+    check("the offer row is a snapshot with no phone, address, VAT or name",
+      row.farmer_id === "u1" && row.chat_id === "c1" && row.status === "published" && row.products.length === 1 &&
+      !Object.keys(row).some(k => /phone|address|vat|name/i.test(k)) && a.buildOfferRow("u1", { id: "c", profile: { products: [] } }) === null);
+
+    a.state.farmerId = "u1"; a.state.chats = [chat]; a.state.offers = [];
+    els.assistTranscript = els.assistTranscript || fakeEl("assistTranscript");
+    sb.reset(); sb.router = () => ({ data: { id: "of1", chat_id: "c1", status: "published" }, error: null });
+    await a.toggleOffer("c1");
+    check("pressing publish creates the offer once", sb.chains.filter(x => x.table === "offers" && x.ops[0].op === "insert").length === 1 && a.state.offers.length === 1 && a.offerFor("c1").status === "published");
+    sb.reset(); sb.router = () => ({ data: { id: "of1", chat_id: "c1", status: "unpublished" }, error: null });
+    await a.toggleOffer("c1");
+    const up = sb.chains.find(x => x.table === "offers").ops.find(o => o.op === "update");
+    check("pressing again only unpublishes: status and timestamp, nothing deleted",
+      up && up.args[0].status === "unpublished" && !up.args[0].products && !sb.chains.some(x => x.ops.some(o => o.op === "delete")) && a.state.offers.length === 1);
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
+    await a.toggleOffer("c1");
+    check("a refused change leaves the local state as it was", a.offerFor("c1").status === "unpublished");
+
+    // buyer contact
+    const biz = a.DB.buyers[0];
+    a.state.claims = [{ status: "approved", buyer_id: biz.id }]; a.state.farmerId = "ub";
+    a.state.offerFeed = [{ id: "of1", farmer_id: "uf", chat_id: "c1", village: "Terelle", distance_km: 12, months: [], products: [] }];
+    a.state.inbox = []; a.state.openThreadId = null;
+    els.offerMsgInput = fakeEl("offerMsgInput"); els.buyerInboxBody = fakeEl("buyerInboxBody"); els.buyerOffersBody = fakeEl("buyerOffersBody");
+    els.offerMsgInput.value = "   ";
+    sb.reset();
+    await a.contactOffer("of1");
+    check("an empty first message sends nothing", sb.chains.length === 0);
+    els.offerMsgInput.value = "Buongiorno";
+    sb.reset(); sb.router = (ch) => ch.table === "outreach_messages" ? { data: null, error: { message: "boom" } } : { data: [], error: null };
+    await a.contactOffer("of1");
+    const ins = sb.chains.find(x => x.table === "outreach" && x.ops[0].op === "insert");
+    const irow = ins.ops[0].args[0];
+    check("the inquiry row is buyer-initiated, tied to the offer and the buyer's own business, with a client-made id",
+      irow.initiated_by === "buyer" && irow.offer_id === "of1" && irow.buyer_id === biz.id && irow.farmer_id === "uf" && irow.status === "sent" && /^[0-9a-f-]{36}$/.test(irow.id));
+    check("a failed first message keeps the row id so a retry does not create a second inquiry", a.pendingInquiries["of1"] === irow.id);
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await a.contactOffer("of1");
+    check("the retry sends only the message, on the same row",
+      !sb.chains.some(x => x.table === "outreach" && x.ops[0].op === "insert") &&
+      sb.chains.some(x => x.table === "outreach_messages" && x.ops[0].op === "insert" && x.ops[0].args[0].outreach_id === irow.id && x.ops[0].args[0].sender_role === "buyer") && !a.pendingInquiries["of1"]);
+    check("a buyer-started thread (no AI draft) previews its latest message instead of crashing",
+      a.clientPreview({ message_it: "", messages: [{ text: "Buongiorno a tutti" }] }) === "Buongiorno a tutti" && a.clientPreview({ message_it: "x".repeat(80) }).length === 46 && a.clientPreview({}) === "");
+    check("offer cards escape what the farmer typed", !a.offerCardHTML({ id: "x", village: "<img src=x>", products: [{ name: "<svg>", kg_per_week: 1 }], months: [] }).match(/<img|<svg/));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");
