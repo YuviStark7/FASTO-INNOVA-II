@@ -94,6 +94,13 @@ function makeFakeSupabase() {
       };
       return api;
     },
+    rpc(name, args) {
+      const chain = { table: "rpc:" + name, ops: [{ op: "rpc", args: [args] }] };
+      chains.push(chain);
+      const result = fake.queue.length ? fake.queue.shift() : fake.router ? fake.router(chain) : { data: null, error: null };
+      chain.result = result;
+      return Promise.resolve(result);
+    },
     auth: {
       signUp(a) { authCalls.push({ fn: "signUp", args: a }); return Promise.resolve({ data: {}, error: null }); },
       signInWithPassword(a) { authCalls.push({ fn: "signInWithPassword", args: a }); return Promise.resolve({ data: {}, error: null }); },
@@ -173,7 +180,7 @@ function loadApp(root) {
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
-  adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  adminBuyerMatches, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
@@ -2359,6 +2366,51 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     els.cardMsgText.value = "   "; sb.reset();
     await a.sendCardMessage();
     check("an empty message is not sent", sb.chains.length === 0);
+  }
+
+
+  /* ---- Item 31 pass A: admin edits any buyer, with an audit trail ---- */
+  {
+    const a = app;
+    const vOk = a.guardianValidateAdminBuyer({ name: " Edra ", type: "hotel", zone: "", distance_km: "12.5", needs: ["vino", "vino", "olio"], volume: "high", quality_focus: ["bio"], confidence: "low" });
+    check("admin validator: trims, dedupes, blanks become null, distance becomes a number",
+      vOk.ok && vOk.row.name === "Edra" && vOk.row.zone === null && vOk.row.distance_km === 12.5 && eq(vOk.row.needs, ["vino", "olio"]));
+    check("admin validator refuses an empty name, a bad category, a bad volume, a silly distance, a bad confidence",
+      eq(a.guardianValidateAdminBuyer({ name: "  " }).bad, ["name"]) && eq(a.guardianValidateAdminBuyer({ needs: ["pizza"] }).bad, ["needs"]) &&
+      eq(a.guardianValidateAdminBuyer({ volume: "huge" }).bad, ["volume"]) && eq(a.guardianValidateAdminBuyer({ distance_km: 9999 }).bad, ["distance_km"]) &&
+      eq(a.guardianValidateAdminBuyer({ confidence: "sure" }).bad, ["confidence"]));
+    check("admin validator never lets a non-editable field through (id, declared_by_buyer)",
+      eq(Object.keys(a.guardianValidateAdminBuyer({ id: "x", declared_by_buyer: true, name: "A" }).row), ["name"]));
+    const list = [{ id: "b1", name: "Edra Palace", type: "hotel_ristorante", zone: "Cassino" }, { id: "b2", name: "Trattoria Rossa", type: "trattoria", zone: "Atina" }];
+    check("admin buyer search: every word must match name, type or zone",
+      eq(a.adminBuyerMatches(list, "hotel cassino").map(b => b.id), ["b1"]) && a.adminBuyerMatches(list, "").length === 2 && a.adminBuyerMatches(list, "zzz").length === 0);
+
+    ["adminBuyersBody", "adminBuyersTitle", "adminBuyersEmpty", "adminBuyerForm", "adminAudit"].forEach(id => els[id] = fakeEl(id));
+    a.state.isAdmin = true;
+    sb.reset();
+    sb.router = ch => ({ data: ch.table === "buyers" ? list : [], error: null });
+    await a.loadAdminBuyers();
+    check("loading the buyer records reads buyers and admin_audit and writes nothing",
+      eq(sb.chains.map(c => c.table).sort(), ["admin_audit", "buyers"]) && sb.chains.every(c => c.ops.every(o => !["insert", "update", "delete"].includes(o.op))));
+    check("the buyers table shows escaped rows with an Edit button for each", els.adminBuyersBody.innerHTML.includes("Edra Palace") && (els.adminBuyersBody.innerHTML.match(/editAdminBuyer/g) || []).length === 2);
+
+    a.editAdminBuyer("b1");
+    check("Edit opens the form for that buyer", els.adminBuyerForm.innerHTML.includes("abForm") && els.adminBuyerForm.innerHTML.includes("Edra Palace"));
+    els.abName = Object.assign(fakeEl("abName"), { value: "Edra Palace Hotel" });
+    els.abType = Object.assign(fakeEl("abType"), { value: "hotel_ristorante" });
+    sb.reset();
+    sb.router = ch => ch.table === "rpc:admin_edit_buyer" ? { data: Object.assign({}, list[0], { name: "Edra Palace Hotel" }), error: null } : { data: [], error: null };
+    await a.saveAdminBuyer();
+    const rpc = sb.chains.find(c => c.table === "rpc:admin_edit_buyer");
+    check("saving goes through the admin_edit_buyer database function with the buyer id and only valid fields",
+      rpc && rpc.ops[0].args[0].p_id === "b1" && rpc.ops[0].args[0].p_patch.name === "Edra Palace Hotel" && !("id" in rpc.ops[0].args[0].p_patch));
+    check("saving never writes the buyers table directly", sb.chains.every(c => c.table !== "buyers" || c.ops.every(o => o.op === "select")));
+    check("after a save the list shows the new name and the form closes",
+      a.adminBuyersState().buyers.some(b => b.name === "Edra Palace Hotel") && a.adminBuyersState().editing === null);
+
+    a.editAdminBuyer("b2"); els.abName.value = "   "; sb.reset();
+    await a.saveAdminBuyer();
+    check("an empty name is refused before anything is sent", sb.chains.length === 0);
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

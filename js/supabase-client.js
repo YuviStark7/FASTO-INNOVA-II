@@ -129,5 +129,9 @@ const DataStore = {
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },
   listAllChats() { return sb.from("chats").select("*").order("updated_at", { ascending: false }); },
+  // Item 31 pass A. Admin-only database function: edits any buyers row and writes
+  // the admin_audit row in the same transaction. Direct table updates stay limited.
+  adminEditBuyer(id, patch) { return sb.rpc("admin_edit_buyer", { p_id: id, p_patch: patch }); },
+  listAudit(limit) { return sb.from("admin_audit").select("*").order("created_at", { ascending: false }).limit(limit || 50); },
   listAllOutreach() { return sb.from("outreach").select("*").order("created_at", { ascending: false }); }
 };

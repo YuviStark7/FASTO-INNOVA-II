@@ -170,6 +170,7 @@
    rule short of !important. */
 .admin-panel-stats{ margin-bottom:14px; flex-shrink:0; }
 .admin-panel-main{ flex:1; min-height:0; }
+#adminBuyersPanel{ flex:none; margin-top:14px; }
 .admin-panel-claims{ margin-bottom:14px; flex-shrink:0; max-height:40%; overflow-y:auto; }
 
 /* ---- roles (ROADMAP items 24-25) ----

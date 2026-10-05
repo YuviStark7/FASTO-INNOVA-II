@@ -228,6 +228,45 @@ function guardianValidateBuyerProfile(input) {
   return { ok: true, row: { needs: needs, volume: input.volume, quality_focus: q } };
 }
 
+/* Item 31 pass A: what an ADMIN may save on any buyers row. Wider than the
+   buyer's own form (name, type, zone, distance, notes, source, confidence) but
+   the same category/volume/quality lists. Returns only the fields that were
+   given, trimmed; the database function admin_edit_buyer() re-checks the
+   column list, so this is the friendly layer, not the lock. */
+var CONFIDENCE_LEVELS = ["low", "medium", "high"];
+function guardianValidateAdminBuyer(input) {
+  var bad = [], row = {};
+  input = input || {};
+  function text(k, max, required) {
+    if (input[k] === undefined) return;
+    var v = String(input[k] === null ? "" : input[k]).trim();
+    if (required && !v) bad.push(k); else if (v.length > max) bad.push(k); else row[k] = v === "" ? null : v;
+  }
+  text("name", 120, true); text("type", 40, true); text("zone", 80); text("notes", 600); text("source", 300);
+  if (input.distance_km !== undefined) {
+    var d = input.distance_km === null || input.distance_km === "" ? null : Number(input.distance_km);
+    if (d !== null && (!isFinite(d) || d < 0 || d > 500)) bad.push("distance_km"); else row.distance_km = d;
+  }
+  if (input.needs !== undefined) {
+    var n = (Array.isArray(input.needs) ? input.needs : []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    if (n.some(function (c) { return CATEGORIES.indexOf(c) === -1; })) bad.push("needs"); else row.needs = n;
+  }
+  if (input.volume !== undefined) {
+    if (input.volume !== null && input.volume !== "" && VOLUME_BANDS.indexOf(input.volume) === -1) bad.push("volume");
+    else row.volume = input.volume || null;
+  }
+  if (input.quality_focus !== undefined) {
+    var q = (Array.isArray(input.quality_focus) ? input.quality_focus : []).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    if (q.some(function (t) { return QUALITY_TAGS.indexOf(t) === -1; })) bad.push("quality_focus"); else row.quality_focus = q;
+  }
+  if (input.confidence !== undefined) {
+    if (input.confidence && CONFIDENCE_LEVELS.indexOf(input.confidence) === -1) bad.push("confidence");
+    else row.confidence = input.confidence || null;
+  }
+  if (bad.length) return { ok: false, bad: bad };
+  return { ok: true, row: row };
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -235,6 +274,6 @@ if (typeof module !== "undefined" && module.exports) {
     volumeBand: volumeBand, totalKg: totalKg, farmerCategories: farmerCategories,
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
-    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, QUALITY_TAGS: QUALITY_TAGS
+    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS
   };
 }

@@ -322,6 +322,19 @@
         </table>
         <div class="empty-state" id="adminEmpty" data-i18n="admin.empty">No farmer activity yet.</div>
       </div>
+      <div class="research-panel glass-45 admin-panel-main" id="adminBuyersPanel">
+        <div class="research-panel-head"><span class="title-md" id="adminBuyersTitle">Buyers</span></div>
+        <div class="field"><label for="adminBuyerSearch" data-i18n="admin.bSearch">Search buyers</label>
+          <input id="adminBuyerSearch" type="search" oninput="setAdminBuyerSearch(this.value)"></div>
+        <table class="rp-table">
+          <thead><tr><th scope="col" data-i18n="admin.bf.name">Name</th><th scope="col" data-i18n="admin.bf.type">Type</th><th scope="col" data-i18n="admin.bf.zone">Zone</th><th scope="col" data-i18n="admin.bf.confidence">Confidence</th><th scope="col" data-i18n="admin.bActions">Actions</th></tr></thead>
+          <tbody id="adminBuyersBody"></tbody>
+        </table>
+        <div class="empty-state" id="adminBuyersEmpty" style="display:none" data-i18n="admin.bEmpty">No buyer matches.</div>
+        <div id="adminBuyerForm"></div>
+        <div class="eyebrow" data-i18n="admin.auditTitle">Recent admin edits</div>
+        <ul id="adminAudit" class="foot"></ul>
+      </div>
     </section>
   </main>
 </div>

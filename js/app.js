@@ -2752,6 +2752,111 @@ async function renderAdmin() {
   paintAdmin();
 }
 
+
+/* ---------- Admin: buyer records and audit trail (ROADMAP item 31, pass A) ----------
+   The admin can correct any listed business (name, type, zone, distance, what it
+   buys, volume, quality points, notes, source, confidence). The save goes through
+   the database function admin_edit_buyer, which re-checks that the caller is an
+   admin, refuses any column outside the list, and writes an admin_audit row (old
+   and new values of what changed) in the same transaction. Farmers' private
+   details and message bodies are not loaded here at all. */
+let adminBuyersCache = null;   // { buyers, audit, q, editing }
+let adminBuyerBusy = false;
+
+// Pure: search on name, type and zone, every word must match somewhere.
+function adminBuyerMatches(buyers, q) {
+  const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+  return (buyers || []).filter(b => {
+    const hay = [b.name, b.type, b.zone].join(" ").toLowerCase();
+    return words.every(w => hay.indexOf(w) !== -1);
+  });
+}
+async function loadAdminBuyers() {
+  if (!state.isAdmin || !$("adminBuyersBody")) return;
+  const [{ data: buyers, error: e1 }, { data: audit, error: e2 }] = await Promise.all([DataStore.listBuyers(), DataStore.listAudit(15)]);
+  if (e1 || e2) { console.error("admin buyers load failed", e1, e2); toast(T("admin.loadFailed")); return; }
+  const keep = adminBuyersCache || {};
+  adminBuyersCache = { buyers: (buyers || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name))), audit: audit || [], q: keep.q || "", editing: keep.editing || null };
+  paintAdminBuyers();
+}
+function setAdminBuyerSearch(q) {
+  if (!adminBuyersCache) return;
+  adminBuyersCache.q = q;
+  paintAdminBuyers(true);   // keep the box (and the form) untouched while typing
+}
+function adminAuditLine(a) {
+  const keys = Object.keys(a.new_data || {});
+  return `${new Date(a.created_at).toLocaleString()} — ${a.row_id}: ${keys.join(", ")}`;
+}
+function adminBuyerFormHTML(b) {
+  const has = (arr, v) => (arr || []).indexOf(v) !== -1;
+  const needs = CATEGORIES.map(c => `<label class="chk"><input type="checkbox" name="abNeed" value="${escAttr(c)}"${has(b.needs, c) ? " checked" : ""}><span>${esc(catLabel(c))}</span></label>`).join("");
+  const quals = QUALITY_TAGS.map(t => `<label class="chk"><input type="checkbox" name="abQual" value="${escAttr(t)}"${has(b.quality_focus, t) ? " checked" : ""}><span>${esc(T("qtag." + t))}</span></label>`).join("");
+  const vols = [""].concat(VOLUME_BANDS).map(v => `<option value="${v}"${(b.volume || "") === v ? " selected" : ""}>${esc(v ? T("band." + v) : "—")}</option>`).join("");
+  const confs = [""].concat(CONFIDENCE_LEVELS).map(v => `<option value="${v}"${(b.confidence || "") === v ? " selected" : ""}>${esc(v ? T("admin.conf." + v) : "—")}</option>`).join("");
+  const field = (id, key, val, type) => `<div class="field"><label for="${id}">${esc(T("admin.bf." + key))}</label><input id="${id}" type="${type || "text"}" value="${escAttr(val == null ? "" : val)}"></div>`;
+  return `<form class="buyer-form" id="abForm" onsubmit="return false">
+    <div class="eyebrow">${esc(T("admin.bEditing", { name: b.name }))}</div>
+    ${field("abName", "name", b.name)}${field("abType", "type", b.type)}${field("abZone", "zone", b.zone)}${field("abDist", "distance", b.distance_km, "number")}
+    <fieldset class="chk-group"><legend>${esc(T("buyer.formNeeds"))}</legend><div class="chk-grid">${needs}</div></fieldset>
+    <div class="field"><label for="abVolume">${esc(T("buyer.formVolume"))}</label><select id="abVolume">${vols}</select></div>
+    <fieldset class="chk-group"><legend>${esc(T("buyer.formQuality"))}</legend><div class="chk-grid">${quals}</div></fieldset>
+    ${field("abNotes", "notes", b.notes)}${field("abSource", "source", b.source)}
+    <div class="field"><label for="abConf">${esc(T("admin.bf.confidence"))}</label><select id="abConf">${confs}</select></div>
+    <div class="auth-err" id="abErr" role="alert" style="display:none"></div>
+    <div class="row gap-8"><button type="button" class="btn btn-primary" id="abSave" onclick="saveAdminBuyer()">${esc(T("admin.bSave"))}</button>
+    <button type="button" class="btn btn-ghost" onclick="editAdminBuyer(null)">${esc(T("admin.bCancel"))}</button></div>
+    <p class="buyer-lead">${esc(T("admin.bAuditNote"))}</p></form>`;
+}
+function paintAdminBuyers(searchOnly) {
+  const c = adminBuyersCache; if (!c || !$("adminBuyersBody")) return;
+  const rows = adminBuyerMatches(c.buyers, c.q);
+  $("adminBuyersTitle").textContent = T("admin.buyersTitle", { n: rows.length });
+  $("adminBuyersBody").innerHTML = rows.map(b => `<tr>
+      <td data-label="${escAttr(T("admin.bf.name"))}"><b>${esc(b.name)}</b></td>
+      <td data-label="${escAttr(T("admin.bf.type"))}">${esc(b.type)}</td>
+      <td data-label="${escAttr(T("admin.bf.zone"))}">${esc(b.zone || "—")}</td>
+      <td data-label="${escAttr(T("admin.bf.confidence"))}">${esc(b.confidence ? T("admin.conf." + b.confidence) : "—")}${b.declared_by_buyer ? " · " + esc(T("admin.bDeclared")) : ""}</td>
+      <td><button type="button" class="btn btn-ghost btn-sm" onclick="editAdminBuyer('${escAttr(b.id)}')" aria-label="${escAttr(T("admin.bEditFor", { name: b.name }))}">${esc(T("admin.bEdit"))}</button></td></tr>`).join("");
+  $("adminBuyersEmpty").style.display = rows.length ? "none" : "block";
+  if (searchOnly) return;
+  const b = c.editing && c.buyers.find(x => x.id === c.editing);
+  $("adminBuyerForm").innerHTML = b ? adminBuyerFormHTML(b) : "";
+  $("adminAudit").innerHTML = c.audit.length ? c.audit.map(a => `<li>${esc(adminAuditLine(a))}</li>`).join("") : `<li>${esc(T("admin.auditEmpty"))}</li>`;
+}
+function editAdminBuyer(id) {
+  if (!adminBuyersCache) return;
+  adminBuyersCache.editing = id;
+  paintAdminBuyers();
+  if (id && $("abName")) $("abName").focus();
+}
+function readAdminBuyerForm() {
+  const picked = name => Array.prototype.map.call(document.querySelectorAll('input[name="' + name + '"]:checked'), i => i.value);
+  const v = id => ($(id) ? $(id).value : "");
+  return { name: v("abName"), type: v("abType"), zone: v("abZone"), distance_km: v("abDist"), needs: picked("abNeed"), volume: v("abVolume"),
+    quality_focus: picked("abQual"), notes: v("abNotes"), source: v("abSource"), confidence: v("abConf") };
+}
+async function saveAdminBuyer() {
+  const c = adminBuyersCache; if (!c || !c.editing || adminBuyerBusy || !state.isAdmin) return;
+  const v = guardianValidateAdminBuyer(readAdminBuyerForm());
+  const err = $("abErr");
+  if (!v.ok) { if (err) { err.textContent = T("admin.bBad", { fields: v.bad.join(", ") }); err.style.display = "block"; } return; }
+  if (err) err.style.display = "none";
+  adminBuyerBusy = true;
+  try {
+    const { data, error } = await DataStore.adminEditBuyer(c.editing, v.row);
+    if (error) throw error;
+    const i = c.buyers.findIndex(x => x.id === c.editing);
+    if (i !== -1 && data) c.buyers[i] = data;
+    const { data: audit } = await DataStore.listAudit(15);
+    if (audit) c.audit = audit;
+    c.editing = null;
+    toast(T("admin.bSaved"));
+  } catch (e) { console.error("admin buyer save failed", e); toast(T("admin.bFailed")); }
+  adminBuyerBusy = false;
+  paintAdminBuyers();
+}
+
 /* Clicking a stage filters the table under the funnel to the conversations in
    it; clicking the selected one again clears the filter. Without this the
    funnel can say "4 stopped at the interview" while the table below has no way
@@ -3515,7 +3620,7 @@ function switchScreen(name) {
   if (name === "dashboard") { if (prev !== "dashboard") rotateBackdrop(); renderDashboard(); }
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
-  if (name === "admin") renderAdmin();
+  if (name === "admin") { renderAdmin(); loadAdminBuyers(); }
   if (name.indexOf("buyer") === 0) renderBuyerScreens();
 }
 
