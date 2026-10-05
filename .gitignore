@@ -10,6 +10,9 @@
 # qa_check.js) all run on plain `node` with nothing installed.
 node_modules
 
+# Written by push_to_github.bat each time it runs.
+push_log.txt
+
 # Windows / macOS folder clutter
 Thumbs.db
 desktop.ini
