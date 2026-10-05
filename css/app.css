@@ -451,6 +451,17 @@
    and this is 10px inside a 17px circle, where the same ratio does not carry.
    #1c1414 on #d9a441 is ~9:1. The dark ring is what keeps the badge legible
    where it overlaps the bell glyph instead of the bar behind it. */
+.nav-item .nav-badge{ position:static; margin-left:auto; }
+.inbox-list{ display:flex; flex-direction:column; gap:6px; }
+.inbox-row{ display:flex; align-items:center; gap:10px; text-align:left; padding:10px 12px; border-radius:var(--radius-sm); background:var(--glass-30); border:1px solid var(--hairline); color:#fff; font-family:var(--font); cursor:pointer; }
+.inbox-row.active{ border-color:var(--red); }
+.inbox-row-main{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; font-size:12.5px; color:var(--ink-70); }
+.inbox-row-main b{ color:#fff; font-size:13.5px; }
+.inbox-row .inbox-badge{ position:static; }
+.inbox-pane{ display:flex; flex-direction:column; gap:12px; }
+.inbox-thread{ display:flex; flex-direction:column; gap:10px; }
+.inbox-reply{ display:flex; gap:8px; }
+.inbox-reply input{ flex:1; font-size:16px; }
 .bell-badge{ position:absolute; top:-3px; right:-3px; min-width:17px; height:17px; padding:0 4px;
   border-radius:9px; background:var(--warn); color:#1c1414; border:2px solid #1c1414;
   font-family:var(--font); font-size:10px; font-weight:800; line-height:1; letter-spacing:0;

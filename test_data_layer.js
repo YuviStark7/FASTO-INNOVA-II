@@ -80,7 +80,7 @@ function makeFakeSupabase() {
       const chain = { table, ops: [] };
       chains.push(chain);
       const api = { chain };
-      for (const op of ["select", "insert", "update", "delete", "eq", "order", "single", "maybeSingle", "in", "limit"]) {
+      for (const op of ["select", "insert", "update", "delete", "eq", "order", "single", "maybeSingle", "in", "limit", "is"]) {
         api[op] = (...args) => { chain.ops.push({ op, args }); return api; };
       }
       // Awaiting the chain is what "sends" it.
@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2000,6 +2000,50 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     await a.sendClientNote("local5");
     check("a local-only conversation keeps notes on the device and never touches the database",
       c3.extra.length === 1 && !sb.chains.some(x => x.table === "outreach_messages"));
+  }
+
+  /* ---- ROADMAP item 27: buyer inbox ---- */
+  {
+    const a = app;
+    const m = (role, readAt) => ({ role, text: "x", ts: 1, readAt });
+    check("unread counts only the farmer's messages the buyer has not opened",
+      a.unreadCount({ messages: [m("farmer", null), m("farmer", "t"), m("buyer", null)] }) === 1 &&
+      a.inboxUnread([{ messages: [m("farmer", null)] }, { messages: [m("farmer", null), m("farmer", null)] }]) === 3 && a.inboxUnread(null) === 0);
+    const sum = a.buildFarmerSummary({ farmer_name: "Marco Rossi", village: "Terelle", distance_km_from_cassino: "12", organic: "yes",
+      available_months: [6, 7, 13], products: [{ name: "pomodori", category: "pomodori", kg_per_week: "80" }], phone: "333", address: "Via X" });
+    check("the farmer summary carries village, products, months only; never name, phone or address",
+      sum.village === "Terelle" && sum.distance_km === 12 && sum.months.length === 2 && sum.products[0].kg_per_week === 80 &&
+      !JSON.stringify(sum).includes("333") && !JSON.stringify(sum).includes("Via X") && !JSON.stringify(sum).includes("Rossi"), JSON.stringify(sum));
+    check("no profile means no summary", a.buildFarmerSummary(null) === null);
+    check("summary text from a farmer is escaped before it reaches the buyer's page",
+      !a.farmerSummaryHTML({ village: "<img onerror=x>", products: [{ name: "<b>", kg_per_week: 1 }], months: [] }).includes("<img"));
+    const r = a.buildMessageRow("o1", "u2", " ok ", "buyer");
+    check("a buyer reply is stamped as buyer", r.sender_role === "buyer" && r.body === "ok");
+
+    // loading: the buyer asks for rows of ITS business only
+    a.state.claims = [{ status: "approved", buyer_id: a.DB.buyers[0].id }];
+    sb.reset();
+    sb.router = (ch) => ch.table === "outreach" ? { data: [{ id: "o1", created_at: "2026-10-05T10:00:00Z", farmer_summary: { village: "Terelle" } }], error: null }
+      : { data: [{ id: "m1", sender_role: "farmer", body: "Ciao", created_at: "2026-10-05T10:00:00Z", read_at: null }], error: null };
+    await a.loadBuyerInbox();
+    const oc = sb.chains.find(x => x.table === "outreach");
+    check("the buyer inbox is filtered to the claimed business and loads each thread",
+      oc && oc.ops.some(o => o.op === "eq" && o.args[0] === "buyer_id" && o.args[1] === a.DB.buyers[0].id) &&
+      a.state.inbox.length === 1 && a.state.inbox[0].messages.length === 1 && a.unreadCount(a.state.inbox[0]) === 1, JSON.stringify(oc));
+    // opening: seen is set only once the database agrees
+    els.buyerInboxBody = fakeEl("buyerInboxBody");
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
+    await a.openInboxThread("o1");
+    check("a refused read-mark leaves the thread unread (ticks and badge never disagree)", a.unreadCount(a.state.inbox[0]) === 1);
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    await a.openInboxThread("o1");
+    const uc = sb.chains.find(x => x.table === "outreach_messages");
+    check("opening an unread thread marks only the farmer's unread messages as read",
+      a.unreadCount(a.state.inbox[0]) === 0 && uc.ops.some(o => o.op === "update") && uc.ops.some(o => o.op === "eq" && o.args[1] === "farmer") && uc.ops.some(o => o.op === "is"), JSON.stringify(uc) + " unread=" + a.unreadCount(a.state.inbox[0]));
+    // no business, no inbox
+    a.state.claims = [{ status: "pending", buyer_id: a.DB.buyers[0].id }];
+    sb.reset(); await a.loadBuyerInbox();
+    check("a buyer without an approved claim loads nothing and asks nothing", a.state.inbox.length === 0 && sb.chains.length === 0);
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

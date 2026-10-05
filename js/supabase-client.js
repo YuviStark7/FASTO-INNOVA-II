@@ -85,6 +85,17 @@ const DataStore = {
   },
   sendOutreachMessage(row) { return sb.from("outreach_messages").insert(row).select().single(); },
 
+  /* ---------- buyer inbox (ROADMAP item 27) ----------
+     A buyer's outreach rows: RLS only returns ones addressed to the business
+     they own AND that already have a message on them. */
+  listBuyerOutreach(buyerId) { return sb.from("outreach").select("*").eq("buyer_id", buyerId).order("created_at", { ascending: false }); },
+  // Marks the farmer's unread messages in one thread as read. RLS lets only the
+  // approved owner do this, and only the read_at column is writable.
+  markThreadRead(outreachId) {
+    return sb.from("outreach_messages").update({ read_at: new Date().toISOString() })
+      .eq("outreach_id", outreachId).eq("sender_role", "farmer").is("read_at", null);
+  },
+
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },
   listAllChats() { return sb.from("chats").select("*").order("updated_at", { ascending: false }); },

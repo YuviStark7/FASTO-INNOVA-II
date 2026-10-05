@@ -28,6 +28,8 @@ let state = {
   farmerId: null, isAdmin: false,
   role: "farmer",       // "farmer" | "buyer" — read from the account row, never from the browser
   email: "",            // the signed-in address, used only to prefill a buyer's claim
+  inbox: [],            // a buyer's conversations from farmers (item 27)
+  openThreadId: null,
   claims: [],           // a buyer's own claims on listed businesses (buyer_claims)
   farmerProfile: {},    // the farmer's own `farmers` row — name + the business details the logistics form needs
   chats: [],           // {id,title,phase,pct,messages:[{role,text}],apiMessages,profile,candidates,recs,offlineStep,offlineReady,ts}
@@ -452,9 +454,22 @@ function threadItems(c) {
 }
 /* One tick = it is in the buyer's inbox; two = the buyer has opened it. */
 function tickKey(item) { return item.readAt ? "clients.tickSeen" : "clients.tickInbox"; }
-function buildMessageRow(outreachId, uid, body) {
+function buildMessageRow(outreachId, uid, body, role) {
   const text = String(body || "").trim().slice(0, 2000);
-  return text ? { outreach_id: outreachId, sender_role: "farmer", sender_id: uid, body: text } : null;
+  return text ? { outreach_id: outreachId, sender_role: role === "buyer" ? "buyer" : "farmer", sender_id: uid, body: text } : null;
+}
+/* What the farmer chooses to show a buyer beside the thread: where, what, how
+   much, when. Deliberately NOT their phone, address or VAT (those never leave
+   their account) and not their name beyond what the message itself says. */
+function buildFarmerSummary(profile) {
+  if (!profile) return null;
+  return {
+    village: profile.village || null,
+    distance_km: profile.distance_km_from_cassino != null ? Number(profile.distance_km_from_cassino) : null,
+    organic: profile.organic || null,
+    months: (profile.available_months || []).map(Number).filter(m => m >= 1 && m <= 12),
+    products: (profile.products || []).slice(0, 20).map(p => ({ name: String(p.name || "").slice(0, 60), category: p.category || null, kg_per_week: Number(p.kg_per_week) || 0 }))
+  };
 }
 /* Places one farmer message in the thread. Resolves true only if the database
    accepted it, so callers never show something as sent that is not. */
@@ -963,9 +978,10 @@ async function markSent(id) {
     if (!ok) return;
   }
   c.status = "sent"; c.sentTs = Date.now();
+  const chatOfDraft = state.chats.find(x => x.id === c.chatId);
   toast(T("clients.markedSent", { name: c.name }));
   renderChats(); renderDashboard(); renderBell();
-  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString() }), "save.sentMark");
+  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString(), farmer_summary: buildFarmerSummary(chatOfDraft && chatOfDraft.profile) }), "save.sentMark");
 }
 
 /* ---------- Notification bell ---------- */
@@ -2725,9 +2741,101 @@ function renderBuyerHome() {
   bindClaimForm();
   claimFormRestore(snap);
 }
+/* ---------- Buyer inbox (ROADMAP item 27) ----------
+   state.inbox holds one entry per conversation a farmer has started with the
+   buyer's business. Everything a buyer types here is a real reply. */
+function unreadCount(thread) { return ((thread && thread.messages) || []).filter(m => m.role === "farmer" && !m.readAt).length; }
+function inboxUnread(inbox) { return (inbox || []).reduce((n, t) => n + unreadCount(t), 0); }
+async function loadBuyerInbox() {
+  const biz = myBusiness(); state.inbox = [];
+  if (!biz) return;
+  const { data, error } = await DataStore.listBuyerOutreach(biz.id);
+  if (error) throw error;
+  state.inbox = await Promise.all((data || []).map(async o => {
+    const t = { id: o.id, ts: new Date(o.created_at).getTime(), summary: o.farmer_summary || null, messages: [] };
+    try {
+      const res = await DataStore.listOutreachMessages(o.id);
+      if (res && !res.error && res.data) t.messages = mapThreadMessages(res.data);
+    } catch (e) { console.warn("couldn't load one inbox thread", e); }
+    return t;
+  }));
+  state.inbox.sort((a, b) => lastActivity(b) - lastActivity(a));
+}
+function lastActivity(t) { const m = t.messages[t.messages.length - 1]; return m ? m.ts : t.ts; }
+function inboxTitle(t) {
+  return t.summary && t.summary.village ? T("buyer.convoFrom", { village: t.summary.village }) : T("buyer.convoUnknown");
+}
+function renderBuyerBadge() {
+  const b = $("buyerInboxBadge"); if (!b) return;
+  const n = inboxUnread(state.inbox);
+  b.textContent = n > 99 ? "99+" : String(n);
+  b.style.display = n ? "flex" : "none";
+  const btn = b.closest ? b.closest("button") : null;
+  if (btn) btn.setAttribute("aria-label", n ? T("buyer.inboxAria", { n }) : T("nav.bInbox"));
+}
+function farmerSummaryHTML(s) {
+  if (!s) return `<div class="buyer-note"><p>${esc(T("buyer.sumNone"))}</p></div>`;
+  const prods = (s.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
+  return `<div class="buyer-note"><b>${esc(T("buyer.sumTitle"))}</b><dl class="buyer-facts" style="margin-top:8px">
+    <dt>${esc(T("buyer.sumVillage"))}</dt><dd>${esc(s.village || "—")}${s.distance_km != null ? " · " + esc(T("buyer.km", { n: s.distance_km })) : ""}</dd>
+    <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
+    <dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(s.months) || T("buyer.sumAllYear"))}</dd>
+  </dl></div>`;
+}
 function renderBuyerInbox() {
   const el = $("buyerInboxBody"); if (!el) return;
-  el.innerHTML = buyerGateHTML() || `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`;
+  renderBuyerBadge();
+  const gate = buyerGateHTML();
+  if (gate) { el.innerHTML = gate; return; }
+  const inbox = state.inbox || [];
+  if (!inbox.length) { el.innerHTML = `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`; return; }
+  const open = inbox.find(t => t.id === state.openThreadId) || null;
+  const list = inbox.map(t => {
+    const last = t.messages[t.messages.length - 1], n = unreadCount(t);
+    return `<button type="button" class="inbox-row${open && open.id === t.id ? " active" : ""}" onclick="openInboxThread('${t.id}')">
+      <span class="inbox-row-main"><b>${esc(inboxTitle(t))}</b><span>${esc(last ? last.text.slice(0, 70) : "")}</span></span>
+      ${n ? `<span class="bell-badge inbox-badge" aria-label="${escAttr(T("buyer.unread", { n }))}" style="display:flex">${n}</span>` : ""}</button>`;
+  }).join("");
+  let thread = `<div class="empty-state">${esc(T("buyer.noThread"))}</div>`;
+  if (open) {
+    thread = farmerSummaryHTML(open.summary) + `<div class="inbox-thread">` + open.messages.map(m =>
+      `<div class="bubble ${m.role === "buyer" ? "out" : "in"}">${esc(m.text)}</div>`).join("") + `</div>
+      <div class="inbox-reply"><input type="text" class="input-glass" id="buyerReplyInput" maxlength="2000" aria-label="${escAttr(T("buyer.replyPlaceholder"))}" placeholder="${escAttr(T("buyer.replyPlaceholder"))}">
+      <button type="button" class="btn btn-primary btn-sm" id="buyerReplySend">${esc(T("buyer.replySend"))}</button></div>`;
+  }
+  el.innerHTML = `<div class="inbox-list">${list}</div><div class="inbox-pane">${thread}</div>`;
+  const send = $("buyerReplySend");
+  if (send) {
+    send.onclick = () => sendBuyerReply(open.id);
+    $("buyerReplyInput").addEventListener("keydown", e => { if (e.key === "Enter") sendBuyerReply(open.id); });
+  }
+}
+async function openInboxThread(id) {
+  state.openThreadId = id;
+  const t = (state.inbox || []).find(x => x.id === id);
+  const hadUnread = t && unreadCount(t) > 0;
+  renderBuyerInbox();
+  if (!hadUnread) return;
+  // Opening a thread is what sets "seen". Only after the database agrees do we
+  // clear the badge, so the farmer's ticks and our count never disagree.
+  const res = await DataStore.markThreadRead(id);
+  if (res && res.error) { saveFailed("save.readMark", res.error); return; }
+  const now = new Date().toISOString();
+  t.messages.forEach(m => { if (m.role === "farmer" && !m.readAt) m.readAt = now; });
+  renderBuyerInbox();
+}
+async function sendBuyerReply(id) {
+  const input = $("buyerReplyInput"); if (!input) return;
+  const t = (state.inbox || []).find(x => x.id === id); if (!t || t.posting) return;
+  const row = buildMessageRow(id, state.farmerId, input.value, "buyer"); if (!row) return;
+  t.posting = true;
+  try {
+    const { data, error } = await DataStore.sendOutreachMessage(row);
+    if (error) throw error;
+    t.messages.push(mapThreadMessages([data])[0]);
+    renderBuyerInbox();
+  } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); }
+  t.posting = false;
 }
 function renderBuyerOffers() {
   const el = $("buyerOffersBody"); if (!el) return;
@@ -2752,6 +2860,7 @@ async function enterBuyerApp() {
   try {
     await loadBuyers();
     await loadBuyerData(state.farmerId);
+    await loadBuyerInbox();
   } catch (e) {
     console.error("Failed to load the buyer account", e);
     toast(T("boot.loadFailed"));
