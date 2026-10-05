@@ -538,6 +538,24 @@
 #profileSheet.open{ display:flex; }
 #profileSheet .match-panel{ max-width:760px; }
 
+/* ================= ACCOUNT MENU + EDIT PROFILE ================= */
+.avatar-wrap{ position:relative; }
+.avatar-menu{ position:absolute; right:0; top:calc(100% + 10px); z-index:60; min-width:190px; padding:6px;
+  border-radius:var(--radius-md); background:rgba(0,0,0,.86); border:1px solid var(--hairline);
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); display:flex; flex-direction:column; gap:2px; }
+.avatar-menu[hidden]{ display:none; }
+.avatar-menu button{ text-align:left; padding:11px 12px; border-radius:var(--radius-sm); color:#fff; background:none;
+  font-family:var(--font); font-size:13px; font-weight:700; letter-spacing:.02em; cursor:pointer; border:0; }
+.avatar-menu button:hover, .avatar-menu button:focus-visible{ background:rgba(255,255,255,.14); outline:none; }
+.avatar-menu button:focus-visible{ outline:2px solid #fff; outline-offset:-2px; }
+@media (prefers-reduced-transparency: reduce){ .avatar-menu{ background:#1c1414; } }
+#accountSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#accountSheet.open{ display:flex; }
+#accountSheet .match-panel{ max-width:620px; }
+.acct-readonly{ padding:10px 12px; border-radius:var(--radius-sm); background:rgba(255,255,255,.08); color:var(--ink-70); font-size:14px; }
+.acct-note{ font-size:12px; color:var(--ink-50); margin:6px 0 0; }
+
 /* the pills row in the match sheet, now with the way in to this form */
 .match-profile-row{ display:flex; align-items:flex-start; gap:10px; margin-bottom:4px; }
 .match-profile-row .match-profile{ flex:1; min-width:0; margin-bottom:0; }
@@ -648,7 +666,7 @@
   .field input,.field select{ font-size:16px; }
   .mode-toggle button{ min-height:44px; }
 
-  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet{ padding:10px; }
+  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet, #accountSheet{ padding:10px; }
   .match-panel{ max-width:100%; }
   #logisticsSheet .match-panel{ max-width:100%; }
   #profileSheet .match-panel{ max-width:100%; }

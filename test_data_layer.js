@@ -169,7 +169,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2223,6 +2223,55 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("repeating the same details changes nothing", r2.ok && r2.changed.length === 0);
     const r3 = a.onProfileRevised({ village: "", products: [{ name: "latte", category: "formaggi", kg_per_week: -5 }] }, chat);
     check("a bad edit is refused and the profile is untouched", r3.ok === false && chat.profile.products[0].kg_per_week === 120);
+  }
+
+  /* ---- avatar menu and Edit profile ---- */
+  {
+    const a = app;
+    const farmer = { first_name: "Rahul", last_name: "Sharma", nickname: "Rahi", company_name: "Az. Agr. X", phone: "333 1234567" };
+    check("nothing changed means an empty patch", Object.keys(a.buildAccountPatch({ nickname: "Rahi", company_name: "Az. Agr. X", phone: "333 1234567", vat_number: "", address: "" }, farmer).patch).length === 0);
+    const p1 = a.buildAccountPatch({ nickname: " Ra ", company_name: "Az. Agr. X", phone: "0776 123456", vat_number: "IT123", address: "Via Roma 1" }, farmer).patch;
+    check("only what changed is sent, trimmed", JSON.stringify(Object.keys(p1).sort()) === JSON.stringify(["address", "nickname", "phone", "vat_number"]) && p1.nickname === "Ra");
+    check("clearing a field sends null", a.buildAccountPatch({ nickname: "", company_name: "Az. Agr. X", phone: "333 1234567" }, farmer).patch.nickname === null);
+    check("a phone that is not a phone is refused", a.buildAccountPatch({ nickname: "Rahi", phone: "call me maybe" }, farmer).errKey === "acct.err.phone");
+    const forged = a.buildAccountPatch({ first: "Mallory", last: "Evil", nickname: "Rahi", company_name: "Az. Agr. X", phone: "333 1234567" }, farmer).patch;
+    check("name and surname can never be in the patch once the account has them", !("first_name" in forged) && !("last_name" in forged));
+    const legacy = a.buildAccountPatch({ first: "Rahul", last: "Sharma" }, { first_name: "Rahul" }).patch;
+    check("an older account without a surname may set it once (and its first name stays out of the patch)", legacy.last_name === "Sharma" && !("first_name" in legacy));
+    check("an account with no name at all needs both", a.buildAccountPatch({ first: "Rahul", last: "" }, {}).errKey === "auth.needName" && a.buildAccountPatch({ first: "Rahul", last: "Sharma" }, {}).patch.first_name === "Rahul");
+    check("the server's own nickname limit is respected", a.buildAccountPatch({ nickname: "n".repeat(90) }, {}).patch.nickname.length === 40);
+
+    a.state.farmerId = "u1"; a.state.farmerProfile = farmer; a.state.email = "r@x.it";
+    els.accountBody = fakeEl("accountBody"); els.accountSubtitle = fakeEl("accountSubtitle"); els.accountSheet = fakeEl("accountSheet");
+    els.accountSaveBtn = fakeEl("accountSaveBtn"); els.acErr = fakeEl("acErr"); els.acNick = fakeEl("acNick"); els.acCompany = fakeEl("acCompany");
+    els.acVat = fakeEl("acVat"); els.acPhone = fakeEl("acPhone"); els.acAddress = fakeEl("acAddress"); els.whoName = fakeEl("whoName");
+    a.openAccountSheet();
+    check("the sheet shows name and surname as plain text, not inputs, when the account has them",
+      els.accountBody.innerHTML.includes("acct-readonly") && !els.accountBody.innerHTML.includes('id="acFirst"') && els.accountBody.innerHTML.includes('id="acNick"'));
+    els.acNick.value = "Rahi2"; els.acCompany.value = "Az. Agr. X"; els.acPhone.value = "333 1234567"; els.acVat.value = ""; els.acAddress.value = "";
+    sb.reset(); sb.router = () => ({ data: { nickname: "Rahi2" }, error: null });
+    await a.saveAccount();
+    const uq = sb.chains.find(x => x.table === "farmers"), up = uq && uq.ops.find(o => o.op === "update");
+    check("saving updates the signed-in person's own row with just the changed column",
+      up && JSON.stringify(Object.keys(up.args[0])) === '["nickname"]' && uq.ops.some(o => o.op === "eq" && o.args[1] === "u1") && a.state.farmerProfile.nickname === "Rahi2" && els.whoName.textContent === "RAHI2");
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "denied" } });
+    els.acNick.value = "Other";
+    await a.saveAccount();
+    check("a refused save keeps the sheet's error visible and the local account unchanged", els.acErr.style.display === "block" && a.state.farmerProfile.nickname === "Rahi2");
+
+    // menu
+    els.profileMenu = fakeEl("profileMenu"); els.profileBtn = fakeEl("profileBtn");
+    els.profileMenu.querySelectorAll = () => []; els.profileMenu.hidden = true; els.profileBtn.attrs["aria-expanded"] = "false";
+    a.setProfileMenu(true);
+    check("opening the menu shows it and sets aria-expanded", a.profileMenuOpen() && els.profileBtn.getAttribute("aria-expanded") === "true");
+    check("Escape closes it", a.profileMenuKey({ key: "Escape" }) === true && !a.profileMenuOpen() && els.profileBtn.getAttribute("aria-expanded") === "false");
+    a.setProfileMenu(true); a.profileMenuKey({ key: "Tab" });
+    check("Tab leaves and closes it", !a.profileMenuOpen());
+    // logout: no browser dialog, signs out through the data layer
+    sb.reset();
+    const reloads = []; 
+    await a.signOutNow();
+    check("log out signs out through Supabase auth", sb.authCalls.some(c => c.fn === "signOut"));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

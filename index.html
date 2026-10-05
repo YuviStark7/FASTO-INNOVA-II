@@ -195,9 +195,17 @@
            renderBell() is its writer, the way renderDashboard() writes #researchEmpty.
            The badge is aria-hidden because that label already says the number. -->
       <button class="icon-btn role-farmer" id="bellBtn" title="Drafts ready" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""><span class="bell-badge" id="bellCount" aria-hidden="true" style="display:none">0</span></button>
-      <button class="icon-btn" id="profileBtn" title="Restart / change mode" data-i18n-title="top.profileTitle" data-i18n-aria="top.profileTitle" aria-label="Restart / change mode" style="padding:0;overflow:hidden">
-        <img src="assets/avatar-profile.png" alt="" style="width:100%;height:100%;object-fit:cover">
-      </button>
+      <!-- The avatar opens a small menu (Edit profile, Log out). aria-expanded
+           is kept in step by setProfileMenu() in app.js. -->
+      <div class="avatar-wrap" id="avatarWrap">
+        <button class="icon-btn" id="profileBtn" title="Account menu" data-i18n-title="top.profileTitle" data-i18n-aria="top.profileTitle" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" aria-controls="profileMenu" style="padding:0;overflow:hidden">
+          <img src="assets/avatar-profile.png" alt="" style="width:100%;height:100%;object-fit:cover">
+        </button>
+        <div class="avatar-menu" id="profileMenu" role="menu" aria-labelledby="profileBtn" hidden>
+          <button type="button" role="menuitem" id="menuEditProfile" data-i18n="menu.edit">Edit profile</button>
+          <button type="button" role="menuitem" id="menuLogout" data-i18n="menu.logout">Log out</button>
+        </div>
+      </div>
     </header>
 
     <!-- ---------- DASHBOARD ---------- -->
@@ -381,6 +389,26 @@
     <div class="match-panel-foot lg-foot">
       <button class="btn btn-primary" id="profileSaveBtn" data-i18n="profile.save">Save changes</button>
       <span data-i18n="profile.foot">Saved to your account and used to work your matches out again. Nothing here is sent to a buyer.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- EDIT PROFILE (account) ----------
+     Fifth body-level sheet, same chrome as the others. Contact details and
+     nickname only; name and surname are shown but cannot be changed. -->
+<div id="accountSheet">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+    <div class="match-panel-head">
+      <div style="min-width:0;flex:1">
+        <span class="title-md" id="accountTitle" data-i18n="acct.title">Edit profile</span>
+        <div class="foot" id="accountSubtitle"></div>
+      </div>
+      <button class="icon-btn" id="accountCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="match-panel-body" id="accountBody"></div>
+    <div class="match-panel-foot lg-foot">
+      <button class="btn btn-primary" id="accountSaveBtn" data-i18n="acct.save">Save changes</button>
+      <span data-i18n="acct.foot">Used to fill in logistics requests for you. Never shown to buyers.</span>
     </div>
   </div>
 </div>

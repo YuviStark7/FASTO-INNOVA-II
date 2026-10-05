@@ -892,7 +892,7 @@ async function finishWithRecs(recs, chat) {
    profile editor from the match sheet closes the match sheet on the way, so
    "put me back where I was" has to mean the button that started all of it, not
    a control inside a panel that has since been torn down and rebuilt. */
-const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet"];
+const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet"];
 const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let sheetStack = [];
 let sheetReturnFocus = null;
@@ -974,6 +974,7 @@ function closeTopSheet() {
   if (id === "matchSheet") closeMatchView();
   else if (id === "logisticsSheet") closeLogistics();
   else if (id === "exportSheet") closeExportSheet();
+  else if (id === "accountSheet") closeAccountSheet();
   else closeProfileEdit();
   return true;
 }
@@ -2324,6 +2325,128 @@ function saveProfileEdit() {
   if (profileReopenMatch) openMatchView(chat.id);
 }
 
+/* ---------- Account: nickname and contact details ----------
+   Reached from the avatar menu. Name and surname are asked once at sign-up and
+   are shown here but cannot be changed (the database refuses it too). An older
+   account that has none may enter them once. Everything else here is optional
+   contact detail, saved to the account and used only to fill in logistics
+   requests; buyers never see it. */
+const ACCOUNT_FIELD_MAX = { company_name: 120, vat_number: 40, address: 200, phone: 25 };
+const PHONE_RE = /^[0-9+()\-.\s]{6,25}$/;
+// Form -> patch of ONLY what changed, or the key of what is wrong. Pure.
+function buildAccountPatch(form, farmer) {
+  farmer = farmer || {};
+  const norm = v => { const t = String(v == null ? "" : v).trim(); return t === "" ? null : t; };
+  const patch = {};
+  const nick = norm(form.nickname); const curNick = norm(farmer.nickname);
+  if (nick !== curNick) patch.nickname = nick == null ? null : nick.slice(0, NICK_MAX);
+  Object.keys(ACCOUNT_FIELD_MAX).forEach(k => {
+    const v = norm(form[k]);
+    if (v !== norm(farmer[k])) patch[k] = v == null ? null : v.slice(0, ACCOUNT_FIELD_MAX[k]);
+  });
+  if (patch.phone && !PHONE_RE.test(patch.phone)) return { ok: false, errKey: "acct.err.phone" };
+  // Name and surname: only while the account has none, and only both together.
+  const needsName = !norm(farmer.first_name) || !norm(farmer.last_name);
+  if (needsName && (norm(form.first) || norm(form.last))) {
+    const nv = validateSignupNames({ first: form.first || farmer.first_name, last: form.last || farmer.last_name });
+    if (!nv.ok) return { ok: false, errKey: nv.errKey };
+    if (!norm(farmer.first_name)) patch.first_name = nv.names.first;
+    if (!norm(farmer.last_name)) patch.last_name = nv.names.last;
+  }
+  return { ok: true, patch };
+}
+function openAccountSheet() {
+  const f = state.farmerProfile || {};
+  const n = accountNames();
+  const needsName = !n.first || !n.last;
+  const sub = $("accountSubtitle"); if (sub) sub.textContent = state.email || "";
+  const nameFields = needsName
+    ? `${lgField("acFirst", T("auth.first"), n.first || n.legacy, { req: true })}${lgField("acLast", T("auth.last"), n.last, { req: true })}
+       <p class="acct-note wide">${esc(T("acct.nameOnce"))}</p>`
+    : `<div class="lg-field"><label>${esc(T("auth.first"))}</label><div class="acct-readonly">${esc(n.first)}</div></div>
+       <div class="lg-field"><label>${esc(T("auth.last"))}</label><div class="acct-readonly">${esc(n.last)}</div></div>
+       <p class="acct-note wide">${esc(T("acct.nameLocked"))}</p>`;
+  $("accountBody").innerHTML = `
+    <div class="lg-section">
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("acct.you"))}</span></div>
+      <div class="lg-grid">
+        ${nameFields}
+        ${lgField("acNick", T("auth.nick"), f.nickname || "", { ph: T("auth.nickPh") })}
+      </div>
+    </div>
+    <div class="lg-section">
+      <div class="lg-section-head"><span class="eyebrow">${esc(T("acct.contact"))}</span></div>
+      <div class="lg-grid">
+        ${lgField("acCompany", T("logi.farmName"), f.company_name || "")}
+        ${lgField("acVat", T("logi.vat"), f.vat_number || "")}
+        ${lgField("acPhone", T("logi.phone"), f.phone || "", { type: "tel" })}
+        ${lgField("acAddress", T("acct.address"), f.address || "", { wide: true })}
+      </div>
+    </div>
+    <div class="err-banner" id="acErr" role="alert"></div>`;
+  const btn = $("accountSaveBtn"); if (btn) { btn.disabled = false; btn.textContent = T("acct.save"); }
+  openSheet("accountSheet");
+}
+function closeAccountSheet() { closeSheet("accountSheet"); }
+function showAccountError(key) { const el = $("acErr"); if (el) { el.textContent = T(key); el.style.display = "block"; } }
+async function saveAccount() {
+  const val = id => { const el = $(id); return el ? el.value : undefined; };
+  const res = buildAccountPatch({ first: val("acFirst"), last: val("acLast"), nickname: val("acNick"),
+    company_name: val("acCompany"), vat_number: val("acVat"), phone: val("acPhone"), address: val("acAddress") }, state.farmerProfile);
+  const err = $("acErr"); if (err) err.style.display = "none";
+  if (!res.ok) { showAccountError(res.errKey); return; }
+  if (!Object.keys(res.patch).length) { closeAccountSheet(); toast(T("acct.nothingChanged")); return; }
+  const btn = $("accountSaveBtn"); if (btn) btn.disabled = true;
+  try {
+    const { data, error } = await DataStore.updateMyAccount(state.farmerId, res.patch);
+    if (error) throw error;
+    state.farmerProfile = Object.assign({}, state.farmerProfile, data || res.patch);
+    updateHeaderIdentity();
+    closeAccountSheet();
+    toast(T("acct.saved"));
+  } catch (e) {
+    console.error("account save failed", e);
+    showAccountError("acct.err.save");
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ---------- The avatar menu ----------
+   First dropdown in the app. One open at a time, closes on Escape (focus goes
+   back to the avatar), on a click anywhere else, and when focus leaves it;
+   Up/Down/Home/End move between its two items. */
+function profileMenuOpen() { const m = $("profileMenu"); return !!(m && !m.hidden); }
+function setProfileMenu(open, returnFocus) {
+  const m = $("profileMenu"), b = $("profileBtn"); if (!m || !b) return;
+  m.hidden = !open;
+  b.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) { const first = m.querySelector("button"); if (first && first.focus) first.focus(); }
+  else if (returnFocus && b.focus) b.focus();
+}
+function profileMenuKey(e) {
+  const m = $("profileMenu"); if (!m || m.hidden) return false;
+  const items = Array.prototype.slice.call(m.querySelectorAll("button"));
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") { setProfileMenu(false, true); return true; }
+  if (e.key === "ArrowDown") { items[(i + 1) % items.length].focus(); e.preventDefault(); return true; }
+  if (e.key === "ArrowUp") { items[(i - 1 + items.length) % items.length].focus(); e.preventDefault(); return true; }
+  if (e.key === "Home") { items[0].focus(); e.preventDefault(); return true; }
+  if (e.key === "End") { items[items.length - 1].focus(); e.preventDefault(); return true; }
+  if (e.key === "Tab") { setProfileMenu(false); return false; }
+  return false;
+}
+async function signOutNow() {
+  let signedOut = true;
+  try { const r = await DataStore.signOut(); if (r && r.error) throw r.error; }
+  catch (e) { console.error("sign out failed", e); signedOut = false; }
+  localStorage.removeItem("fasto_key");
+  if (signedOut) { location.reload(); return; }
+  // The browser session survived, so reloading now walks straight back in.
+  // Say so rather than pretending it worked, and leave the words on screen.
+  toast(T("top.signOutFailed"));
+  setTimeout(() => location.reload(), 2600);
+}
+
 /* ---------- dormant: WhatsApp hand-off ----------
    The "Open in WhatsApp" button was removed from the thread on 2026-08-26.
    The point of Fasto Innova is that the deal is arranged *here* — the AI has
@@ -3519,19 +3642,16 @@ function boot() {
      sometimes does nothing at all is a worse bell than a quiet one. */
   $("bellBtn").onclick = () => { const n = draftCount(state.clients); switchScreen("clients"); if (n) toast(T("top.draftsReady", { n })); };
 
-  // Avatar -> sign out (data stays in the account; this just clears the local view)
-  $("profileBtn").onclick = async () => {
-    if (!confirm(T("top.signOutConfirm"))) return;
-    let signedOut = true;
-    try { const r = await DataStore.signOut(); if (r && r.error) throw r.error; }
-    catch (e) { console.error("sign out failed", e); signedOut = false; }
-    localStorage.removeItem("fasto_key");
-    if (signedOut) { location.reload(); return; }
-    // The browser session survived, so reloading now walks straight back in.
-    // Say so rather than pretending it worked, and leave the words on screen.
-    toast(T("top.signOutFailed"));
-    setTimeout(() => location.reload(), 2600);
-  };
+  // Avatar -> menu: Edit profile / Log out (data stays in the account either way)
+  $("profileBtn").onclick = () => setProfileMenu(!profileMenuOpen());
+  $("menuEditProfile").onclick = () => { setProfileMenu(false, true); openAccountSheet(); };
+  $("menuLogout").onclick = () => { setProfileMenu(false); signOutNow(); };
+  document.addEventListener("click", e => {
+    if (profileMenuOpen() && $("avatarWrap") && !$("avatarWrap").contains(e.target)) setProfileMenu(false);
+  });
+  $("accountCloseBtn").onclick = () => closeAccountSheet();
+  $("accountSaveBtn").onclick = () => saveAccount();
+  $("accountSheet").addEventListener("click", e => { if (e.target === $("accountSheet")) closeAccountSheet(); });
 
   $("researchSeeAll").onclick = () => { state.showAllResearch = !state.showAllResearch; renderDashboard(); };
 
@@ -3552,6 +3672,7 @@ function boot() {
      profile also closed the match sheet waiting behind it. Tab is held inside
      whichever sheet is on top — see trapSheetTab(). */
   document.addEventListener("keydown", e => {
+    if (profileMenuOpen() && profileMenuKey(e)) return;
     if (e.key === "Escape") { closeTopSheet(); return; }
     if (e.key === "Tab") trapSheetTab(e);
   });
