@@ -572,15 +572,15 @@
 .biz-cover-3{ background:linear-gradient(135deg,#1c1414 0%,#962524 100%); }
 /* The text column starts BELOW the cover (the badge alone overlaps it), and every
    section underneath lines up with the left edge of the name. */
-.biz-outer{ --biz-gap:18px; --biz-badge:112px; --biz-indent:calc(18px + var(--biz-badge) + var(--biz-gap)); }
-.biz-head{ display:flex; align-items:flex-start; gap:var(--biz-gap); margin:-56px 0 6px 18px; }
+.biz-outer{ --biz-pad-r:36px; --biz-gap:18px; --biz-badge:112px; --biz-indent:calc(18px + var(--biz-badge) + var(--biz-gap)); }
+.biz-head{ display:flex; align-items:flex-start; gap:var(--biz-gap); margin:-56px var(--biz-pad-r) 6px 18px; }
 .biz-avatar{ flex:0 0 var(--biz-badge); width:var(--biz-badge); height:var(--biz-badge); border-radius:50%; border:4px solid #fff; background:#241a19; color:#fff;
   display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:800; letter-spacing:.02em; }
-.biz-id{ min-width:0; padding-top:68px; }
+.biz-id{ min-width:0; padding-top:84px; }   /* a clear gap under the cover */
 .biz-name{ margin:0; font-size:28px; line-height:1.1; text-transform:uppercase; overflow-wrap:anywhere; }
 .biz-sub{ font-size:13px; text-transform:uppercase; letter-spacing:.03em; margin-top:4px; }
-.biz-note{ margin:12px 0 0 var(--biz-indent); }
-.biz-sec{ margin:16px 0 0 var(--biz-indent); padding:6px 0 4px; }
+.biz-note{ margin:16px var(--biz-pad-r) 0 var(--biz-indent); }
+.biz-sec{ margin:16px var(--biz-pad-r) 0 var(--biz-indent); padding:6px 0 4px; }
 .biz-sec h3{ margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; }
 .biz-chips{ display:flex; flex-wrap:wrap; gap:2px 4px; }
 .chip-toggle{ background:none; border:0; border-radius:8px; padding:8px 10px; font-family:var(--font); font-size:12.5px; font-weight:600;
@@ -617,11 +617,11 @@
   .biz-outer{ flex-direction:column; }
   .biz-left, .biz-right{ flex:none; }
   .biz-statrow{ grid-template-columns:1fr 1fr; }
-  .biz-outer{ --biz-gap:12px; --biz-badge:88px; --biz-indent:0px; }
+  .biz-outer{ --biz-pad-r:0px; --biz-gap:12px; --biz-badge:88px; --biz-indent:0px; }
   .biz-name{ font-size:22px; }
   .biz-avatar{ font-size:26px; }
   .biz-head{ margin-top:-44px; }
-  .biz-id{ padding-top:52px; }
+  .biz-id{ padding-top:60px; }
 }
 
 /* ================= BUYER INBOX (same chrome as Clients) + DETAILS PANEL ================= */
