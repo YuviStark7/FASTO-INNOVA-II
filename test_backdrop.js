@@ -79,7 +79,9 @@ check("both layers start transparent — the .backdrop-layer rule parsed and won
 // stylesheet text instead (qa_check.js checks the same numbers on every run).
 check("the scrim overlay is above both layers",
   /#main::after\{[^}]*z-index:\s*2/.test(css.replace(/\s+/g, " ")));
-check("the topbar is above the scrim", Number(cs(topbar).zIndex) === 3, cs(topbar).zIndex);
+// Above the scrim (2). It is higher than the screens on purpose so the avatar menu
+// that hangs out of it is not painted over (see #main > #topbar in css/app.css).
+check("the topbar is above the scrim", Number(cs(topbar).zIndex) > 2, cs(topbar).zIndex);
 
 console.log("== one photo visible at a time, across a full cycle and beyond ==");
 t.showBackdrop();

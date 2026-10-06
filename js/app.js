@@ -3629,22 +3629,26 @@ function viewStats(series) {
   const week = sum(series.slice(-7)), prev = sum(series.slice(-14, -7));
   return { total: sum(series), week, prev, changePct: prev > 0 ? Math.round(100 * (week - prev) / prev) : null };
 }
-function viewGraphSVG(series) {
-  const W = 640, H = 240, L = 36, R = 14, Tp = 16, B = 30;
-  const max = Math.max(1, ...series.map(p => p.count));
-  const x = i => L + (series.length > 1 ? i * (W - L - R) / (series.length - 1) : 0);
-  const y = c => Tp + (H - Tp - B) * (1 - c / max);
-  const pts = series.map((p, i) => x(i).toFixed(1) + "," + y(p.count).toFixed(1)).join(" ");
+/* The graph: an SVG that holds only the grid and the line (drawn in a 0-100 box and
+   stretched to fit, which is harmless for lines), with the numbers and dates as
+   ordinary HTML beside and under it so they are never stretched. */
+function viewGraphHTML(series) {
+  const max = Math.max(1, ...series.map(p => p.count)), mid = Math.ceil(max / 2);
+  const TOP = 5, BOT = 95;
+  const x = i => (series.length > 1 ? i * 100 / (series.length - 1) : 0);
+  const y = c => BOT - (BOT - TOP) * (c / max);
+  const pts = series.map((p, i) => x(i).toFixed(2) + "," + y(p.count).toFixed(2)).join(" ");
   const st = viewStats(series);
   const label = T("biz.graphAria", { total: st.total, week: st.week });
-  const ticks = [0, Math.ceil(max / 2), max].filter((v, i, a) => a.indexOf(v) === i)
-    .map(v => `<text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="gr-t">${v}</text><line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gr-g"/>`).join("");
-  return `<svg class="biz-graph" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escAttr(label)}" preserveAspectRatio="none">
-    ${ticks}
-    <polyline points="${pts}" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-    <text x="${L}" y="${H - 8}" class="gr-t">${esc(series[0].date.slice(5))}</text>
-    <text x="${W - R}" y="${H - 8}" text-anchor="end" class="gr-t">${esc(series[series.length - 1].date.slice(5))}</text>
-  </svg>`;
+  const levels = [0, mid, max].filter((v, i, arr) => arr.indexOf(v) === i);
+  const grid = levels.map(v => `<line x1="0" x2="100" y1="${y(v).toFixed(2)}" y2="${y(v).toFixed(2)}" class="gr-g"/>`).join("");
+  const ylabels = levels.map(v => `<span style="top:${y(v).toFixed(2)}%">${v}</span>`).join("");
+  return `<div class="biz-plotwrap" role="img" aria-label="${escAttr(label)}">
+    <div class="biz-plotrow"><div class="plot-y" aria-hidden="true">${ylabels}</div>
+      <svg class="biz-graph" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${grid}
+        <polyline points="${pts}" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg></div>
+    <div class="plot-x" aria-hidden="true"><span>${esc(series[0].date.slice(5))}</span><span>${esc(series[series.length - 1].date.slice(5))}</span></div>
+  </div>`;
 }
 async function loadBizViews() {
   state.bizViews = []; const biz = myBusiness(); if (!biz) return;
@@ -3750,7 +3754,7 @@ function bizStatsHTML() {
       <div class="biz-stat"><h3>${esc(T("biz.statViews"))}</h3><b>${st.week}</b><span>${esc(change)}</span></div>
       <div class="biz-stat"><h3>${esc(T("biz.statConvos"))}</h3><b>${inbox.length}</b><span>${esc(T("biz.unreadSub", { n: unread }))}</span></div>
     </div>
-    <div class="biz-stat biz-graphcard"><h3>${esc(T("biz.graphTitle"))}</h3>${viewGraphSVG(series)}
+    <div class="biz-stat biz-graphcard"><h3>${esc(T("biz.graphTitle"))}</h3>${viewGraphHTML(series)}
       <p class="foot">${esc(st.total ? T("biz.viewsNote") : T("biz.noViews"))}</p></div>`;
 }
 

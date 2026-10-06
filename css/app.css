@@ -562,7 +562,7 @@
 /* ================= MY BUSINESS (buyer landing): profile window + stats window ================= */
 .biz-outer{ flex:1; min-height:0; display:flex; gap:14px; overflow-y:auto; }
 .biz-window{ border-radius:var(--radius-lg); padding:16px; min-width:0; overflow-y:auto; }
-.biz-left{ flex:1.25; }
+.biz-left{ flex:1.25; display:flex; flex-direction:column; }
 .biz-right{ flex:1; display:flex; flex-direction:column; gap:14px; }
 .biz-single{ flex:1; }
 .biz-cover{ height:150px; border-radius:var(--radius-md); }
@@ -570,14 +570,17 @@
 .biz-cover-1{ background:linear-gradient(135deg,#d9a441 0%,#5a2a14 100%); }
 .biz-cover-2{ background:linear-gradient(135deg,#5a2a14 0%,#962524 60%,#1c1414 100%); }
 .biz-cover-3{ background:linear-gradient(135deg,#1c1414 0%,#962524 100%); }
-.biz-head{ display:flex; align-items:flex-end; gap:18px; margin:-56px 0 6px 18px; }
-.biz-avatar{ flex:0 0 112px; width:112px; height:112px; border-radius:50%; border:4px solid #fff; background:#241a19; color:#fff;
+/* The text column starts BELOW the cover (the badge alone overlaps it), and every
+   section underneath lines up with the left edge of the name. */
+.biz-outer{ --biz-gap:18px; --biz-badge:112px; --biz-indent:calc(18px + var(--biz-badge) + var(--biz-gap)); }
+.biz-head{ display:flex; align-items:flex-start; gap:var(--biz-gap); margin:-56px 0 6px 18px; }
+.biz-avatar{ flex:0 0 var(--biz-badge); width:var(--biz-badge); height:var(--biz-badge); border-radius:50%; border:4px solid #fff; background:#241a19; color:#fff;
   display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:800; letter-spacing:.02em; }
-.biz-id{ min-width:0; padding-bottom:6px; }
+.biz-id{ min-width:0; padding-top:68px; }
 .biz-name{ margin:0; font-size:28px; line-height:1.1; text-transform:uppercase; overflow-wrap:anywhere; }
 .biz-sub{ font-size:13px; text-transform:uppercase; letter-spacing:.03em; margin-top:4px; }
-.biz-note{ margin:12px 0; }
-.biz-sec{ margin-top:16px; padding:6px 0 4px 4px; }
+.biz-note{ margin:12px 0 0 var(--biz-indent); }
+.biz-sec{ margin:16px 0 0 var(--biz-indent); padding:6px 0 4px; }
 .biz-sec h3{ margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; }
 .biz-chips{ display:flex; flex-wrap:wrap; gap:2px 4px; }
 .chip-toggle{ background:none; border:0; border-radius:8px; padding:8px 10px; font-family:var(--font); font-size:12.5px; font-weight:600;
@@ -589,7 +592,9 @@
 .seg{ background:none; border:0; border-radius:8px; padding:10px 18px; color:var(--ink-70); font-family:var(--font); font-size:12.5px; font-weight:700;
   text-transform:uppercase; letter-spacing:.04em; cursor:pointer; }
 .seg.on{ background:var(--red); color:#fff; }
-.biz-savebar{ position:sticky; bottom:-16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:18px -16px -16px; padding:12px 16px;
+/* margin-top:auto pins it to the bottom of the window when the content is short;
+   sticky keeps it in view when the content is long. */
+.biz-savebar{ position:sticky; bottom:-16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:auto -16px -16px; padding:12px 16px;
   background:rgba(0,0,0,.85); border-top:1px solid var(--hairline); border-radius:0 0 var(--radius-lg) var(--radius-lg); }
 .biz-savebar[hidden]{ display:none; }
 .biz-savebar > span{ flex:1; font-size:13px; }
@@ -599,16 +604,24 @@
 .biz-stat b{ font-size:34px; line-height:1; }
 .biz-stat span{ font-size:13px; color:var(--ink-70); }
 .biz-graphcard{ flex:1; min-height:260px; }
-.biz-graph{ width:100%; flex:1; min-height:170px; }
-.gr-t{ fill:#c9bfbe; font-size:11px; font-family:var(--font); }
-.gr-g{ stroke:rgba(255,255,255,.14); stroke-width:1; }
+/* The plot is an SVG with no text in it (text inside a stretched SVG is stretched too);
+   the numbers are ordinary HTML laid over the same box. */
+.biz-plotwrap{ flex:1; min-height:190px; display:flex; flex-direction:column; gap:6px; }
+.biz-plotrow{ flex:1; min-height:0; display:flex; gap:8px; }
+.plot-y{ position:relative; width:30px; flex:0 0 30px; }
+.plot-y span{ position:absolute; right:0; transform:translateY(-50%); font-size:11px; color:#c9bfbe; }
+.biz-graph{ flex:1; min-width:0; height:100%; }
+.plot-x{ display:flex; justify-content:space-between; margin-left:38px; font-size:11px; color:#c9bfbe; }
+.gr-g{ stroke:rgba(255,255,255,.16); stroke-width:1; vector-effect:non-scaling-stroke; }
 @media (max-width:900px){
   .biz-outer{ flex-direction:column; }
   .biz-left, .biz-right{ flex:none; }
   .biz-statrow{ grid-template-columns:1fr 1fr; }
+  .biz-outer{ --biz-gap:12px; --biz-badge:88px; --biz-indent:0px; }
   .biz-name{ font-size:22px; }
-  .biz-avatar{ flex-basis:88px; width:88px; height:88px; font-size:26px; }
-  .biz-head{ margin-top:-44px; gap:12px; }
+  .biz-avatar{ font-size:26px; }
+  .biz-head{ margin-top:-44px; }
+  .biz-id{ padding-top:52px; }
 }
 
 /* ================= BUYER INBOX (same chrome as Clients) + DETAILS PANEL ================= */
