@@ -126,6 +126,13 @@ const DataStore = {
   // the caller and the first message is sent next.
   createInquiry(row) { return sb.from("outreach").insert(row); },
 
+  /* ---------- profile views (My business) ----------
+     A farmer opening a business counts as one view per farmer per day (unique
+     index). viewer_id can be written but never read back by anyone, so an owner
+     sees counts only; that is why the read names its columns. */
+  logBuyerView(buyerId, viewerId) { return sb.from("buyer_views").insert({ buyer_id: buyerId, viewer_id: viewerId }); },
+  listMyBusinessViews(buyerId, sinceDay) { return sb.from("buyer_views").select("viewed_on").eq("buyer_id", buyerId).gte("viewed_on", sinceDay); },
+
   /* ---------- admin (RLS returns every farmer's rows once is_admin=true) ---------- */
   listAllFarmers() { return sb.from("farmers").select("*").order("created_at", { ascending: false }); },
   listAllChats() { return sb.from("chats").select("*").order("updated_at", { ascending: false }); },

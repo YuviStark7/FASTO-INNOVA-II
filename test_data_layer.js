@@ -80,7 +80,7 @@ function makeFakeSupabase() {
       const chain = { table, ops: [] };
       chains.push(chain);
       const api = { chain };
-      for (const op of ["select", "insert", "update", "delete", "eq", "order", "single", "maybeSingle", "in", "limit", "is"]) {
+      for (const op of ["select", "insert", "update", "delete", "eq", "order", "single", "maybeSingle", "in", "limit", "is", "gte"]) {
         api[op] = (...args) => { chain.ops.push({ op, args }); return api; };
       }
       // Awaiting the chain is what "sends" it.
@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, matchingOffers, buyerDashboardHTML, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, renderBuyerHome, inboxTitle, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphSVG, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2073,31 +2073,33 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     const r2 = a.rankMatches(prof, { buyers: [Object.assign({}, base, { declared_by_buyer: true, needs: ["vino"] })], channels: [] }, 6)[0];
     check("a declaring buyer that overlaps ranks 5 higher; one that does not overlap gets no bonus",
       r1.score - r0.score === 5 && r1.declared_by_buyer === true && r2.score < r0.score && r1.reasons.includes("This business confirmed what it buys"), [r0.score, r1.score, r2.score].join());
-    // saving
+    // saving, from the editable profile
     const biz = a.DB.buyers[0];
     a.state.claims = [{ status: "approved", buyer_id: biz.id }];
-    els.buyerBusinessBody = fakeEl("buyerBusinessBody"); els.bpErr = fakeEl("bpErr"); els.bpSave = fakeEl("bpSave"); els.bpVolume = fakeEl("bpVolume");
-    els.bpVolume.value = "high";
-    const realQSA = doc.querySelectorAll;
-    doc.querySelectorAll = sel => sel.includes("bpNeed") ? [{ value: "olio" }, { value: "uova" }] : sel.includes("bpQual") ? [{ value: "km0" }] : [];
+    els.buyerBusinessBody = fakeEl("buyerBusinessBody"); els.bpErr = fakeEl("bpErr"); els.bpSave = fakeEl("bpSave"); els.bizSaveBar = fakeEl("bizSaveBar");
+    a.renderBuyerBusiness();
+    const fresh = a.bizDraft;
+    check("the page starts from the business's current values and is not dirty", a.bizDirty(a.bizDraft, biz) === false);
+    a.bizDraft.needs = ["olio", "uova"]; a.bizDraft.volume = "high"; a.bizDraft.quality_focus = ["km0"];
+    check("changing a chip makes it dirty", a.bizDirty(a.bizDraft, biz) === true);
     sb.reset(); sb.router = () => ({ data: {}, error: null });
-    await a.saveBuyerProfile();
+    await a.saveBizDraft();
     const uc = sb.chains.find(x => x.table === "buyers");
     const upd = uc && uc.ops.find(o => o.op === "update");
     check("saving writes only the declarable columns, to the owner's own row",
       upd && JSON.stringify(Object.keys(upd.args[0]).sort()) === JSON.stringify(["declared_at", "declared_by_buyer", "needs", "quality_focus", "volume"]) &&
       uc.ops.some(o => o.op === "eq" && o.args[0] === "id" && o.args[1] === biz.id) && upd.args[0].declared_by_buyer === true);
-    check("and this session's listing now carries the declared values", biz.declared_by_buyer === true && biz.volume === "high" && biz.needs.join() === "olio,uova");
+    check("and this session's listing now carries the declared values, and the page is clean again", biz.declared_by_buyer === true && biz.volume === "high" && biz.needs.join() === "olio,uova" && a.bizDraft && a.bizDraft.volume === "high" && !a.bizDirty(a.bizDraft, biz));
+    a.renderBuyerBusiness();
+    a.bizDraft.volume = "medium";
     sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
-    biz.volume = "low";
-    els.bpVolume.value = "medium";
-    await a.saveBuyerProfile();
-    check("a refused save changes nothing locally", biz.volume === "low");
-    doc.querySelectorAll = () => [];
-    sb.reset(); await a.saveBuyerProfile();
-    check("an empty form is stopped before the database is touched", sb.chains.length === 0);
-    check("declared values are escaped on the page", !a.buyerDeclaredHTML({ needs: ["<img src=x>"], volume: "low", quality_focus: ["<svg>"] }).match(/<img|<svg/));
-    doc.querySelectorAll = realQSA;
+    await a.saveBizDraft();
+    check("a refused save changes nothing locally and keeps what the buyer was typing", biz.volume === "high" && a.bizDraft && a.bizDraft.volume === "medium");
+    a.bizDraft.needs = [];
+    sb.reset(); await a.saveBizDraft();
+    check("an empty selection is stopped before the database is touched", sb.chains.length === 0 && els.bpErr.style.display === "block");
+    check("business names are escaped on the profile", !a.bizProfileHTML(Object.assign({}, biz, { name: "<img src=x>" })).match(/<img src/));
+    a.bizDraft = null;
   }
 
   /* ---- ROADMAP item 29: offers and buyer browse ---- */
@@ -2165,27 +2167,68 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("offer cards escape what the farmer typed", !a.offerCardHTML({ id: "x", village: "<img src=x>", products: [{ name: "<svg>", kg_per_week: 1 }], months: [] }).match(/<img|<svg/));
   }
 
-  /* ---- ROADMAP item 30: buyer dashboard ---- */
+  /* ---- My business landing page: chips, views, stats ---- */
   {
-    const a = app, now = Date.parse("2026-10-20T00:00:00Z");
-    const offers = [
-      { id: "n1", created_at: "2026-10-18T00:00:00Z", products: [{ category: "olio" }] },
-      { id: "o2", created_at: "2026-08-01T00:00:00Z", products: [{ category: "olio" }] },
-      { id: "n3", created_at: "2026-10-19T00:00:00Z", products: [{ category: "vino" }] }];
-    const declared = { declared_by_buyer: true, needs: ["olio"], volume: "low", quality_focus: ["km0"] };
-    check("matching offers: recent, selling something declared, nothing else",
-      a.matchingOffers(offers, declared, now).map(o => o.id).join() === "n1");
-    check("an undeclared (inferred) profile matches nothing: a guess is not a request",
-      a.matchingOffers(offers, { needs: ["olio"], declared_by_buyer: false }, now).length === 0 && a.matchingOffers(offers, null, now).length === 0);
-    a.state.inbox = [{ id: "t1", ts: 1, summary: { village: "Atina", products: [{ name: "olio" }] }, messages: [{ role: "farmer", text: "Ciao", ts: 1, readAt: null }] },
-      { id: "t2", ts: 2, summary: null, messages: [{ role: "farmer", text: "Salve", ts: 2, readAt: "t" }] }];
-    a.state.offerFeed = offers.map(o => Object.assign({ village: "Atina" }, o, { created_at: new Date().toISOString() }));
-    const html = a.buyerDashboardHTML(declared);
-    check("the dashboard is a table of conversations with the three numbers as cards underneath, and no profile-completion block",
-      html.indexOf("<table") < html.indexOf("stat-row") && /<b>2<\/b><span>Conversations/.test(html) && /<b>1<\/b><span>Unread/.test(html) && /<b>2<\/b><span>New offers matching/.test(html) && !/progressbar|Profile \d+%/.test(html) && html.includes("Atina") && html.includes("olio"), html.slice(0, 300));
-    check("the dashboard escapes the farmer's village", !a.buyerDashboardHTML(declared).replace(/<[^>]*>/g, "").includes("<") );
-    check("an undeclared buyer is asked to declare instead of shown a zero without explanation",
-      a.buyerDashboardHTML({ needs: ["olio"] }).includes("Tell us what you buy"));
+    const a = app;
+    const biz = a.DB.buyers[1];
+    a.state.claims = [{ status: "approved", buyer_id: biz.id }];
+    a.bizDraft = null; a.state.inbox = [{ id: "t1", messages: [{ role: "farmer", text: "x", ts: 1, readAt: null }] }]; a.state.bizViews = [];
+    els.buyerBusinessBody = fakeEl("buyerBusinessBody"); els.bizSaveBar = fakeEl("bizSaveBar"); els.bpErr = fakeEl("bpErr");
+    a.renderBuyerBusiness();
+    const html = els.buyerBusinessBody.innerHTML;
+    check("the landing page is two windows: the profile on the left and the stats on the right",
+      html.indexOf("biz-left") < html.indexOf("biz-right") && html.includes("biz-statrow") && html.includes("biz-graph"));
+    check("the profile has the three sections, chips that are real toggle buttons, and a quantity control",
+      html.includes("What matters most to you") && html.includes("Your business needs") && html.includes("Quantity you look for") &&
+      (html.match(/class="chip-toggle/g) || []).length === a.CATEGORIES.length + a.QUALITY_TAGS.length && /<button type="button" class="chip-toggle[^"]*" aria-pressed="(true|false)"/.test(html) && (html.match(/class="seg/g) || []).length === 3);
+    check("an undeclared business is told its chips are our estimate", html.includes("our estimate from public listings"));
+    check("the save bar is hidden until something changes", els.bizSaveBar.hidden === true);
+    a.bizDraft.needs = a.bizDraft.needs.concat(["__x"]);
+    // toggle limits
+    const mk = (kind, value, on) => { const attrs = { "data-kind": kind, "data-value": value }; return { getAttribute: k => attrs[k], setAttribute() {}, classList: { toggle() {} } }; };
+    a.bizDraft.needs = a.CATEGORIES.slice(0, 8);
+    a.toggleBizChip(mk("need", a.CATEGORIES[9]));
+    check("a ninth product is refused with a message", a.bizDraft.needs.length === 8 && !a.bizDraft.needs.includes(a.CATEGORIES[9]));
+    a.toggleBizChip(mk("need", a.CATEGORIES[0]));
+    check("switching one off works", a.bizDraft.needs.length === 7);
+    a.bizDraft.quality_focus = a.QUALITY_TAGS.slice(0, 4);
+    a.toggleBizChip(mk("quality", a.QUALITY_TAGS[5]));
+    check("a fifth quality point is refused", a.bizDraft.quality_focus.length === 4);
+    a.bizDraft = null;
+
+    // views
+    const now = Date.parse("2026-10-20T10:00:00Z");
+    const rows = [{ viewed_on: "2026-10-20" }, { viewed_on: "2026-10-20" }, { viewed_on: "2026-10-18" }, { viewed_on: "2026-10-12" }, { viewed_on: "2026-09-25" }];
+    const series = a.viewSeries(rows, 30, now);
+    check("the series has one point per day, oldest first, ending today", series.length === 30 && series[29].date === "2026-10-20" && series[0].date === "2026-09-21" && series[29].count === 2);
+    const st = a.viewStats(series);
+    check("this week counts the last seven days, last week the seven before, and the change is a percentage",
+      st.week === 3 && st.prev === 1 && st.total === 5 && st.changePct === 200);
+    check("with no views the week before there is no percentage to give", a.viewStats(a.viewSeries([{ viewed_on: "2026-10-20" }], 30, now)).changePct === null);
+    const svg = a.viewGraphSVG(series);
+    check("the graph is a labelled image with a polyline and the date range", /<svg[^>]+role="img"[^>]+aria-label="[^"]*5 in total[^"]*"/.test(svg) && svg.includes("<polyline") && svg.includes("09-21") && svg.includes("10-20"));
+    check("an empty graph still draws without dividing by zero", !/NaN/.test(a.viewGraphSVG(a.viewSeries([], 30, now))));
+
+    // counting a view (farmer side)
+    a.state.farmerId = "uf"; a.state.role = "farmer";
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    await a.logBuyerView("b05"); await a.logBuyerView("b05");
+    const ins = sb.chains.filter(x => x.table === "buyer_views");
+    check("opening a business counts one view per session, with the viewer stamped as the signed-in farmer",
+      ins.length === 1 && ins[0].ops[0].op === "insert" && ins[0].ops[0].args[0].buyer_id === "b05" && ins[0].ops[0].args[0].viewer_id === "uf");
+    sb.reset(); sb.router = () => ({ data: null, error: { code: "23505", message: "dup" } });
+    await a.logBuyerView("b06");
+    check("a view already counted today (unique violation) is silent", logs.warn.every(w => !String(w[0]).includes("view not counted")));
+    a.state.role = "buyer"; sb.reset();
+    await a.logBuyerView("b07");
+    check("a buyer opening things never counts as a farmer view", sb.chains.length === 0);
+    a.state.role = "farmer";
+    // reading views asks only for the columns anyone may read
+    a.state.claims = [{ status: "approved", buyer_id: biz.id }];
+    sb.reset(); sb.router = () => ({ data: [{ viewed_on: "2026-10-20" }], error: null });
+    await a.loadBizViews();
+    const rd = sb.chains.find(x => x.table === "buyer_views");
+    check("the owner reads only viewed_on (never who looked) for their own business", rd.ops.some(o => o.op === "select" && o.args[0] === "viewed_on") && rd.ops.some(o => o.op === "eq" && o.args[1] === biz.id) && a.state.bizViews.length === 1);
   }
 
   /* ---- names: asked once at sign-up, never in a chat; chats named by topic ---- */

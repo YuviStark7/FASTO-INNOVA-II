@@ -32,6 +32,7 @@ let state = {
   openThreadId: null,
   detailsOpen: false,   // the buyer's side panel about the farmer
   clientPanelOpen: false, // the farmer's side panel about the buyer
+  bizViews: [],         // a buyer's profile views (rows with viewed_on)
   offers: [],           // a farmer's own published/unpublished offers (item 29)
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
@@ -1180,6 +1181,7 @@ async function openBuyerCard(chatId, buyerId) {
 
   cardView = { chatId, buyerId, draft: null };
   renderCardMessage();
+  logBuyerView(buyerId);
   openSheet("matchSheet");
   // Draft while the sheet is already open, with a loading line: it can take a few seconds.
   const mine = cardView;
@@ -3296,79 +3298,6 @@ async function submitClaim() {
   if (btn) { btn.disabled = false; btn.textContent = T("buyer.claimSubmit"); }
 }
 
-function buyerFactsHTML(biz) {
-  const km = Number(biz.distance_km);
-  return `<dl class="buyer-facts">
-    <dt>${esc(T("buyer.bizType"))}</dt><dd>${esc(String(biz.type || "").replace(/_/g, " "))}</dd>
-    <dt>${esc(T("buyer.bizArea"))}</dt><dd>${esc(biz.zone || "—")}</dd>
-    <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${isFinite(km) ? esc(T("buyer.km", { n: km })) : "—"}</dd>
-    <dt>${esc(T("buyer.bizSource"))}</dt><dd>${esc(biz.source || "—")}</dd>
-  </dl>`;
-}
-function buyerAssumedHTML(biz) {
-  const needs = (biz.needs || []).map(catLabel).join(", ");
-  const vol = ["low", "medium", "high"].indexOf(biz.volume) !== -1 ? T("band." + biz.volume) : "—";
-  return `<div class="buyer-note"><b>${esc(T("buyer.bizAssumedTitle"))}</b><p>${esc(T("buyer.bizAssumedBody"))}</p>
-    <dl class="buyer-facts" style="margin-top:10px">
-      <dt>${esc(T("buyer.bizBuys"))}</dt><dd>${esc(needs || "—")}</dd>
-      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
-    </dl></div>`;
-}
-
-/* ---------- My business: what the buyer declares (ROADMAP item 28) ----------
-   The listing's needs/volume/quality are our desk-research guesses. Here the
-   owner replaces them with what the business actually says. Everything typed or
-   ticked is validated by guardianValidateBuyerProfile() and escaped on output;
-   "declared" stays visibly different from "assumed" on every screen. */
-function buyerDeclaredHTML(biz) {
-  const needs = (biz.needs || []).map(catLabel).join(", ");
-  const vol = VOLUME_BANDS.indexOf(biz.volume) !== -1 ? T("band." + biz.volume) : "—";
-  const q = (biz.quality_focus || []).map(t => T("qtag." + t)).join(", ");
-  return `<div class="buyer-note"><b>${esc(T("buyer.declaredTitle"))}</b><p>${esc(T("buyer.declaredBody"))}</p>
-    <dl class="buyer-facts" style="margin-top:10px">
-      <dt>${esc(T("buyer.bizBuys"))}</dt><dd>${esc(needs || "—")}</dd>
-      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
-      <dt>${esc(T("buyer.bizQuality"))}</dt><dd>${esc(q || "—")}</dd>
-    </dl></div>`;
-}
-function buyerProfileFormHTML(biz) {
-  const has = (arr, v) => (arr || []).indexOf(v) !== -1;
-  const needs = CATEGORIES.map(c => `<label class="chk"><input type="checkbox" name="bpNeed" value="${escAttr(c)}"${has(biz.needs, c) ? " checked" : ""}><span>${esc(catLabel(c))}</span></label>`).join("");
-  const quals = QUALITY_TAGS.map(t => `<label class="chk"><input type="checkbox" name="bpQual" value="${escAttr(t)}"${has(biz.quality_focus, t) ? " checked" : ""}><span>${esc(T("qtag." + t))}</span></label>`).join("");
-  const vols = VOLUME_BANDS.map(v => `<option value="${v}"${biz.volume === v ? " selected" : ""}>${esc(T("band." + v))}</option>`).join("");
-  return `<form class="buyer-form" id="bpForm" onsubmit="return false">
-    <fieldset class="chk-group"><legend>${esc(T("buyer.formNeeds"))}</legend><div class="chk-grid">${needs}</div></fieldset>
-    <div class="field"><label for="bpVolume">${esc(T("buyer.formVolume"))}</label><select id="bpVolume">${vols}</select></div>
-    <fieldset class="chk-group"><legend>${esc(T("buyer.formQuality"))}</legend><div class="chk-grid">${quals}</div></fieldset>
-    <div class="auth-err" id="bpErr" role="alert" style="display:none"></div>
-    <button type="button" class="btn btn-primary" id="bpSave">${esc(T("buyer.formSave"))}</button>
-    <p class="buyer-lead">${esc(T("buyer.formFoot"))}</p></form>`;
-}
-function readBuyerProfileForm() {
-  const picked = name => Array.prototype.map.call(document.querySelectorAll('input[name="' + name + '"]:checked'), i => i.value);
-  return { needs: picked("bpNeed"), volume: $("bpVolume") ? $("bpVolume").value : "", quality_focus: picked("bpQual") };
-}
-async function saveBuyerProfile() {
-  const biz = myBusiness(); if (!biz) return;
-  const v = guardianValidateBuyerProfile(readBuyerProfileForm());
-  const err = $("bpErr");
-  if (!v.ok) {
-    const key = v.bad.indexOf("needs") !== -1 ? "buyer.err.needs" : v.bad.indexOf("volume") !== -1 ? "buyer.err.volume" : v.bad.indexOf("quality") !== -1 ? "buyer.err.quality" : "buyer.err.needsBad";
-    if (err) { err.textContent = T(key); err.style.display = "block"; }
-    return;
-  }
-  if (err) err.style.display = "none";
-  const btn = $("bpSave"); if (btn) btn.disabled = true;
-  const patch = Object.assign({}, v.row, { declared_by_buyer: true, declared_at: new Date().toISOString() });
-  try {
-    const { error } = await DataStore.updateMyBusiness(biz.id, patch);
-    if (error) throw error;
-    Object.assign(biz, patch);        // this session's listings read the new values too
-    toast(T("buyer.formSaved"));
-  } catch (e) { saveFailedWithOwnMessage("save.businessProfile", e, T("buyer.formFailed")); }
-  renderBuyerBusiness();
-}
-
 // What Inbox / Offers / My business show before the claim is approved.
 function buyerGateHTML() {
   const st = claimState(state.claims);
@@ -3376,65 +3305,6 @@ function buyerGateHTML() {
   return `<div class="empty-state">${esc(T(st === "pending" ? "buyer.gatePending" : "buyer.gateNone"))}</div>`;
 }
 
-/* ---------- Buyer dashboard (ROADMAP item 30) ----------
-   Read-only: everything here is already in state, loaded when the buyer
-   signed in. Pure functions first so the numbers are testable without a page. */
-const NEW_OFFER_DAYS = 14;
-// Offers that sell something the business says it buys, published recently.
-// Only meaningful once the buyer has declared its needs (item 28): matching
-// against our own guess would present an inference as the buyer's request.
-function matchingOffers(offers, biz, now) {
-  if (!biz || !biz.declared_by_buyer || !(biz.needs || []).length) return [];
-  const cutoff = (now || Date.now()) - NEW_OFFER_DAYS * 86400000;
-  return (offers || []).filter(o => new Date(o.created_at).getTime() >= cutoff &&
-    (o.products || []).some(p => biz.needs.indexOf(p.category) !== -1));
-}
-/* The buyer's Dashboard: the same shape as the farmer's (a table of
-   conversations, then the numbers that matter as cards underneath). */
-function buyerDashboardHTML(biz) {
-  const inbox = state.inbox || [];
-  const unread = inboxUnread(inbox), convos = inbox.length;
-  const match = matchingOffers(state.offerFeed, biz);
-  const tile = (n, labelKey, screen, extra) => `<button type="button" class="stat-tile" onclick="switchScreen('${screen}')"><b>${n}</b><span>${esc(T(labelKey))}</span>${extra || ""}</button>`;
-  const offersHint = biz && biz.declared_by_buyer ? "" : `<small>${esc(T("buyer.dashDeclareHint"))}</small>`;
-  const rows = inbox.map(t => {
-    const last = t.messages[t.messages.length - 1], n = unreadCount(t);
-    const prods = ((t.summary && t.summary.products) || []).map(p => esc(p.name)).join(", ") || "—";
-    return `<tr>
-      <td class="rp-conv"><button type="button" class="rp-cell-btn" onclick="openInboxFromOffer('${esc(t.id)}')" aria-label="${escAttr(T("buyer.openThreadAria", { name: inboxTitle(t) }))}"><b>${esc(inboxTitle(t))}</b><small>${esc(relDate(lastActivity(t)))}</small></button></td>
-      <td>${prods}</td>
-      <td>${esc(last ? last.text.slice(0, 60) : "—")}</td>
-      <td>${n ? `<span class="rp-unread">${esc(T("buyer.unread", { n }))}</span>` : "—"}</td>
-    </tr>`;
-  }).join("");
-  const table = convos
-    ? `<table class="rp-table"><thead><tr><th scope="col">${esc(T("buyer.colFarmer"))}</th><th scope="col">${esc(T("buyer.sumProducts"))}</th><th scope="col">${esc(T("buyer.colLast"))}</th><th scope="col">${esc(T("buyer.colUnread"))}</th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`;
-  return table + `<div class="stat-row">
-      ${tile(convos, "buyer.dashConvos", "buyerInbox")}
-      ${tile(unread, "buyer.dashUnread", "buyerInbox")}
-      ${tile(match.length, "buyer.dashMatching", "buyerOffers", offersHint)}
-    </div>`;
-}
-function renderBuyerHome() {
-  const el = $("buyerHomeBody"); if (!el) return;
-  const snap = claimFormSnapshot();
-  const st = claimState(state.claims), claim = currentClaim(state.claims);
-  const name = claimBusinessLabel(claim || {});
-  let html = "";
-  if (st === "approved") {
-    const biz = myBusiness();
-    html = biz ? buyerDashboardHTML(biz) : buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name });
-  } else if (st === "pending") {
-    html = buyerNoteHTML("pending", "buyer.pendingTitle", "buyer.pendingBody", { name });
-  } else {
-    if (st === "rejected") html += buyerNoteHTML("rejected", "buyer.rejectedTitle", "buyer.rejectedBody", { name });
-    html += `<p class="buyer-lead"><b>${esc(T("buyer.claimTitle"))}.</b> ${esc(T("buyer.claimIntro"))}</p>` + claimFormHTML();
-  }
-  el.innerHTML = html;
-  bindClaimForm();
-  claimFormRestore(snap);
-}
 /* ---------- Buyer inbox (ROADMAP item 27) ----------
    state.inbox holds one entry per conversation a farmer has started with the
    buyer's business. Everything a buyer types here is a real reply. */
@@ -3569,6 +3439,7 @@ function renderClientPanel(c) {
 function toggleClientPanel() {
   state.clientPanelOpen = !state.clientPanelOpen;
   renderThread();
+  if (state.clientPanelOpen) { const c = state.clients.find(x => x.id === state.activeClientId); if (c) logBuyerView(c.buyerId); }
   const f = $(state.clientPanelOpen ? "clientPanelClose" : "clientHeadBtn"); if (f && f.focus) f.focus();
 }
 function closeClientPanel(returnFocus) {
@@ -3719,13 +3590,195 @@ function renderBuyerOffers() {
   $("ofMonth").onchange = e => setOfferFilter("month", e.target.value);
   renderOfferList();
 }
+/* ---------- My business: the buyer's landing page ----------
+   Two windows. Left: the business profile, LinkedIn-style; it is also the
+   editor (press a chip to switch it on or off) and the preview of how the
+   business is described. Right: how the business is doing (views, conversations,
+   a graph). Until a claim is approved, the same space holds the claim form. */
+const BIZ_NEEDS_MAX = BUYER_NEEDS_MAX, BIZ_QUALITY_MAX = BUYER_QUALITY_MAX;
+let bizDraft = null;   // { id, needs, volume, quality_focus }: what the buyer is editing right now
+function bizSnapshot(biz) { return { id: biz.id, needs: (biz.needs || []).slice(), volume: biz.volume, quality_focus: (biz.quality_focus || []).slice() }; }
+function sameSet(a, b) { a = a || []; b = b || []; return a.length === b.length && a.every(x => b.indexOf(x) !== -1); }
+// Pure: has the buyer changed anything since the last save?
+function bizDirty(draft, biz) {
+  return !!(draft && biz) && (!sameSet(draft.needs, biz.needs) || draft.volume !== biz.volume || !sameSet(draft.quality_focus, biz.quality_focus));
+}
+function bizInitials(name) {
+  const w = String(name || "?").trim().split(/\s+/).filter(Boolean);
+  return ((w[0] || "?").charAt(0) + (w.length > 1 ? w[1].charAt(0) : "")).toUpperCase();
+}
+// A cover without a photo (photos need storage that does not exist yet): one of
+// four brand-coloured gradients, picked from the business id so it stays the same.
+function bizCoverIndex(id) { let h = 0; String(id || "").split("").forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return h % 4; }
+
+/* ---- views: counted when a farmer opens this business from their matches ---- */
+// rows: [{ viewed_on: "2026-10-05" }]. Returns `days` points, oldest first, ending today (UTC).
+function viewSeries(rows, days, now) {
+  const end = new Date(now || Date.now()); const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  const counts = {};
+  (rows || []).forEach(r => { const k = String(r.viewed_on || "").slice(0, 10); counts[k] = (counts[k] || 0) + 1; });
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const k = new Date(endDay - i * 86400000).toISOString().slice(0, 10);
+    out.push({ date: k, count: counts[k] || 0 });
+  }
+  return out;
+}
+function viewStats(series) {
+  const sum = arr => arr.reduce((n, p) => n + p.count, 0);
+  const week = sum(series.slice(-7)), prev = sum(series.slice(-14, -7));
+  return { total: sum(series), week, prev, changePct: prev > 0 ? Math.round(100 * (week - prev) / prev) : null };
+}
+function viewGraphSVG(series) {
+  const W = 640, H = 240, L = 36, R = 14, Tp = 16, B = 30;
+  const max = Math.max(1, ...series.map(p => p.count));
+  const x = i => L + (series.length > 1 ? i * (W - L - R) / (series.length - 1) : 0);
+  const y = c => Tp + (H - Tp - B) * (1 - c / max);
+  const pts = series.map((p, i) => x(i).toFixed(1) + "," + y(p.count).toFixed(1)).join(" ");
+  const st = viewStats(series);
+  const label = T("biz.graphAria", { total: st.total, week: st.week });
+  const ticks = [0, Math.ceil(max / 2), max].filter((v, i, a) => a.indexOf(v) === i)
+    .map(v => `<text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="gr-t">${v}</text><line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gr-g"/>`).join("");
+  return `<svg class="biz-graph" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escAttr(label)}" preserveAspectRatio="none">
+    ${ticks}
+    <polyline points="${pts}" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <text x="${L}" y="${H - 8}" class="gr-t">${esc(series[0].date.slice(5))}</text>
+    <text x="${W - R}" y="${H - 8}" text-anchor="end" class="gr-t">${esc(series[series.length - 1].date.slice(5))}</text>
+  </svg>`;
+}
+async function loadBizViews() {
+  state.bizViews = []; const biz = myBusiness(); if (!biz) return;
+  const since = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+  const { data, error } = await DataStore.listMyBusinessViews(biz.id, since);
+  if (error) throw error;
+  state.bizViews = data || [];
+}
+// Farmer side: opening a buyer's details counts as one view per farmer per day
+// (the database enforces that). Silent: a failed count must never bother a farmer.
+const viewedBuyers = new Set();
+async function logBuyerView(buyerId) {
+  if (!buyerId || viewedBuyers.has(buyerId) || isBuyer() || !state.farmerId || isLocalId(state.farmerId)) return;
+  viewedBuyers.add(buyerId);
+  try {
+    const { error } = await DataStore.logBuyerView(buyerId, state.farmerId);
+    if (error && error.code !== "23505") console.warn("view not counted", error);   // 23505 = already counted today
+  } catch (e) { console.warn("view not counted", e); }
+}
+
+/* ---- the profile window ---- */
+function chipToggle(kind, value, label, on) {
+  return `<button type="button" class="chip-toggle${on ? " on" : ""}" aria-pressed="${on ? "true" : "false"}" data-kind="${kind}" data-value="${escAttr(value)}" onclick="toggleBizChip(this)">${esc(label)}</button>`;
+}
+function bizProfileHTML(biz) {
+  const d = bizDraft;
+  const where = [biz.zone, (biz.type || "").replace(/_/g, " ")].filter(Boolean).join(" · ");
+  const km = isFinite(Number(biz.distance_km)) ? " · " + T("buyer.km", { n: Math.round(Number(biz.distance_km)) }) : "";
+  const quals = QUALITY_TAGS.map(t => chipToggle("quality", t, T("qtag." + t), d.quality_focus.indexOf(t) !== -1)).join("");
+  const needs = CATEGORIES.map(c => chipToggle("need", c, catLabel(c) || c, d.needs.indexOf(c) !== -1)).join("");
+  const vols = VOLUME_BANDS.map(v => `<button type="button" class="seg${d.volume === v ? " on" : ""}" aria-pressed="${d.volume === v ? "true" : "false"}" data-vol="${v}" onclick="setBizVolume('${v}')">${esc(T("band." + v))}</button>`).join("");
+  return `<div class="biz-cover biz-cover-${bizCoverIndex(biz.id)}" aria-hidden="true"></div>
+    <div class="biz-head">
+      <div class="biz-avatar" aria-hidden="true">${esc(bizInitials(biz.name))}</div>
+      <div class="biz-id"><h2 class="biz-name">${esc(biz.name)}</h2><div class="biz-sub">${esc(where)}${esc(km)}</div></div>
+    </div>
+    <div class="buyer-note biz-note"><p>${esc(T(biz.declared_by_buyer ? "biz.declaredNote" : "biz.estimateNote"))}</p></div>
+    <section class="biz-sec"><h3>${esc(T("biz.matters"))}</h3><div class="biz-chips" role="group" aria-label="${escAttr(T("biz.matters"))}">${quals}</div></section>
+    <section class="biz-sec"><h3>${esc(T("biz.needs"))}</h3><div class="biz-chips" role="group" aria-label="${escAttr(T("biz.needs"))}">${needs}</div></section>
+    <section class="biz-sec"><h3>${esc(T("biz.qty"))}</h3><div class="biz-seg" role="group" aria-label="${escAttr(T("biz.qty"))}">${vols}</div></section>
+    <div class="biz-savebar" id="bizSaveBar" hidden>
+      <span id="bizUnsaved">${esc(T("biz.unsaved"))}</span>
+      <div class="auth-err" id="bpErr" role="alert" style="display:none"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="discardBizDraft()">${esc(T("biz.discard"))}</button>
+      <button type="button" class="btn btn-primary btn-sm" id="bpSave" onclick="saveBizDraft()">${esc(T("biz.save"))}</button>
+    </div>`;
+}
+function updateBizSaveBar() {
+  const bar = $("bizSaveBar"); if (!bar) return;
+  bar.hidden = !bizDirty(bizDraft, myBusiness());
+  const err = $("bpErr"); if (err) err.style.display = "none";
+}
+function toggleBizChip(btn) {
+  if (!bizDraft || !btn) return;
+  const kind = btn.getAttribute("data-kind"), value = btn.getAttribute("data-value");
+  const list = kind === "need" ? bizDraft.needs : bizDraft.quality_focus;
+  const i = list.indexOf(value);
+  if (i === -1) {
+    if (list.length >= (kind === "need" ? BIZ_NEEDS_MAX : BIZ_QUALITY_MAX)) { toast(T(kind === "need" ? "biz.maxNeeds" : "biz.maxQuality")); return; }
+    list.push(value);
+  } else list.splice(i, 1);
+  const on = i === -1;
+  btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on ? "true" : "false");
+  updateBizSaveBar();
+}
+function setBizVolume(v) {
+  if (!bizDraft || VOLUME_BANDS.indexOf(v) === -1) return;
+  bizDraft.volume = v;
+  document.querySelectorAll("#buyerBusinessBody .seg").forEach(b => {
+    const on = b.getAttribute("data-vol") === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  updateBizSaveBar();
+}
+function discardBizDraft() { bizDraft = null; renderBuyerBusiness(); }
+async function saveBizDraft() {
+  const biz = myBusiness(); if (!biz || !bizDraft) return;
+  const v = guardianValidateBuyerProfile(bizDraft);
+  const err = $("bpErr");
+  if (!v.ok) {
+    const key = v.bad.indexOf("needs") !== -1 ? "buyer.err.needs" : v.bad.indexOf("volume") !== -1 ? "buyer.err.volume" : v.bad.indexOf("quality") !== -1 ? "buyer.err.quality" : "buyer.err.needsBad";
+    if (err) { err.textContent = T(key); err.style.display = "block"; }
+    return;
+  }
+  const btn = $("bpSave"); if (btn) btn.disabled = true;
+  const patch = Object.assign({}, v.row, { declared_by_buyer: true, declared_at: new Date().toISOString() });
+  try {
+    const { error } = await DataStore.updateMyBusiness(biz.id, patch);
+    if (error) throw error;
+    Object.assign(biz, patch);        // this session's listings read the new values too
+    bizDraft = null;
+    toast(T("buyer.formSaved"));
+  } catch (e) { saveFailedWithOwnMessage("save.businessProfile", e, T("buyer.formFailed")); if (btn) btn.disabled = false; return; }
+  renderBuyerBusiness();
+}
+
+/* ---- the stats window ---- */
+function bizStatsHTML() {
+  const series = viewSeries(state.bizViews, 30), st = viewStats(series);
+  const inbox = state.inbox || [], unread = inboxUnread(inbox);
+  const change = st.changePct == null ? T(st.week ? "biz.vsNone" : "biz.vsZero")
+    : st.changePct === 0 ? T("biz.vsSame") : T("biz.vsLast", { pct: (st.changePct > 0 ? "+" : "") + st.changePct });
+  return `<div class="biz-statrow">
+      <div class="biz-stat"><h3>${esc(T("biz.statViews"))}</h3><b>${st.week}</b><span>${esc(change)}</span></div>
+      <div class="biz-stat"><h3>${esc(T("biz.statConvos"))}</h3><b>${inbox.length}</b><span>${esc(T("biz.unreadSub", { n: unread }))}</span></div>
+    </div>
+    <div class="biz-stat biz-graphcard"><h3>${esc(T("biz.graphTitle"))}</h3>${viewGraphSVG(series)}
+      <p class="foot">${esc(st.total ? T("biz.viewsNote") : T("biz.noViews"))}</p></div>`;
+}
+
 function renderBuyerBusiness() {
   const el = $("buyerBusinessBody"); if (!el) return;
+  const st = claimState(state.claims);
+  // Not approved yet: the claim flow lives here, because this is where a buyer lands.
+  if (st !== "approved") {
+    const snap = claimFormSnapshot();
+    const claim = currentClaim(state.claims), name = claimBusinessLabel(claim || {});
+    let html = "";
+    if (st === "pending") html = buyerNoteHTML("pending", "buyer.pendingTitle", "buyer.pendingBody", { name });
+    else {
+      if (st === "rejected") html += buyerNoteHTML("rejected", "buyer.rejectedTitle", "buyer.rejectedBody", { name });
+      html += `<p class="buyer-lead"><b>${esc(T("buyer.claimTitle"))}.</b> ${esc(T("buyer.claimIntro"))}</p>` + claimFormHTML();
+    }
+    el.innerHTML = `<div class="biz-window glass-45 biz-single"><div class="buyer-body">${html}</div></div>`;
+    bindClaimForm();
+    claimFormRestore(snap);
+    return;
+  }
   const biz = myBusiness();
-  el.innerHTML = buyerGateHTML() || (biz ? buyerFactsHTML(biz) + (biz.declared_by_buyer ? buyerDeclaredHTML(biz) : buyerAssumedHTML(biz)) + buyerProfileFormHTML(biz) : "");
-  const save = $("bpSave"); if (save) save.onclick = saveBuyerProfile;
+  if (!biz) { el.innerHTML = `<div class="biz-window glass-45 biz-single"><div class="buyer-body">${buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name: claimBusinessLabel(currentClaim(state.claims) || {}) })}</div></div>`; return; }
+  if (!bizDraft || bizDraft.id !== biz.id) bizDraft = bizSnapshot(biz);
+  el.innerHTML = `<div class="biz-window biz-left glass-45">${bizProfileHTML(biz)}</div><div class="biz-window biz-right glass-45">${bizStatsHTML()}</div>`;
+  updateBizSaveBar();
 }
-function renderBuyerScreens() { renderBuyerHome(); renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
+function renderBuyerScreens() { renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
 
 /* Opening a buyer's app. Mirrors the farmer path in boot(): into the shell at
    once, locked while the data loads, lock lifted whatever happens. */
@@ -3741,6 +3794,7 @@ async function enterBuyerApp() {
     await loadBuyerData(state.farmerId);
     await loadBuyerInbox();
     await loadOfferFeed();
+    try { await loadBizViews(); } catch (e) { console.warn("couldn't load business views", e); }
   } catch (e) {
     console.error("Failed to load the buyer account", e);
     toast(T("boot.loadFailed"));
@@ -3749,7 +3803,7 @@ async function enterBuyerApp() {
     setBootLock(false);
   }
   updateHeaderIdentity();
-  switchScreen("buyerHome");
+  switchScreen("buyerBusiness");
 }
 
 /* ================= NAVIGATION ================= */

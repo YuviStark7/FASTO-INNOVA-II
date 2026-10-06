@@ -147,10 +147,9 @@
          everything else hides these, so neither role ever sees the other's
          screens. The data-screen values are the section ids below, minus
          "Screen". -->
-    <button type="button" class="nav-item role-buyer" data-screen="buyerHome"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.bHome">Dashboard</span></button>
+    <button type="button" class="nav-item role-buyer" data-screen="buyerBusiness"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.bBusiness">My business</span></button>
     <button type="button" class="nav-item role-buyer" data-screen="buyerInbox"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.bInbox">Inbox</span><span class="bell-badge nav-badge" id="buyerInboxBadge" aria-hidden="true" style="display:none">0</span></button>
     <button type="button" class="nav-item role-buyer" data-screen="buyerOffers"><img class="ic-svg" src="assets/icon-chat-item.svg" alt=""><span class="label" data-i18n="nav.bOffers">Offers</span></button>
-    <button type="button" class="nav-item role-buyer" data-screen="buyerBusiness"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.bBusiness">My business</span></button>
 
     <div class="side-bottom role-farmer">
       <div class="status-item"><img class="ic-svg" src="assets/icon-offline.svg" alt=""><span class="label" id="modePill">Offline demo</span></div>
@@ -275,12 +274,6 @@
     <!-- ---------- BUYER SCREENS (ROADMAP items 24-25) ----------
          Each body is written by one function in js/app.js; the claim state
          (none / pending / rejected / approved) decides what goes in it. -->
-    <section class="screen" id="buyerHomeScreen">
-      <div class="research-panel glass-45 buyer-panel">
-        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.homeTitle">Dashboard</span></div>
-        <div class="buyer-body" id="buyerHomeBody"></div>
-      </div>
-    </section>
     <section class="screen" id="buyerInboxScreen">
       <!-- Same two-panel layout as Clients. The farmer's details open as a side
            panel over the right edge when the name bar of a chat is pressed. -->
@@ -296,11 +289,10 @@
         <div class="buyer-body" id="buyerOffersBody"></div>
       </div>
     </section>
+    <!-- The buyer's landing page: profile window on the left, stats on the right
+         (or the claim form until a claim is approved). Written by renderBuyerBusiness(). -->
     <section class="screen" id="buyerBusinessScreen">
-      <div class="research-panel glass-45 buyer-panel">
-        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.bizTitle">My business</span></div>
-        <div class="buyer-body" id="buyerBusinessBody"></div>
-      </div>
+      <div class="biz-outer" id="buyerBusinessBody"></div>
     </section>
 
     <!-- ---------- ADMIN (visible only when is_admin = true) ---------- -->
