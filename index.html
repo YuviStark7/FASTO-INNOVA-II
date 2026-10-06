@@ -175,15 +175,6 @@
       <!-- No longer hide-mobile: on a phone it wraps onto its own row of the
            top bar (see the media query in app.css) rather than not existing. -->
       <div class="search-wrap role-farmer"><img class="ic-svg sm" src="assets/icon-search.svg" alt=""><input type="search" id="topSearch" placeholder="Search chats, research…" data-i18n-ph="top.searchPh" data-i18n-aria="top.searchPh" aria-label="Search chats, research…"></div>
-      <!-- The only control that has to be reachable on every screen AND on a
-           phone, where .side-bottom is hidden and the sidebar becomes a row of
-           icons. It is deliberately NOT reachable while a sheet is open: the
-           three sheets cover the whole viewport, so a half-typed logistics or
-           profile form can't be re-rendered out from under you. -->
-      <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
-        <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
-        <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
-      </div>
       <!-- Every icon-only control below carries an aria-label as well as its
            title. A title is a hover tooltip first and an accessible name only
            by fallback: it needs a pointer to appear at all, and VoiceOver
@@ -194,7 +185,8 @@
       <!-- No data-i18n-title/-aria here on purpose: the label carries a count, so
            renderBell() is its writer, the way renderDashboard() writes #researchEmpty.
            The badge is aria-hidden because that label already says the number. -->
-      <button class="icon-btn role-farmer" id="bellBtn" title="Drafts ready" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""><span class="bell-badge" id="bellCount" aria-hidden="true" style="display:none">0</span></button>
+      <!-- Hidden for now (Yuvi, 2026-10-06): notifications serve no purpose yet. All the bell code stays, so bringing it back is removing the hidden attribute. -->
+      <button class="icon-btn role-farmer" id="bellBtn" hidden title="Drafts ready" aria-label="Drafts ready"><img class="ic-svg sm" src="assets/icon-bell.svg" alt=""><span class="bell-badge" id="bellCount" aria-hidden="true" style="display:none">0</span></button>
       <!-- The avatar opens a small menu (Edit profile, Log out). aria-expanded
            is kept in step by setProfileMenu() in app.js. -->
       <div class="avatar-wrap" id="avatarWrap">
@@ -203,6 +195,15 @@
         </button>
         <div class="avatar-menu" id="profileMenu" role="menu" aria-labelledby="profileBtn" hidden>
           <button type="button" role="menuitem" id="menuEditProfile" data-i18n="menu.edit">Edit profile</button>
+          <button type="button" role="menuitem" id="menuHelp" data-i18n="menu.help">How it works</button>
+          <!-- The IT/EN switch lives here now (it used to sit in the top bar). The
+               delegated handler on [data-set-lang] needs no wiring. -->
+          <div class="menu-lang"><span class="menu-lang-label" data-i18n="menu.language">Language</span>
+            <div class="lang-toggle" role="group" data-i18n-aria="lang.aria" aria-label="Interface language">
+              <button type="button" data-set-lang="it" data-i18n="lang.it">IT</button>
+              <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
+            </div>
+          </div>
           <button type="button" role="menuitem" id="menuLogout" data-i18n="menu.logout">Log out</button>
         </div>
       </div>
@@ -236,6 +237,9 @@
       <div class="clients-outer glass-45">
         <div class="client-list-panel glass-30" id="clientList" role="group" data-i18n-aria="a11y.clientList" aria-label="Buyers you have a draft for"></div>
         <div class="chat-box-panel glass-30" id="threadPane"></div>
+        <!-- The buyer's details. A column of its own: opening it pushes the chat
+             to the left, closing it lets the chat slide back. -->
+        <aside class="side-panel" id="clientSidePanel" aria-hidden="true" inert data-i18n-aria="clients.detailsTitle" aria-label="About this buyer"></aside>
       </div>
     </section>
 
@@ -283,7 +287,7 @@
       <div class="clients-outer glass-45">
         <div class="client-list-panel glass-30" id="buyerList" role="group" data-i18n-aria="a11y.buyerThreads" aria-label="Your conversations"></div>
         <div class="chat-box-panel glass-30" id="buyerThreadPane"></div>
-        <aside class="side-panel" id="buyerSidePanel" hidden data-i18n-aria="buyer.sumTitle" aria-label="About this farmer"></aside>
+        <aside class="side-panel" id="buyerSidePanel" aria-hidden="true" inert data-i18n-aria="buyer.sumTitle" aria-label="About this farmer"></aside>
       </div>
     </section>
     <section class="screen" id="buyerOffersScreen">
@@ -426,6 +430,19 @@
       <button class="btn btn-primary" id="accountSaveBtn" data-i18n="acct.save">Save changes</button>
       <span data-i18n="acct.foot">Used to fill in logistics requests for you. Never shown to buyers.</span>
     </div>
+  </div>
+</div>
+
+<!-- ---------- HOW IT WORKS ----------
+     Seventh body-level sheet. Read-only; the steps are written by openHelp() in
+     app.js because they depend on whether the signed-in person is a farmer or a buyer. -->
+<div id="helpSheet">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="match-panel-head">
+      <div style="min-width:0;flex:1"><span class="title-md" id="helpTitle" data-i18n="help.title">How it works</span></div>
+      <button class="icon-btn" id="helpCloseBtn" title="Close" data-i18n-title="match.close" data-i18n-aria="match.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="match-panel-body" id="helpBody"></div>
   </div>
 </div>
 

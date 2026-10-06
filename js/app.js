@@ -31,6 +31,7 @@ let state = {
   inbox: [],            // a buyer's conversations from farmers (item 27)
   openThreadId: null,
   detailsOpen: false,   // the buyer's side panel about the farmer
+  clientPanelOpen: false, // the farmer's side panel about the buyer
   offers: [],           // a farmer's own published/unpublished offers (item 29)
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
@@ -885,7 +886,7 @@ async function finishWithRecs(recs, chat) {
    profile editor from the match sheet closes the match sheet on the way, so
    "put me back where I was" has to mean the button that started all of it, not
    a control inside a panel that has since been torn down and rebuilt. */
-const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet", "dialogSheet"];
+const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet", "dialogSheet", "helpSheet"];
 const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let sheetStack = [];
 let sheetReturnFocus = null;
@@ -969,6 +970,7 @@ function closeTopSheet() {
   else if (id === "exportSheet") closeExportSheet();
   else if (id === "accountSheet") closeAccountSheet();
   else if (id === "dialogSheet") settleDialog(false);
+  else if (id === "helpSheet") closeHelp();
   else closeProfileEdit();
   return true;
 }
@@ -1837,6 +1839,7 @@ function renderChats() {
   renderClientList();
   if (!state.clients.length) {
     $("threadPane").innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`;
+    renderClientPanel(null);
     return;
   }
   /* Which thread is open is chosen from the full list, never from the filtered
@@ -1850,17 +1853,18 @@ function selectClient(id) { state.activeClientId = id; renderChats(); }
 function renderThread() {
   const c = state.clients.find(x => x.id === state.activeClientId);
   const pane = $("threadPane");
-  if (!c) { pane.innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`; return; }
+  if (!c) { pane.innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("clients.selectConv"))}</div>`; renderClientPanel(null); return; }
   const idx = state.clients.indexOf(c);
   pane.innerHTML = `
-    <div class="thread-head">
+    <button type="button" class="thread-head thread-head-btn" id="clientHeadBtn" aria-expanded="${state.clientPanelOpen ? "true" : "false"}" aria-controls="clientSidePanel" aria-label="${escAttr(T("clients.openDetails", { name: c.name }))}" onclick="toggleClientPanel()">
       ${avatarHTML(c.name, idx)}
       <div style="min-width:0;flex:1">
         <div class="title-sm">${esc(c.name)}</div>
         <div class="foot">${esc(c.zone)} · ${esc((c.type || "").replace(/_/g, " "))}</div>
+        <div class="thread-head-hint">${esc(T("clients.tapForDetails"))}</div>
       </div>
       ${c.initiatedBy === "buyer" ? `<span class="pill pill-accent">${esc(T("clients.inquiry"))}</span>` : c.status === "sent" ? `<span class="pill pill-accent">${esc(T("clients.sent"))}</span>` : `<span class="pill pill-amber">${esc(T("clients.draft"))}</span>`}
-    </div>
+    </button>
     <div class="thread-body" id="threadBody">
       <div class="day-divider">${esc(T("date.today"))}</div>
       ${c.initiatedBy === "buyer" ? `<div class="bubble meta">${esc(T("clients.fromOffer"))}</div>` : `<div class="bubble meta">${esc(T("clients.draftedBy"))}</div>`}
@@ -1884,6 +1888,7 @@ function renderThread() {
       <button class="round-icon-btn logi-btn" id="clientLogisticsBtn" title="${escAttr(T("clients.logiTitle"))}" aria-label="${escAttr(T("clients.logiAria"))}"><img class="ic-svg sm" src="assets/icon-truck.svg" alt=""></button>
     </div>`;
   const body = $("threadBody"); body.scrollTop = body.scrollHeight;
+  renderClientPanel(c);
   $("clientSendBtn").onclick = () => sendClientNote(c.id);
   $("clientLogisticsBtn").onclick = () => openLogistics(c.id);
   $("clientInput").addEventListener("keydown", e => { if (e.key === "Enter") sendClientNote(c.id); });
@@ -2513,6 +2518,20 @@ function saveProfileEdit() {
   }
   if (profileReopenMatch) openMatchView(chat.id);
 }
+
+/* ---------- How it works ----------
+   A short, role-aware explainer reached from the avatar menu. */
+function helpStepsFor(role) {
+  const keys = role === "buyer" ? ["help.b1", "help.b2", "help.b3", "help.b4"] : ["help.f1", "help.f2", "help.f3", "help.f4"];
+  return keys.map(k => ({ title: T(k + "t"), body: T(k) }));
+}
+function openHelp() {
+  const steps = helpStepsFor(isBuyer() ? "buyer" : "farmer");
+  $("helpBody").innerHTML = `<ol class="help-steps">${steps.map(s => `<li><div><b>${esc(s.title)}</b>${esc(s.body)}</div></li>`).join("")}</ol>
+    <div class="foot">${esc(T("help.foot"))}</div>`;
+  openSheet("helpSheet");
+}
+function closeHelp() { closeSheet("helpSheet"); }
 
 /* ---------- Dialog (item 18) ----------
    Replaces the browser's own alert / confirm / prompt: those ignore the glass
@@ -3499,14 +3518,65 @@ function renderBuyerInbox() {
 }
 /* The farmer's details, WhatsApp-style: a panel over the right edge, opened by
    pressing the name bar of the chat, closed by its own X (or Escape). */
+/* Side panels (both accounts). A column beside the chat, not an overlay: it is
+   opened and closed with a class so its width can animate and the chat beside it
+   slides to make room and back. While closed it is inert and hidden from
+   assistive tech, but keeps its last content so it can slide out with it. */
+function setSidePanel(el, open, html) {
+  if (!el) return;
+  if (open) { el.innerHTML = html; el.classList.add("open"); el.removeAttribute("aria-hidden"); el.removeAttribute("inert"); }
+  else { el.classList.remove("open"); el.setAttribute("aria-hidden", "true"); el.setAttribute("inert", ""); }
+}
+function sidePanelHTML(titleKey, closeId, bodyHtml) {
+  return `<div class="side-panel-head"><span class="title-sm">${esc(T(titleKey))}</span>
+      <button type="button" class="icon-btn" id="${closeId}" title="${escAttr(T("match.close"))}" aria-label="${escAttr(T("match.close"))}">&#10005;</button></div>
+    <div class="side-panel-body">${bodyHtml}</div>`;
+}
 function renderFarmerPanel(open) {
   const el = $("buyerSidePanel"); if (!el) return;
-  if (!open || !state.detailsOpen) { el.hidden = true; el.innerHTML = ""; return; }
-  el.hidden = false;
-  el.innerHTML = `<div class="side-panel-head"><span class="title-sm">${esc(T("buyer.sumTitle"))}</span>
-      <button type="button" class="icon-btn" id="farmerPanelClose" title="${escAttr(T("match.close"))}" aria-label="${escAttr(T("match.close"))}">&#10005;</button></div>
-    <div class="side-panel-body"><div class="title-sm">${esc(inboxTitle(open))}</div>${farmerSummaryHTML(open.summary)}</div>`;
-  $("farmerPanelClose").onclick = () => closeFarmerPanel(true);
+  const show = !!(open && state.detailsOpen);
+  setSidePanel(el, show, show ? sidePanelHTML("buyer.sumTitle", "farmerPanelClose", `<div class="title-sm">${esc(inboxTitle(open))}</div>${farmerSummaryHTML(open.summary)}`) : "");
+  if (show) $("farmerPanelClose").onclick = () => closeFarmerPanel(true);
+  else if (!open) el.innerHTML = "";
+}
+/* The buyer's details, for the farmer: the latest record we hold for the business,
+   and whether "what they buy" is our estimate or what the business declared. */
+function buyerPanelHTML(c) {
+  const b = DB.buyers.concat(DB.channels).find(x => x.id === c.buyerId) || { name: c.name, type: c.type, zone: c.zone };
+  const declared = !!b.declared_by_buyer;
+  const km = isFinite(Number(b.distance_km)) ? T("buyer.km", { n: Math.round(Number(b.distance_km)) }) : "—";
+  const vol = VOLUME_BANDS.indexOf(b.volume) !== -1 ? T("band." + b.volume) : "—";
+  const needs = (b.needs || []).map(n => `<span class="reason-chip">${esc(catLabel(n) || n)}</span>`).join("");
+  return `<div class="title-sm">${esc(b.name)}</div>
+    <dl class="buyer-facts">
+      <dt>${esc(T("buyer.bizType"))}</dt><dd>${esc((b.type || "").replace(/_/g, " ") || "—")}</dd>
+      <dt>${esc(T("buyer.bizArea"))}</dt><dd>${esc(b.zone || "—")}</dd>
+      <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${esc(km)}</dd>
+      <dt>${esc(T("buyer.bizSource"))}</dt><dd>${esc(b.source || "—")}</dd>
+      <dt>${esc(T("buyer.bizVolume"))}</dt><dd>${esc(vol)}</dd>
+    </dl>
+    <div class="eyebrow">${esc(T(declared ? "card.buysDeclared" : "card.buysGuess"))}</div>
+    <div class="mc-reasons" style="margin-top:0">${needs || "—"}</div>
+    <div class="foot">${esc(T(declared ? "card.declaredNote" : "card.guessNote"))}</div>`;
+}
+function renderClientPanel(c) {
+  const el = $("clientSidePanel"); if (!el) return;
+  const show = !!(c && state.clientPanelOpen);
+  setSidePanel(el, show, show ? sidePanelHTML("clients.detailsTitle", "clientPanelClose", buyerPanelHTML(c)) : "");
+  if (show) $("clientPanelClose").onclick = () => closeClientPanel(true);
+  else if (!c) el.innerHTML = "";
+}
+function toggleClientPanel() {
+  state.clientPanelOpen = !state.clientPanelOpen;
+  renderThread();
+  const f = $(state.clientPanelOpen ? "clientPanelClose" : "clientHeadBtn"); if (f && f.focus) f.focus();
+}
+function closeClientPanel(returnFocus) {
+  if (!state.clientPanelOpen) return false;
+  state.clientPanelOpen = false;
+  renderThread();
+  if (returnFocus) { const f = $("clientHeadBtn"); if (f && f.focus) f.focus(); }
+  return true;
 }
 function toggleFarmerPanel() {
   state.detailsOpen = !state.detailsOpen;
@@ -3521,7 +3591,6 @@ function closeFarmerPanel(returnFocus) {
   return true;
 }
 async function openInboxThread(id) {
-  if (state.openThreadId !== id) state.detailsOpen = false;
   state.openThreadId = id;
   const t = (state.inbox || []).find(x => x.id === id);
   const hadUnread = t && unreadCount(t) > 0;
@@ -4006,7 +4075,10 @@ function boot() {
   // Avatar -> menu: Edit profile / Log out (data stays in the account either way)
   $("profileBtn").onclick = () => setProfileMenu(!profileMenuOpen());
   $("menuEditProfile").onclick = () => { setProfileMenu(false, true); openAccountSheet(); };
+  $("menuHelp").onclick = () => { setProfileMenu(false, true); openHelp(); };
   $("menuLogout").onclick = () => { setProfileMenu(false); signOutNow(); };
+  $("helpCloseBtn").onclick = () => closeHelp();
+  $("helpSheet").addEventListener("click", e => { if (e.target === $("helpSheet")) closeHelp(); });
   document.addEventListener("click", e => {
     if (profileMenuOpen() && $("avatarWrap") && !$("avatarWrap").contains(e.target)) setProfileMenu(false);
   });
@@ -4037,7 +4109,7 @@ function boot() {
      whichever sheet is on top — see trapSheetTab(). */
   document.addEventListener("keydown", e => {
     if (profileMenuOpen() && profileMenuKey(e)) return;
-    if (e.key === "Escape" && !topSheet() && closeFarmerPanel(true)) return;
+    if (e.key === "Escape" && !topSheet() && (closeFarmerPanel(true) || closeClientPanel(true))) return;
     if (e.key === "Escape") { closeTopSheet(); return; }
     if (e.key === "Tab") trapSheetTab(e);
   });

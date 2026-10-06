@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, matchingOffers, buyerDashboardHTML, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, renderBuyerHome, inboxTitle, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, matchingOffers, buyerDashboardHTML, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, renderBuyerHome, inboxTitle, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2422,17 +2422,19 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.renderBuyerInbox();
     check("the buyer inbox uses the Clients layout: a list of conversations and a thread with a name bar and a composer",
       els.buyerList.innerHTML.includes("client-item") && els.buyerThreadPane.innerHTML.includes("thread-head") && els.buyerThreadPane.innerHTML.includes("thread-input-row") && els.buyerThreadPane.innerHTML.includes("bubble in"));
-    check("the farmer's details are NOT in the thread until the name bar is pressed", els.buyerSidePanel.hidden === true && !els.buyerThreadPane.innerHTML.includes("buyer-facts"));
+    check("the farmer's details are NOT in the thread until the name bar is pressed", !els.buyerSidePanel.has("open") && els.buyerSidePanel.getAttribute("aria-hidden") === "true" && els.buyerSidePanel.getAttribute("inert") !== null && !els.buyerThreadPane.innerHTML.includes("buyer-facts"));
     check("the name bar is a button that says it controls the panel", /<button type="button" class="thread-head thread-head-btn"[^>]*aria-expanded="false"[^>]*aria-controls="buyerSidePanel"/.test(els.buyerThreadPane.innerHTML));
     a.toggleFarmerPanel();
     check("pressing it opens the details as a side panel with a close button; the village is escaped",
-      els.buyerSidePanel.hidden === false && els.buyerSidePanel.innerHTML.includes("farmerPanelClose") && els.buyerSidePanel.innerHTML.includes("buyer-facts") && !/<b>Atina<\/b>/.test(els.buyerSidePanel.innerHTML) && /aria-expanded="true"/.test(els.buyerThreadPane.innerHTML));
+      els.buyerSidePanel.has("open") && els.buyerSidePanel.getAttribute("inert") === null && els.buyerSidePanel.innerHTML.includes("farmerPanelClose") && els.buyerSidePanel.innerHTML.includes("buyer-facts") && !/<b>Atina<\/b>/.test(els.buyerSidePanel.innerHTML) && /aria-expanded="true"/.test(els.buyerThreadPane.innerHTML));
     check("the thread's own text is escaped", !els.buyerThreadPane.innerHTML.includes("Ciao <i>"));
-    check("Escape logic: closing returns true once, then false", a.closeFarmerPanel(true) === true && a.closeFarmerPanel(true) === false && els.buyerSidePanel.hidden === true);
+    check("Escape logic: closing returns true once, then false", a.closeFarmerPanel(true) === true && a.closeFarmerPanel(true) === false && !els.buyerSidePanel.has("open") && els.buyerSidePanel.getAttribute("aria-hidden") === "true");
     a.state.detailsOpen = true; a.state.inbox.push({ id: "t2", ts: 2, summary: null, messages: [{ role: "farmer", text: "x", ts: 2, readAt: "x" }] });
     sb.reset(); sb.router = () => ({ data: null, error: null });
     await a.openInboxThread("t2");
-    check("switching to another conversation closes the panel", a.state.detailsOpen === false && els.buyerSidePanel.hidden === true);
+    check("switching to another conversation keeps the panel open and shows the new conversation's details",
+      a.state.detailsOpen === true && els.buyerSidePanel.has("open") && els.buyerSidePanel.innerHTML.includes("A farmer"));
+    a.state.detailsOpen = false;
 
     // dialog
     for (const id of ["dialogSheet", "dialogTitle", "dialogBody", "dialogOk", "dialogCancel"]) els[id] = fakeEl(id);
@@ -2463,6 +2465,36 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.renderThread();
     check("a draft's thread has Review and send and no Mark as sent button",
       els.threadPane.innerHTML.includes("reviewDraft('o1')") && !els.threadPane.innerHTML.includes("markSent(") && !els.threadPane.innerHTML.includes("Mark as sent"));
+  }
+
+  /* ---- farmer's Clients: buyer details panel, bell hidden, language in the menu, how it works ---- */
+  {
+    const a = app;
+    els.clientSidePanel = fakeEl("clientSidePanel"); els.clientPanelClose = fakeEl("clientPanelClose"); els.clientHeadBtn = fakeEl("clientHeadBtn");
+    els.threadPane = fakeEl("threadPane"); els.threadBody = fakeEl("threadBody"); els.clientInput = fakeEl("clientInput"); els.clientSendBtn = fakeEl("clientSendBtn"); els.clientLogisticsBtn = fakeEl("clientLogisticsBtn");
+    const b0 = a.DB.buyers[5]; // [0] was declared by an earlier test
+    a.state.clients = [{ id: "o1", buyerId: b0.id, name: b0.name, type: b0.type, zone: b0.zone, status: "sent", message_it: "Ciao", message_en: "Hi", messages: [], extra: [], chatId: "x" }];
+    a.state.activeClientId = "o1"; a.state.clientPanelOpen = false;
+    a.renderThread();
+    check("the farmer's thread name bar is a button that controls the side panel, closed to begin with",
+      /<button type="button" class="thread-head thread-head-btn" id="clientHeadBtn"[^>]*aria-expanded="false"[^>]*aria-controls="clientSidePanel"/.test(els.threadPane.innerHTML) && !els.clientSidePanel.has("open"));
+    a.toggleClientPanel();
+    check("pressing it opens the buyer's details beside the chat, with a close button, saying if the needs are an estimate",
+      els.clientSidePanel.has("open") && els.clientSidePanel.innerHTML.includes("clientPanelClose") && els.clientSidePanel.innerHTML.includes(b0.name.replace(/&/g, "&amp;")) && els.clientSidePanel.innerHTML.includes("estimate") && /aria-expanded="true"/.test(els.threadPane.innerHTML));
+    check("closing it hides it from assistive tech but keeps it to slide out", a.closeClientPanel(true) === true && !els.clientSidePanel.has("open") && els.clientSidePanel.getAttribute("inert") !== null && a.closeClientPanel(true) === false);
+    a.state.clientPanelOpen = true; a.state.clients = [];
+    a.renderChats && a.renderChats();
+    check("with no conversation the panel closes", !els.clientSidePanel.has("open"));
+    a.state.clientPanelOpen = false;
+
+    // how it works
+    els.helpSheet = fakeEl("helpSheet"); els.helpBody = fakeEl("helpBody");
+    a.state.role = "farmer"; a.openHelp();
+    check("How it works opens a sheet with four numbered steps for a farmer", els.helpSheet.has("open") && (els.helpBody.innerHTML.match(/<li>/g) || []).length === 4 && els.helpBody.innerHTML.includes("Fasto-AI"));
+    a.closeHelp();
+    a.state.role = "buyer"; a.openHelp();
+    check("and different steps for a buyer", els.helpBody.innerHTML.includes("Claim your business") && !els.helpBody.innerHTML.includes("Fasto-AI"));
+    a.closeHelp(); a.state.role = "farmer";
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

@@ -573,16 +573,41 @@
 .thread-head-btn:hover{ background:rgba(255,255,255,.05); }
 .thread-head-btn:focus-visible{ outline:2px solid #fff; outline-offset:-2px; }
 .thread-head-hint{ font-size:11px; color:var(--ink-50); }
-.side-panel{ position:absolute; top:16px; right:16px; bottom:16px; z-index:5; width:min(340px, calc(100% - 32px));
-  border-radius:var(--radius-lg); background:rgba(0,0,0,.86); border:1px solid var(--hairline); display:flex; flex-direction:column;
-  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
-.side-panel[hidden]{ display:none; }
+.side-panel{ flex:0 0 auto; width:0; margin-left:-14px; opacity:0; overflow:hidden; display:flex; flex-direction:column;
+  border-radius:var(--radius-lg); background:rgba(0,0,0,.86); border:1px solid transparent;
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  transition:width .28s ease, margin-left .28s ease, opacity .2s ease; }
+/* Open: a real column. The chat beside it narrows to make room and widens again
+   when it closes. Its content keeps a fixed width so it is clipped, not squashed,
+   while the width animates. */
+.side-panel.open{ width:340px; margin-left:0; opacity:1; border-color:var(--hairline); }
+.side-panel > *{ min-width:338px; }
+@media (prefers-reduced-motion: reduce){ .side-panel{ transition:none; } }
+#bellBtn[hidden]{ display:none; }
 .side-panel-head{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--hairline); }
 .side-panel-head .title-sm{ flex:1; min-width:0; }
 .side-panel-body{ padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
 @media (prefers-reduced-transparency: reduce){ .side-panel{ background:#1c1414; } }
-@media (max-width:700px){ .side-panel{ top:8px; right:8px; bottom:8px; width:calc(100% - 16px); } }
+/* On a phone the layout is a column, so there is nothing to push aside: the panel
+   slides over the chat instead. */
+@media (max-width:700px){
+  .side-panel{ position:absolute; top:8px; right:8px; bottom:8px; z-index:5; width:calc(100% - 16px); margin:0; opacity:1;
+    transform:translateX(112%); transition:transform .25s ease; }
+  .side-panel.open{ width:calc(100% - 16px); transform:none; }
+  .side-panel > *{ min-width:0; }
+}
 .rp-unread{ font-weight:700; color:var(--warn); }
+#helpSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#helpSheet.open{ display:flex; }
+#helpSheet .match-panel{ max-width:560px; }
+.help-steps{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:12px; counter-reset:help; }
+.help-steps li{ display:flex; gap:12px; font-size:14px; line-height:1.55; counter-increment:help; }
+.help-steps li::before{ content:counter(help); flex:0 0 26px; height:26px; border-radius:50%; background:var(--red); color:#fff;
+  font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.help-steps b{ display:block; }
+.menu-lang{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 12px; }
+.menu-lang-label{ font-size:13px; font-weight:700; letter-spacing:.02em; }
 #dialogSheet{ position:fixed; inset:0; z-index:160; display:none; align-items:center; justify-content:center;
   padding:24px; background:rgba(8,5,5,.62); }
 #dialogSheet.open{ display:flex; }
@@ -595,10 +620,10 @@
   border-radius:var(--radius-md); background:rgba(0,0,0,.86); border:1px solid var(--hairline);
   -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); display:flex; flex-direction:column; gap:2px; }
 .avatar-menu[hidden]{ display:none; }
-.avatar-menu button{ text-align:left; padding:11px 12px; border-radius:var(--radius-sm); color:#fff; background:none;
+.avatar-menu > button{ text-align:left; padding:11px 12px; border-radius:var(--radius-sm); color:#fff; background:none;
   font-family:var(--font); font-size:13px; font-weight:700; letter-spacing:.02em; cursor:pointer; border:0; }
-.avatar-menu button:hover, .avatar-menu button:focus-visible{ background:rgba(255,255,255,.14); outline:none; }
-.avatar-menu button:focus-visible{ outline:2px solid #fff; outline-offset:-2px; }
+.avatar-menu > button:hover, .avatar-menu > button:focus-visible{ background:rgba(255,255,255,.14); outline:none; }
+.avatar-menu > button:focus-visible{ outline:2px solid #fff; outline-offset:-2px; }
 @media (prefers-reduced-transparency: reduce){ .avatar-menu{ background:#1c1414; } }
 #accountSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center;
   padding:24px; background:rgba(8,5,5,.62); }
@@ -717,7 +742,7 @@
   .field input,.field select{ font-size:16px; }
   .mode-toggle button{ min-height:44px; }
 
-  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet, #accountSheet, #dialogSheet{ padding:10px; }
+  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet, #accountSheet, #dialogSheet, #helpSheet{ padding:10px; }
   .match-panel{ max-width:100%; }
   #logisticsSheet .match-panel{ max-width:100%; }
   #profileSheet .match-panel{ max-width:100%; }
