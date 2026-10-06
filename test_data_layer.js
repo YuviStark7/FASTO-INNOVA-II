@@ -180,7 +180,7 @@ function loadApp(root) {
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
-  adminBuyerMatches, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
@@ -2454,6 +2454,36 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.editAdminBuyer("b2"); els.abName.value = "   "; sb.reset();
     await a.saveAdminBuyer();
     check("an empty name is refused before anything is sent", sb.chains.length === 0);
+  }
+
+  /* ---- Item 31 pass A (farmers): directory with display fields only, audited edit ---- */
+  {
+    const a = app;
+    const fl = [{ id: "f1", first_name: "Maria", last_name: "Rossi", nickname: "Mari", company_name: "Orto <b>Verde</b>", role: "farmer", created_at: "2026-10-01T00:00:00Z" },
+                { id: "f2", farmer_name: "Luigi", role: "farmer" }, { id: "f3", first_name: "Bea", role: "buyer" }];
+    check("admin farmer search: every word must match name, nickname or company",
+      eq(a.adminFarmerMatches(fl, "maria verde").map(f => f.id), ["f1"]) && a.adminFarmerMatches(fl, "").length === 3 && a.adminFarmerMatches(fl, "zzz").length === 0);
+    ["adminFarmersBody", "adminFarmersTitle", "adminFarmersEmpty", "adminFarmerForm"].forEach(id => els[id] = fakeEl(id));
+    a.state.isAdmin = true; sb.reset();
+    sb.router = ch => ({ data: ch.table === "farmers" ? fl : [], error: null });
+    await a.loadAdminFarmers();
+    const sel = sb.chains[0].ops.find(o => o.op === "select");
+    check("the farmers directory names its columns: no phone, address or VAT is ever requested",
+      sel && !/\*/.test(String(sel.args[0])) && !/phone|address|vat/.test(String(sel.args[0])));
+    check("buyer accounts are left out, rows are escaped, each has an Edit button",
+      a.adminFarmersState().farmers.length === 2 && !els.adminFarmersBody.innerHTML.includes("<b>Verde") && els.adminFarmersBody.innerHTML.includes("&lt;b&gt;") && (els.adminFarmersBody.innerHTML.match(/editAdminFarmer/g) || []).length === 2);
+    a.editAdminFarmer("f1");
+    els.afFirst = Object.assign(fakeEl("afFirst"), { value: " Marie " }); els.afLast = Object.assign(fakeEl("afLast"), { value: "Rossi" });
+    els.afNick = Object.assign(fakeEl("afNick"), { value: "" }); els.afCompany = Object.assign(fakeEl("afCompany"), { value: "Orto Verde" });
+    sb.reset();
+    sb.router = ch => ch.table === "rpc:admin_edit_farmer" ? { data: { id: "f1", first_name: "Marie", last_name: "Rossi", nickname: null, company_name: "Orto Verde" }, error: null } : { data: [], error: null };
+    await a.saveAdminFarmer();
+    const rpcF = sb.chains.find(c => c.table === "rpc:admin_edit_farmer");
+    check("saving goes through admin_edit_farmer with display fields only",
+      rpcF && rpcF.ops[0].args[0].p_id === "f1" && eq(Object.keys(rpcF.ops[0].args[0].p_patch).sort(), ["company_name", "first_name", "last_name", "nickname"]) && rpcF.ops[0].args[0].p_patch.first_name === "Marie");
+    check("saving never writes the farmers table directly", sb.chains.every(c => c.table !== "farmers" || c.ops.every(o => o.op === "select")));
+    check("after a save the row shows the new name and the form closes",
+      a.adminFarmersState().farmers.find(f => f.id === "f1").first_name === "Marie" && a.adminFarmersState().editing === null);
   }
 
   /* ---- buyer inbox layout, side panel, dialog sheet, no Mark as sent ---- */

@@ -139,6 +139,10 @@ const DataStore = {
   // Item 31 pass A. Admin-only database function: edits any buyers row and writes
   // the admin_audit row in the same transaction. Direct table updates stay limited.
   adminEditBuyer(id, patch) { return sb.rpc("admin_edit_buyer", { p_id: id, p_patch: patch }); },
+  // Item 31 pass A, farmers. Display fields only: the directory read names its columns
+  // so phone, address and VAT never reach the Admin screen; the edit is an audited RPC.
+  listFarmerDirectory() { return sb.from("farmers").select("id,farmer_name,first_name,last_name,nickname,company_name,role,created_at").order("created_at", { ascending: false }); },
+  adminEditFarmer(id, patch) { return sb.rpc("admin_edit_farmer", { p_id: id, p_patch: patch }); },
   listAudit(limit) { return sb.from("admin_audit").select("*").order("created_at", { ascending: false }).limit(limit || 50); },
   listAllOutreach() { return sb.from("outreach").select("*").order("created_at", { ascending: false }); }
 };

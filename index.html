@@ -321,6 +321,18 @@
         </table>
         <div class="empty-state" id="adminEmpty" data-i18n="admin.empty">No farmer activity yet.</div>
       </div>
+      <div class="research-panel glass-45 admin-panel-main" id="adminFarmersPanel">
+        <div class="research-panel-head"><span class="title-md" id="adminFarmersTitle">Farmers</span></div>
+        <div class="field"><label for="adminFarmerSearch" data-i18n="admin.fSearch">Search farmers</label>
+          <input id="adminFarmerSearch" type="search" oninput="setAdminFarmerSearch(this.value)"></div>
+        <table class="rp-table">
+          <thead><tr><th scope="col" data-i18n="admin.bf.name">Name</th><th scope="col" data-i18n="admin.ff.nickname">Nickname</th><th scope="col" data-i18n="admin.ff.company">Company</th><th scope="col" data-i18n="admin.ff.joined">Joined</th><th scope="col" data-i18n="admin.bActions">Actions</th></tr></thead>
+          <tbody id="adminFarmersBody"></tbody>
+        </table>
+        <div class="empty-state" id="adminFarmersEmpty" style="display:none" data-i18n="admin.fEmpty">No farmer matches.</div>
+        <div id="adminFarmerForm"></div>
+        <p class="buyer-lead" data-i18n="admin.fPrivacy">Phone, address and VAT number are not shown here.</p>
+      </div>
       <div class="research-panel glass-45 admin-panel-main" id="adminBuyersPanel">
         <div class="research-panel-head"><span class="title-md" id="adminBuyersTitle">Buyers</span></div>
         <div class="field"><label for="adminBuyerSearch" data-i18n="admin.bSearch">Search buyers</label>

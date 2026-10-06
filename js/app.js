@@ -2922,6 +2922,85 @@ async function saveAdminBuyer() {
   paintAdminBuyers();
 }
 
+/* ---------- Admin: farmers directory (ROADMAP item 31, pass A, farmers) ----------
+   Lists farmer accounts (never buyers) with display fields only. The read names
+   its columns, so phone, address and VAT number are never loaded here. Editing
+   goes through admin_edit_farmer, which writes the admin_audit row too. */
+let adminFarmersCache = null;   // { farmers, q, editing }
+let adminFarmerBusy = false;
+
+function farmerDisplayName(f) {
+  return [f.first_name, f.last_name].filter(Boolean).join(" ") || f.farmer_name || "—";
+}
+// Pure: every word must match the name, nickname or company.
+function adminFarmerMatches(farmers, q) {
+  const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+  return (farmers || []).filter(f => {
+    const hay = [farmerDisplayName(f), f.farmer_name, f.nickname, f.company_name].join(" ").toLowerCase();
+    return words.every(w => hay.indexOf(w) !== -1);
+  });
+}
+async function loadAdminFarmers() {
+  if (!state.isAdmin || !$("adminFarmersBody")) return;
+  const { data, error } = await DataStore.listFarmerDirectory();
+  if (error) { console.error("admin farmers load failed", error); toast(T("admin.loadFailed")); return; }
+  const keep = adminFarmersCache || {};
+  adminFarmersCache = { farmers: (data || []).filter(f => f.role !== "buyer"), q: keep.q || "", editing: keep.editing || null };
+  paintAdminFarmers();
+}
+function setAdminFarmerSearch(q) {
+  if (!adminFarmersCache) return;
+  adminFarmersCache.q = q;
+  paintAdminFarmers(true);
+}
+function adminFarmerFormHTML(f) {
+  const field = (id, key, val) => `<div class="field"><label for="${id}">${esc(T("admin.ff." + key))}</label><input id="${id}" type="text" maxlength="80" value="${escAttr(val == null ? "" : val)}"></div>`;
+  return `<form class="buyer-form" id="afForm" onsubmit="return false">
+    <div class="eyebrow">${esc(T("admin.fEditing", { name: farmerDisplayName(f) }))}</div>
+    ${field("afFirst", "first", f.first_name)}${field("afLast", "last", f.last_name)}${field("afNick", "nickname", f.nickname)}${field("afCompany", "company", f.company_name)}
+    <div class="row gap-8"><button type="button" class="btn btn-primary" onclick="saveAdminFarmer()">${esc(T("admin.bSave"))}</button>
+    <button type="button" class="btn btn-ghost" onclick="editAdminFarmer(null)">${esc(T("admin.bCancel"))}</button></div>
+    <p class="buyer-lead">${esc(T("admin.bAuditNote"))}</p></form>`;
+}
+function paintAdminFarmers(searchOnly) {
+  const c = adminFarmersCache; if (!c || !$("adminFarmersBody")) return;
+  const rows = adminFarmerMatches(c.farmers, c.q);
+  $("adminFarmersTitle").textContent = T("admin.farmersTitle", { n: rows.length });
+  $("adminFarmersBody").innerHTML = rows.map(f => `<tr>
+      <td data-label="${escAttr(T("admin.bf.name"))}"><b>${esc(farmerDisplayName(f))}</b></td>
+      <td data-label="${escAttr(T("admin.ff.nickname"))}">${esc(f.nickname || "—")}</td>
+      <td data-label="${escAttr(T("admin.ff.company"))}">${esc(f.company_name || "—")}</td>
+      <td data-label="${escAttr(T("admin.ff.joined"))}">${esc(f.created_at ? new Date(f.created_at).toLocaleDateString() : "—")}</td>
+      <td><button type="button" class="btn btn-ghost btn-sm" onclick="editAdminFarmer('${escAttr(f.id)}')" aria-label="${escAttr(T("admin.fEditFor", { name: farmerDisplayName(f) }))}">${esc(T("admin.bEdit"))}</button></td></tr>`).join("");
+  $("adminFarmersEmpty").style.display = rows.length ? "none" : "block";
+  if (searchOnly) return;
+  const f = c.editing && c.farmers.find(x => x.id === c.editing);
+  $("adminFarmerForm").innerHTML = f ? adminFarmerFormHTML(f) : "";
+}
+function editAdminFarmer(id) {
+  if (!adminFarmersCache) return;
+  adminFarmersCache.editing = id;
+  paintAdminFarmers();
+  if (id && $("afFirst")) $("afFirst").focus();
+}
+async function saveAdminFarmer() {
+  const c = adminFarmersCache; if (!c || !c.editing || adminFarmerBusy || !state.isAdmin) return;
+  const v = id => ($(id) ? String($(id).value).trim().slice(0, 80) : "");
+  const patch = { first_name: v("afFirst"), last_name: v("afLast"), nickname: v("afNick"), company_name: v("afCompany") };
+  adminFarmerBusy = true;
+  try {
+    const { data, error } = await DataStore.adminEditFarmer(c.editing, patch);
+    if (error) throw error;
+    const i = c.farmers.findIndex(x => x.id === c.editing);
+    if (i !== -1 && data) c.farmers[i] = Object.assign({}, c.farmers[i], data);
+    c.editing = null;
+    toast(T("admin.fSaved"));
+    if (adminBuyersCache) { const { data: audit } = await DataStore.listAudit(15); if (audit) { adminBuyersCache.audit = audit; paintAdminBuyers(); } }
+  } catch (e) { console.error("admin farmer save failed", e); toast(T("admin.fFailed")); }
+  adminFarmerBusy = false;
+  paintAdminFarmers();
+}
+
 /* Clicking a stage filters the table under the funnel to the conversations in
    it; clicking the selected one again clears the filter. Without this the
    funnel can say "4 stopped at the interview" while the table below has no way
@@ -3826,7 +3905,7 @@ function switchScreen(name) {
   if (name === "dashboard") { if (prev !== "dashboard") rotateBackdrop(); renderDashboard(); }
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
-  if (name === "admin") { renderAdmin(); loadAdminBuyers(); }
+  if (name === "admin") { renderAdmin(); loadAdminFarmers(); loadAdminBuyers(); }
   if (name.indexOf("buyer") === 0) renderBuyerScreens();
 }
 
