@@ -117,6 +117,10 @@
 #main::after{ content:""; position:absolute; inset:0; z-index:2; pointer-events:none;
   background:linear-gradient(to bottom, rgba(10,6,6,.05) 0%, rgba(8,5,5,.65) 100%); }
 #main > #topbar, #main > .screen{ position:relative; z-index:3; }
+/* The top bar sits ABOVE the screens, not level with them: the avatar menu hangs
+   out of the bar over the screen below, and at equal z-index the screen (later in
+   the page) painted over it and swallowed its clicks. Sheets are z-index 120+. */
+#main > #topbar{ z-index:30; }
 /* Someone who has asked for less movement still gets the new photo, just without
    the dissolve — the same treatment as the chat-rail pulse and the skeletons. */
 @media (prefers-reduced-motion: reduce){ .backdrop-layer{ transition:none; } }
@@ -223,7 +227,7 @@
 
 /* ================= CLIENTS ================= */
 #clientsScreen{ min-height:0; }
-.clients-outer{ border-radius:var(--radius-lg); padding:16px; flex:1; display:flex; gap:14px; min-height:0; }
+.clients-outer{ border-radius:var(--radius-lg); padding:16px; flex:1; display:flex; gap:14px; min-height:0; position:relative; }
 .client-list-panel{ width:320px; flex-shrink:0; border-radius:var(--radius-lg); padding:8px; overflow-y:auto; }
 .client-item{ display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--radius-md); cursor:pointer;
   width:100%; border:none; background:none; text-align:left; font-family:inherit; font-size:inherit; color:inherit; -webkit-appearance:none; appearance:none; }
@@ -563,6 +567,28 @@
 .card-en summary{ cursor:pointer; }
 @media (max-width:700px){ .mcard:nth-child(n+4){ display:none; } }
 
+/* ================= BUYER INBOX (same chrome as Clients) + DETAILS PANEL ================= */
+.thread-head-btn{ width:100%; background:none; border:0; border-bottom:1px solid var(--hairline); color:#fff; text-align:left;
+  font-family:var(--font); cursor:pointer; border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
+.thread-head-btn:hover{ background:rgba(255,255,255,.05); }
+.thread-head-btn:focus-visible{ outline:2px solid #fff; outline-offset:-2px; }
+.thread-head-hint{ font-size:11px; color:var(--ink-50); }
+.side-panel{ position:absolute; top:16px; right:16px; bottom:16px; z-index:5; width:min(340px, calc(100% - 32px));
+  border-radius:var(--radius-lg); background:rgba(0,0,0,.86); border:1px solid var(--hairline); display:flex; flex-direction:column;
+  -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+.side-panel[hidden]{ display:none; }
+.side-panel-head{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--hairline); }
+.side-panel-head .title-sm{ flex:1; min-width:0; }
+.side-panel-body{ padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+@media (prefers-reduced-transparency: reduce){ .side-panel{ background:#1c1414; } }
+@media (max-width:700px){ .side-panel{ top:8px; right:8px; bottom:8px; width:calc(100% - 16px); } }
+.rp-unread{ font-weight:700; color:var(--warn); }
+#dialogSheet{ position:fixed; inset:0; z-index:160; display:none; align-items:center; justify-content:center;
+  padding:24px; background:rgba(8,5,5,.62); }
+#dialogSheet.open{ display:flex; }
+#dialogSheet .match-panel{ max-width:440px; }
+#dialogBody p{ margin:0 0 12px; font-size:14px; line-height:1.55; }
+
 /* ================= ACCOUNT MENU + EDIT PROFILE ================= */
 .avatar-wrap{ position:relative; }
 .avatar-menu{ position:absolute; right:0; top:calc(100% + 10px); z-index:60; min-width:190px; padding:6px;
@@ -691,7 +717,7 @@
   .field input,.field select{ font-size:16px; }
   .mode-toggle button{ min-height:44px; }
 
-  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet, #accountSheet{ padding:10px; }
+  #matchSheet, #logisticsSheet, #profileSheet, #exportSheet, #accountSheet, #dialogSheet{ padding:10px; }
   .match-panel{ max-width:100%; }
   #logisticsSheet .match-panel{ max-width:100%; }
   #profileSheet .match-panel{ max-width:100%; }

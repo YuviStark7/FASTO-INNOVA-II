@@ -278,9 +278,12 @@
       </div>
     </section>
     <section class="screen" id="buyerInboxScreen">
-      <div class="research-panel glass-45 buyer-panel">
-        <div class="research-panel-head"><span class="title-md" data-i18n="buyer.inboxTitle">Inbox</span></div>
-        <div class="buyer-body" id="buyerInboxBody"></div>
+      <!-- Same two-panel layout as Clients. The farmer's details open as a side
+           panel over the right edge when the name bar of a chat is pressed. -->
+      <div class="clients-outer glass-45">
+        <div class="client-list-panel glass-30" id="buyerList" role="group" data-i18n-aria="a11y.buyerThreads" aria-label="Your conversations"></div>
+        <div class="chat-box-panel glass-30" id="buyerThreadPane"></div>
+        <aside class="side-panel" id="buyerSidePanel" hidden data-i18n-aria="buyer.sumTitle" aria-label="About this farmer"></aside>
       </div>
     </section>
     <section class="screen" id="buyerOffersScreen">
@@ -422,6 +425,22 @@
     <div class="match-panel-foot lg-foot">
       <button class="btn btn-primary" id="accountSaveBtn" data-i18n="acct.save">Save changes</button>
       <span data-i18n="acct.foot">Used to fill in logistics requests for you. Never shown to buyers.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- DIALOG (replaces the browser's alert / confirm / prompt) ----------
+     Sixth body-level sheet. One at a time; the buttons and text are set by
+     showDialog() in app.js. -->
+<div id="dialogSheet">
+  <div class="match-panel glass-45" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" aria-describedby="dialogBody">
+    <div class="match-panel-head">
+      <div style="min-width:0;flex:1"><span class="title-md" id="dialogTitle"></span></div>
+    </div>
+    <div class="match-panel-body" id="dialogBody"></div>
+    <div class="match-panel-foot lg-foot">
+      <button class="btn btn-primary" id="dialogOk" type="button" data-i18n="dlg.ok">OK</button>
+      <button class="btn btn-ghost" id="dialogCancel" type="button" data-i18n="dlg.cancel">Cancel</button>
     </div>
   </div>
 </div>

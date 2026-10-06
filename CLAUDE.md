@@ -46,7 +46,8 @@ README.md describes the product. It is partly out of date on buyers (it still sa
 
 - The farmer's name comes from the account, never from the conversation: Brain 1 is told it and told never to ask (`interviewSystem`), and `withAccountName` overrides whatever the model writes. Chats are titled by product (`chatTitle`), not by name.
 - After matching, the best four buyers are cards under the chat (`matchCardsHTML`); a card opens the buyer sheet (`openBuyerCard`: details, map embed, every chip, a drafted message). The draft is made on demand for ONE buyer with the same Brain 2 call and Guardian check as the original (`draftFor`), with a plain template fallback. Send = create the outreach thread and `markSent` (posts to the buyer's inbox). There is no edit-details button: edits are asked for in the chat, Brain 1 re-calls `submit_farmer_profile`, and `onProfileRevised` runs `applyProfileEdit` (the profile-edit sheet code remains in app.js, unreachable from the UI, because its tests pin the rules `applyProfileEdit` still enforces).
-- The avatar opens a menu (Edit profile, Log out). Edit profile is `#accountSheet`, the fifth sheet.
+- The avatar opens a menu (Edit profile, Log out). Edit profile is `#accountSheet`, the fifth sheet; `#dialogSheet` is the sixth: `showDialog()` replaces `alert`/`confirm`/`prompt` (the only remaining browser dialogs were the API-key alert and the price prompt). Never reintroduce a browser dialog. The top bar must stay above the screens (`#main > #topbar{z-index:30}`) or the avatar menu goes under them.
+- There is no "Mark as sent" button: a draft is sent from its buyer's card (`reviewDraft` opens it; `sendCardMessage` -> `markSent`). The buyer inbox (`renderBuyerInbox`) mirrors the Clients layout, and the farmer's details open in a side panel from the chat's name bar.
 
 ## Tests: run all of them before any change ships
 

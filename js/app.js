@@ -30,6 +30,7 @@ let state = {
   email: "",            // the signed-in address, used only to prefill a buyer's claim
   inbox: [],            // a buyer's conversations from farmers (item 27)
   openThreadId: null,
+  detailsOpen: false,   // the buyer's side panel about the farmer
   offers: [],           // a farmer's own published/unpublished offers (item 29)
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
@@ -884,7 +885,7 @@ async function finishWithRecs(recs, chat) {
    profile editor from the match sheet closes the match sheet on the way, so
    "put me back where I was" has to mean the button that started all of it, not
    a control inside a panel that has since been torn down and rebuilt. */
-const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet"];
+const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet", "dialogSheet"];
 const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let sheetStack = [];
 let sheetReturnFocus = null;
@@ -967,6 +968,7 @@ function closeTopSheet() {
   else if (id === "logisticsSheet") closeLogistics();
   else if (id === "exportSheet") closeExportSheet();
   else if (id === "accountSheet") closeAccountSheet();
+  else if (id === "dialogSheet") settleDialog(false);
   else closeProfileEdit();
   return true;
 }
@@ -1459,10 +1461,11 @@ function relDate(ts) {
   if (d.toDateString() === y.toDateString()) return T("date.yesterday");
   return d.toLocaleDateString(T("date.locale"), { day: "2-digit", month: "short" });
 }
-function adjustPrice(cat) {
+async function adjustPrice(cat) {
   if (!cat) return;
   const cur = PRICE_ASSUMPTIONS[cat] || 3;
-  const v = window.prompt(T("dash.pricePrompt", { cat: catLabel(cat) || cat }), cur.toFixed(2));
+  const v = await showDialog({ titleKey: "dash.priceTitle", bodyKey: "dash.pricePrompt", vars: { cat: catLabel(cat) || cat },
+    input: { labelKey: "dash.priceLabel", value: cur.toFixed(2) }, okKey: "dlg.save", cancelKey: "dlg.cancel" });
   if (v === null) return;
   const n = parseFloat(v.replace(",", "."));
   if (isFinite(n) && n > 0) { PRICE_ASSUMPTIONS[cat] = n; renderDashboard(); }
@@ -1865,7 +1868,7 @@ function renderThread() {
       ${c.profileEdited ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.profileEdited"))}</div>` : ""}
       ${c.initiatedBy === "buyer" ? "" : `<div class="bubble out">${esc(c.message_it)}</div>
       <div class="bubble-actions">
-        ${c.status === "sent" ? "" : `<button class="btn btn-ghost btn-sm" onclick="markSent('${c.id}')">${esc(T("clients.markSent"))}</button>`}
+        ${c.status === "sent" ? "" : `<button class="btn btn-primary btn-sm" onclick="reviewDraft('${c.id}')">${esc(T("clients.reviewSend"))}</button>`}
         <button class="btn btn-ghost btn-sm" onclick="copyClientMsg('${c.id}')">${esc(T("clients.copyIt"))}</button>
       </div>
       <div class="bubble meta">${esc(T("clients.englishTranslation"))}</div>
@@ -1908,6 +1911,15 @@ async function sendClientNote(id) {
 function clientPreview(c) {
   const last = (c.messages || [])[(c.messages || []).length - 1];
   return (c.message_it || (last && last.text) || "").slice(0, 46);
+}
+// A draft is sent from its buyer's card in Fasto-AI, where the message can be read,
+// edited and sent in one place. "Mark as sent" no longer exists as a separate step.
+function reviewDraft(id) {
+  const c = state.clients.find(x => x.id === id); if (!c) return;
+  const chat = state.chats.find(x => x.id === c.chatId);
+  if (!chat || !chat.profile) { toast(T("clients.reviewGone")); return; }
+  switchScreen("assistant"); selectChat(chat.id);
+  openBuyerCard(chat.id, c.buyerId);
 }
 function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if (c) { navigator.clipboard.writeText(c.message_it); toast(T("clients.copied")); } }
 
@@ -2500,6 +2512,38 @@ function saveProfileEdit() {
     toast(msg);
   }
   if (profileReopenMatch) openMatchView(chat.id);
+}
+
+/* ---------- Dialog (item 18) ----------
+   Replaces the browser's own alert / confirm / prompt: those ignore the glass
+   identity, can't be translated (the OS supplies the button words), sit outside
+   the sheet focus trap, and can't be driven by tests. showDialog() resolves with
+   true / false for a message or a question, or with the typed text / null when
+   it has an input. Escape or a click outside counts as "cancel". */
+let dialogResolve = null, dialogHasInput = false;
+function showDialog(opts) {
+  return new Promise(resolve => {
+    if (dialogResolve) settleDialog(false);   // one at a time
+    dialogResolve = resolve; dialogHasInput = !!opts.input;
+    $("dialogTitle").textContent = T(opts.titleKey);
+    const inp = opts.input;
+    $("dialogBody").innerHTML = `<p>${esc(T(opts.bodyKey, opts.vars))}</p>` + (inp
+      ? `<div class="field"><label for="dialogInput">${esc(T(inp.labelKey, opts.vars))}</label><input type="text" id="dialogInput" inputmode="decimal" value="${escAttr(inp.value || "")}" autocomplete="off"></div>` : "");
+    $("dialogOk").textContent = T(opts.okKey || "dlg.ok");
+    $("dialogCancel").textContent = T(opts.cancelKey || "dlg.cancel");
+    $("dialogCancel").style.display = opts.cancelKey ? "" : "none";
+    openSheet("dialogSheet");
+    const i = $("dialogInput");
+    if (i) { if (i.addEventListener) i.addEventListener("keydown", e => { if (e.key === "Enter") settleDialog(true); }); if (i.select) i.select(); }
+  });
+}
+function settleDialog(ok) {
+  const res = dialogResolve; if (!res) return;
+  dialogResolve = null;
+  const i = dialogHasInput ? $("dialogInput") : null;
+  const value = i ? i.value : null;
+  closeSheet("dialogSheet");
+  res(dialogHasInput ? (ok ? value : null) : !!ok);
 }
 
 /* ---------- Account: nickname and contact details ----------
@@ -3326,33 +3370,32 @@ function matchingOffers(offers, biz, now) {
   return (offers || []).filter(o => new Date(o.created_at).getTime() >= cutoff &&
     (o.products || []).some(p => biz.needs.indexOf(p.category) !== -1));
 }
-function profileCompleteness(biz) {
-  if (!biz) return { done: 0, total: 4, pct: 0, missing: [] };
-  const checks = [
-    ["declared", !!biz.declared_by_buyer],
-    ["needs", (biz.needs || []).length > 0 && !!biz.declared_by_buyer],
-    ["volume", VOLUME_BANDS.indexOf(biz.volume) !== -1 && !!biz.declared_by_buyer],
-    ["quality", (biz.quality_focus || []).length > 0 && !!biz.declared_by_buyer]
-  ];
-  const done = checks.filter(c => c[1]).length;
-  return { done, total: checks.length, pct: Math.round(100 * done / checks.length), missing: checks.filter(c => !c[1]).map(c => c[0]) };
-}
+/* The buyer's Dashboard: the same shape as the farmer's (a table of
+   conversations, then the numbers that matter as cards underneath). */
 function buyerDashboardHTML(biz) {
-  const unread = inboxUnread(state.inbox), convos = (state.inbox || []).length;
+  const inbox = state.inbox || [];
+  const unread = inboxUnread(inbox), convos = inbox.length;
   const match = matchingOffers(state.offerFeed, biz);
-  const comp = profileCompleteness(biz);
   const tile = (n, labelKey, screen, extra) => `<button type="button" class="stat-tile" onclick="switchScreen('${screen}')"><b>${n}</b><span>${esc(T(labelKey))}</span>${extra || ""}</button>`;
-  const offersHint = biz.declared_by_buyer ? "" : `<small>${esc(T("buyer.dashDeclareHint"))}</small>`;
-  const list = match.slice(0, 3).map(o => `<li>${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}: ${(o.products || []).map(p => esc(p.name)).join(", ")}</li>`).join("");
-  return `<div class="stat-row">
+  const offersHint = biz && biz.declared_by_buyer ? "" : `<small>${esc(T("buyer.dashDeclareHint"))}</small>`;
+  const rows = inbox.map(t => {
+    const last = t.messages[t.messages.length - 1], n = unreadCount(t);
+    const prods = ((t.summary && t.summary.products) || []).map(p => esc(p.name)).join(", ") || "—";
+    return `<tr>
+      <td class="rp-conv"><button type="button" class="rp-cell-btn" onclick="openInboxFromOffer('${esc(t.id)}')" aria-label="${escAttr(T("buyer.openThreadAria", { name: inboxTitle(t) }))}"><b>${esc(inboxTitle(t))}</b><small>${esc(relDate(lastActivity(t)))}</small></button></td>
+      <td>${prods}</td>
+      <td>${esc(last ? last.text.slice(0, 60) : "—")}</td>
+      <td>${n ? `<span class="rp-unread">${esc(T("buyer.unread", { n }))}</span>` : "—"}</td>
+    </tr>`;
+  }).join("");
+  const table = convos
+    ? `<table class="rp-table"><thead><tr><th scope="col">${esc(T("buyer.colFarmer"))}</th><th scope="col">${esc(T("buyer.sumProducts"))}</th><th scope="col">${esc(T("buyer.colLast"))}</th><th scope="col">${esc(T("buyer.colUnread"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`;
+  return table + `<div class="stat-row">
       ${tile(convos, "buyer.dashConvos", "buyerInbox")}
       ${tile(unread, "buyer.dashUnread", "buyerInbox")}
       ${tile(match.length, "buyer.dashMatching", "buyerOffers", offersHint)}
-    </div>
-    ${list ? `<ul class="dash-list">${list}</ul>` : ""}
-    <div class="buyer-note"><b>${esc(T("buyer.dashComplete", { pct: comp.pct }))}</b>
-      <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${comp.pct}" aria-label="${escAttr(T("buyer.dashComplete", { pct: comp.pct }))}"><span style="width:${comp.pct}%"></span></div>
-      ${comp.pct < 100 ? `<p>${esc(T("buyer.dashCompleteHint"))} <button type="button" class="btn btn-ghost btn-sm" onclick="switchScreen('buyerBusiness')">${esc(T("nav.bBusiness"))}</button></p>` : ""}</div>`;
+    </div>`;
 }
 function renderBuyerHome() {
   const el = $("buyerHomeBody"); if (!el) return;
@@ -3362,7 +3405,7 @@ function renderBuyerHome() {
   let html = "";
   if (st === "approved") {
     const biz = myBusiness();
-    html = buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name: biz ? biz.name : name }) + (biz ? buyerDashboardHTML(biz) + buyerFactsHTML(biz) : "");
+    html = biz ? buyerDashboardHTML(biz) : buyerNoteHTML("", "buyer.approvedTitle", "buyer.homeReady", { name });
   } else if (st === "pending") {
     html = buyerNoteHTML("pending", "buyer.pendingTitle", "buyer.pendingBody", { name });
   } else {
@@ -3408,41 +3451,77 @@ function renderBuyerBadge() {
 function farmerSummaryHTML(s) {
   if (!s) return `<div class="buyer-note"><p>${esc(T("buyer.sumNone"))}</p></div>`;
   const prods = (s.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
-  return `<div class="buyer-note"><b>${esc(T("buyer.sumTitle"))}</b><dl class="buyer-facts" style="margin-top:8px">
+  return `<div class="buyer-note"><dl class="buyer-facts">
     <dt>${esc(T("buyer.sumVillage"))}</dt><dd>${esc(s.village || "—")}${s.distance_km != null ? " · " + esc(T("buyer.km", { n: s.distance_km })) : ""}</dd>
     <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
     <dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(s.months) || T("buyer.sumAllYear"))}</dd>
   </dl></div>`;
 }
 function renderBuyerInbox() {
-  const el = $("buyerInboxBody"); if (!el) return;
+  const listEl = $("buyerList"), pane = $("buyerThreadPane"); if (!listEl || !pane) return;
   renderBuyerBadge();
   const gate = buyerGateHTML();
-  if (gate) { el.innerHTML = gate; return; }
+  if (gate) { listEl.innerHTML = gate; pane.innerHTML = ""; renderFarmerPanel(null); return; }
   const inbox = state.inbox || [];
-  if (!inbox.length) { el.innerHTML = `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`; return; }
+  if (!inbox.length) {
+    listEl.innerHTML = `<div class="empty-state">${esc(T("buyer.inboxEmpty"))}</div>`;
+    pane.innerHTML = ""; renderFarmerPanel(null); return;
+  }
   const open = inbox.find(t => t.id === state.openThreadId) || null;
-  const list = inbox.map(t => {
-    const last = t.messages[t.messages.length - 1], n = unreadCount(t);
-    return `<button type="button" class="inbox-row${open && open.id === t.id ? " active" : ""}" onclick="openInboxThread('${t.id}')">
-      <span class="inbox-row-main"><b>${esc(inboxTitle(t))}</b><span>${esc(last ? last.text.slice(0, 70) : "")}</span></span>
-      ${n ? `<span class="bell-badge inbox-badge" aria-label="${escAttr(T("buyer.unread", { n }))}" style="display:flex">${n}</span>` : ""}</button>`;
+  listEl.innerHTML = inbox.map((t, i) => {
+    const last = t.messages[t.messages.length - 1], n = unreadCount(t), on = open && open.id === t.id;
+    return `<button type="button" class="client-item ${on ? "active" : ""}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("buyer.openThreadAria", { name: inboxTitle(t) }))}" onclick="openInboxThread('${esc(t.id)}')">
+      ${avatarHTML(inboxTitle(t).replace(/^\S+\s/, ""), i)}
+      <div style="min-width:0;flex:1">
+        <div class="ci-top"><span class="ci-name">${esc(inboxTitle(t))}</span>${n ? `<span class="bell-badge inbox-badge" aria-label="${escAttr(T("buyer.unread", { n }))}" style="display:flex">${n}</span>` : ""}</div>
+        <div class="ci-prev">${esc(last ? last.text.slice(0, 46) : "")}…</div>
+      </div>
+    </button>`;
   }).join("");
-  let thread = `<div class="empty-state">${esc(T("buyer.noThread"))}</div>`;
-  if (open) {
-    thread = farmerSummaryHTML(open.summary) + `<div class="inbox-thread">` + open.messages.map(m =>
-      `<div class="bubble ${m.role === "buyer" ? "out" : "in"}">${esc(m.text)}</div>`).join("") + `</div>
-      <div class="inbox-reply"><input type="text" class="input-glass" id="buyerReplyInput" maxlength="2000" aria-label="${escAttr(T("buyer.replyPlaceholder"))}" placeholder="${escAttr(T("buyer.replyPlaceholder"))}">
-      <button type="button" class="btn btn-primary btn-sm" id="buyerReplySend">${esc(T("buyer.replySend"))}</button></div>`;
-  }
-  el.innerHTML = `<div class="inbox-list">${list}</div><div class="inbox-pane">${thread}</div>`;
-  const send = $("buyerReplySend");
-  if (send) {
-    send.onclick = () => sendBuyerReply(open.id);
-    $("buyerReplyInput").addEventListener("keydown", e => { if (e.key === "Enter") sendBuyerReply(open.id); });
-  }
+  if (!open) { pane.innerHTML = `<div class="empty-state" style="margin:auto">${esc(T("buyer.noThread"))}</div>`; renderFarmerPanel(null); return; }
+  const idx = inbox.indexOf(open);
+  pane.innerHTML = `
+    <button type="button" class="thread-head thread-head-btn" id="farmerHeadBtn" aria-expanded="${state.detailsOpen ? "true" : "false"}" aria-controls="buyerSidePanel" aria-label="${escAttr(T("buyer.openDetails", { name: inboxTitle(open) }))}" onclick="toggleFarmerPanel()">
+      ${avatarHTML(inboxTitle(open).replace(/^\S+\s/, ""), idx)}
+      <div style="min-width:0;flex:1"><div class="title-sm">${esc(inboxTitle(open))}</div><div class="thread-head-hint">${esc(T("buyer.tapForDetails"))}</div></div>
+    </button>
+    <div class="thread-body" id="buyerThreadBody">
+      ${open.messages.map(m => `<div class="bubble ${m.role === "buyer" ? "out" : "in"}">${esc(m.text)}</div>`).join("")}
+    </div>
+    <div class="thread-input-row">
+      <input type="text" class="input-glass" id="buyerReplyInput" maxlength="2000" aria-label="${escAttr(T("buyer.replyPlaceholder"))}" placeholder="${escAttr(T("buyer.replyPlaceholder"))}">
+      <button class="round-icon-btn" id="buyerReplySend" title="${escAttr(T("buyer.replySend"))}" aria-label="${escAttr(T("buyer.replySend"))}"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
+    </div>`;
+  const body = $("buyerThreadBody"); if (body) body.scrollTop = body.scrollHeight;
+  $("buyerReplySend").onclick = () => sendBuyerReply(open.id);
+  $("buyerReplyInput").addEventListener("keydown", e => { if (e.key === "Enter") sendBuyerReply(open.id); });
+  renderFarmerPanel(open);
+}
+/* The farmer's details, WhatsApp-style: a panel over the right edge, opened by
+   pressing the name bar of the chat, closed by its own X (or Escape). */
+function renderFarmerPanel(open) {
+  const el = $("buyerSidePanel"); if (!el) return;
+  if (!open || !state.detailsOpen) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="side-panel-head"><span class="title-sm">${esc(T("buyer.sumTitle"))}</span>
+      <button type="button" class="icon-btn" id="farmerPanelClose" title="${escAttr(T("match.close"))}" aria-label="${escAttr(T("match.close"))}">&#10005;</button></div>
+    <div class="side-panel-body"><div class="title-sm">${esc(inboxTitle(open))}</div>${farmerSummaryHTML(open.summary)}</div>`;
+  $("farmerPanelClose").onclick = () => closeFarmerPanel(true);
+}
+function toggleFarmerPanel() {
+  state.detailsOpen = !state.detailsOpen;
+  renderBuyerInbox();
+  const f = $(state.detailsOpen ? "farmerPanelClose" : "farmerHeadBtn"); if (f && f.focus) f.focus();
+}
+function closeFarmerPanel(returnFocus) {
+  if (!state.detailsOpen) return false;
+  state.detailsOpen = false;
+  renderBuyerInbox();
+  if (returnFocus) { const f = $("farmerHeadBtn"); if (f && f.focus) f.focus(); }
+  return true;
 }
 async function openInboxThread(id) {
+  if (state.openThreadId !== id) state.detailsOpen = false;
   state.openThreadId = id;
   const t = (state.inbox || []).find(x => x.id === id);
   const hadUnread = t && unreadCount(t) > 0;
@@ -3839,7 +3918,7 @@ function boot() {
     state.offline = (mode === "offline");
     state.apiKey = $("apikey").value.trim();
     state.model = $("model").value;
-    if (!state.offline && !state.apiKey.startsWith("sk-ant")) { alert(T("mode.badKey")); return; }
+    if (!state.offline && !state.apiKey.startsWith("sk-ant")) { await showDialog({ titleKey: "dlg.badKeyTitle", bodyKey: "mode.badKey", okKey: "dlg.ok" }); return; }
     if (!state.offline && $("remember").checked) localStorage.setItem("fasto_key", state.apiKey);
 
     if (entering) return;
@@ -3931,6 +4010,9 @@ function boot() {
   document.addEventListener("click", e => {
     if (profileMenuOpen() && $("avatarWrap") && !$("avatarWrap").contains(e.target)) setProfileMenu(false);
   });
+  $("dialogOk").onclick = () => settleDialog(true);
+  $("dialogCancel").onclick = () => settleDialog(false);
+  $("dialogSheet").addEventListener("click", e => { if (e.target === $("dialogSheet")) settleDialog(false); });
   $("accountCloseBtn").onclick = () => closeAccountSheet();
   $("accountSaveBtn").onclick = () => saveAccount();
   $("accountSheet").addEventListener("click", e => { if (e.target === $("accountSheet")) closeAccountSheet(); });
@@ -3955,6 +4037,7 @@ function boot() {
      whichever sheet is on top — see trapSheetTab(). */
   document.addEventListener("keydown", e => {
     if (profileMenuOpen() && profileMenuKey(e)) return;
+    if (e.key === "Escape" && !topSheet() && closeFarmerPanel(true)) return;
     if (e.key === "Escape") { closeTopSheet(); return; }
     if (e.key === "Tab") trapSheetTab(e);
   });

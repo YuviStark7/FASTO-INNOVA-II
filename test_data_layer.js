@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, matchingOffers, profileCompleteness, buyerDashboardHTML, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, matchingOffers, buyerDashboardHTML, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, renderBuyerHome, inboxTitle, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile, saveBuyerProfile, buyerDeclaredHTML, buyerProfileFormHTML, rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2038,7 +2038,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       oc && oc.ops.some(o => o.op === "eq" && o.args[0] === "buyer_id" && o.args[1] === a.DB.buyers[0].id) &&
       a.state.inbox.length === 1 && a.state.inbox[0].messages.length === 1 && a.unreadCount(a.state.inbox[0]) === 1, JSON.stringify(oc));
     // opening: seen is set only once the database agrees
-    els.buyerInboxBody = fakeEl("buyerInboxBody");
+    els.buyerList = fakeEl("buyerList"); els.buyerThreadPane = fakeEl("buyerThreadPane"); els.buyerSidePanel = fakeEl("buyerSidePanel"); els.buyerReplySend = fakeEl("buyerReplySend"); els.buyerReplyInput = fakeEl("buyerReplyInput"); els.buyerThreadBody = fakeEl("buyerThreadBody");
     sb.reset(); sb.router = () => ({ data: null, error: { message: "rls" } });
     await a.openInboxThread("o1");
     check("a refused read-mark leaves the thread unread (ticks and badge never disagree)", a.unreadCount(a.state.inbox[0]) === 1);
@@ -2142,7 +2142,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.state.claims = [{ status: "approved", buyer_id: biz.id }]; a.state.farmerId = "ub";
     a.state.offerFeed = [{ id: "of1", farmer_id: "uf", chat_id: "c1", village: "Terelle", distance_km: 12, months: [], products: [] }];
     a.state.inbox = []; a.state.openThreadId = null;
-    els.offerMsgInput = fakeEl("offerMsgInput"); els.buyerInboxBody = fakeEl("buyerInboxBody"); els.buyerOffersBody = fakeEl("buyerOffersBody");
+    els.offerMsgInput = fakeEl("offerMsgInput"); els.buyerList = fakeEl("buyerList"); els.buyerThreadPane = fakeEl("buyerThreadPane"); els.buyerSidePanel = fakeEl("buyerSidePanel"); els.buyerReplySend = fakeEl("buyerReplySend"); els.buyerReplyInput = fakeEl("buyerReplyInput"); els.buyerThreadBody = fakeEl("buyerThreadBody"); els.buyerOffersBody = fakeEl("buyerOffersBody");
     els.offerMsgInput.value = "   ";
     sb.reset();
     await a.contactOffer("of1");
@@ -2177,15 +2177,13 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       a.matchingOffers(offers, declared, now).map(o => o.id).join() === "n1");
     check("an undeclared (inferred) profile matches nothing: a guess is not a request",
       a.matchingOffers(offers, { needs: ["olio"], declared_by_buyer: false }, now).length === 0 && a.matchingOffers(offers, null, now).length === 0);
-    check("completeness counts only declared data", a.profileCompleteness(declared).pct === 100 &&
-      a.profileCompleteness({ needs: ["olio"], volume: "low", quality_focus: ["km0"], declared_by_buyer: false }).pct === 0 &&
-      a.profileCompleteness({ declared_by_buyer: true, needs: ["olio"], volume: "low", quality_focus: [] }).missing.join() === "quality" &&
-      a.profileCompleteness(null).pct === 0);
-    a.state.inbox = [{ messages: [{ role: "farmer", readAt: null }] }, { messages: [{ role: "farmer", readAt: "t" }] }];
+    a.state.inbox = [{ id: "t1", ts: 1, summary: { village: "Atina", products: [{ name: "olio" }] }, messages: [{ role: "farmer", text: "Ciao", ts: 1, readAt: null }] },
+      { id: "t2", ts: 2, summary: null, messages: [{ role: "farmer", text: "Salve", ts: 2, readAt: "t" }] }];
     a.state.offerFeed = offers.map(o => Object.assign({ village: "Atina" }, o, { created_at: new Date().toISOString() }));
     const html = a.buyerDashboardHTML(declared);
-    check("the dashboard shows conversation, unread and matching counts and a progress bar",
-      /<b>2<\/b><span>Conversations/.test(html) && /<b>1<\/b><span>Unread/.test(html) && /<b>2<\/b><span>New offers matching/.test(html) && /aria-valuenow="100"/.test(html), html.slice(0, 400));
+    check("the dashboard is a table of conversations with the three numbers as cards underneath, and no profile-completion block",
+      html.indexOf("<table") < html.indexOf("stat-row") && /<b>2<\/b><span>Conversations/.test(html) && /<b>1<\/b><span>Unread/.test(html) && /<b>2<\/b><span>New offers matching/.test(html) && !/progressbar|Profile \d+%/.test(html) && html.includes("Atina") && html.includes("olio"), html.slice(0, 300));
+    check("the dashboard escapes the farmer's village", !a.buyerDashboardHTML(declared).replace(/<[^>]*>/g, "").includes("<") );
     check("an undeclared buyer is asked to declare instead of shown a zero without explanation",
       a.buyerDashboardHTML({ needs: ["olio"] }).includes("Tell us what you buy"));
   }
@@ -2411,6 +2409,60 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.editAdminBuyer("b2"); els.abName.value = "   "; sb.reset();
     await a.saveAdminBuyer();
     check("an empty name is refused before anything is sent", sb.chains.length === 0);
+  }
+
+  /* ---- buyer inbox layout, side panel, dialog sheet, no Mark as sent ---- */
+  {
+    const a = app;
+    a.state.claims = [{ status: "approved", buyer_id: a.DB.buyers[0].id }];
+    a.state.inbox = [{ id: "t1", ts: 1, summary: { village: "<b>Atina</b>", products: [{ name: "olio", kg_per_week: 10 }], months: [6] }, messages: [{ role: "farmer", text: "Ciao <i>", ts: 1, readAt: "x" }] }];
+    a.state.openThreadId = "t1"; a.state.detailsOpen = false;
+    els.buyerList = fakeEl("buyerList"); els.buyerThreadPane = fakeEl("buyerThreadPane"); els.buyerSidePanel = fakeEl("buyerSidePanel"); els.buyerReplySend = fakeEl("buyerReplySend"); els.buyerReplyInput = fakeEl("buyerReplyInput"); els.buyerThreadBody = fakeEl("buyerThreadBody"); els.buyerReplySend = fakeEl("buyerReplySend");
+    els.buyerReplyInput = fakeEl("buyerReplyInput"); els.buyerThreadBody = fakeEl("buyerThreadBody"); els.farmerPanelClose = fakeEl("farmerPanelClose"); els.farmerHeadBtn = fakeEl("farmerHeadBtn");
+    a.renderBuyerInbox();
+    check("the buyer inbox uses the Clients layout: a list of conversations and a thread with a name bar and a composer",
+      els.buyerList.innerHTML.includes("client-item") && els.buyerThreadPane.innerHTML.includes("thread-head") && els.buyerThreadPane.innerHTML.includes("thread-input-row") && els.buyerThreadPane.innerHTML.includes("bubble in"));
+    check("the farmer's details are NOT in the thread until the name bar is pressed", els.buyerSidePanel.hidden === true && !els.buyerThreadPane.innerHTML.includes("buyer-facts"));
+    check("the name bar is a button that says it controls the panel", /<button type="button" class="thread-head thread-head-btn"[^>]*aria-expanded="false"[^>]*aria-controls="buyerSidePanel"/.test(els.buyerThreadPane.innerHTML));
+    a.toggleFarmerPanel();
+    check("pressing it opens the details as a side panel with a close button; the village is escaped",
+      els.buyerSidePanel.hidden === false && els.buyerSidePanel.innerHTML.includes("farmerPanelClose") && els.buyerSidePanel.innerHTML.includes("buyer-facts") && !/<b>Atina<\/b>/.test(els.buyerSidePanel.innerHTML) && /aria-expanded="true"/.test(els.buyerThreadPane.innerHTML));
+    check("the thread's own text is escaped", !els.buyerThreadPane.innerHTML.includes("Ciao <i>"));
+    check("Escape logic: closing returns true once, then false", a.closeFarmerPanel(true) === true && a.closeFarmerPanel(true) === false && els.buyerSidePanel.hidden === true);
+    a.state.detailsOpen = true; a.state.inbox.push({ id: "t2", ts: 2, summary: null, messages: [{ role: "farmer", text: "x", ts: 2, readAt: "x" }] });
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    await a.openInboxThread("t2");
+    check("switching to another conversation closes the panel", a.state.detailsOpen === false && els.buyerSidePanel.hidden === true);
+
+    // dialog
+    for (const id of ["dialogSheet", "dialogTitle", "dialogBody", "dialogOk", "dialogCancel"]) els[id] = fakeEl(id);
+    let r = null; const pr = a.showDialog({ titleKey: "dlg.badKeyTitle", bodyKey: "mode.badKey", okKey: "dlg.ok" }).then(v => { r = v; });
+    check("a message dialog shows one button and the translated text", els.dialogSheet.has("open") && els.dialogCancel.style.display === "none" && els.dialogTitle.textContent === "API key needed" && els.dialogBody.innerHTML.includes("<p>"));
+    a.settleDialog(true); await pr;
+    check("OK resolves true and closes it", r === true && !els.dialogSheet.has("open"));
+    let q = "unset"; const pq = a.showDialog({ titleKey: "dash.priceTitle", bodyKey: "dash.pricePrompt", vars: { cat: "olio" }, input: { labelKey: "dash.priceLabel", value: "3.00" }, okKey: "dlg.save", cancelKey: "dlg.cancel" }).then(v => { q = v; });
+    check("a dialog with an input prefills it and offers Cancel", els.dialogBody.innerHTML.includes('value="3.00"') && els.dialogCancel.style.display === "");
+    els.dialogInput = fakeEl("dialogInput"); els.dialogInput.value = "4,20";
+    a.settleDialog(true); await pq;
+    check("Save resolves with the typed text", q === "4,20");
+    let c2 = "unset"; const pc = a.showDialog({ titleKey: "dash.priceTitle", bodyKey: "dash.pricePrompt", vars: { cat: "olio" }, input: { labelKey: "dash.priceLabel", value: "3" }, cancelKey: "dlg.cancel" }).then(v => { c2 = v; });
+    a.settleDialog(false); await pc;
+    check("Cancel (or Escape) on an input dialog resolves null", c2 === null);
+    delete els.dialogInput;
+    // the price now goes through the dialog
+    const before = a.PRICE_ASSUMPTIONS ? a.PRICE_ASSUMPTIONS.olio : null;
+    const ap = a.adjustPrice("olio");
+    els.dialogInput = fakeEl("dialogInput"); els.dialogInput.value = "9,50";
+    a.settleDialog(true); await ap;
+    check("changing a price uses the dialog, not window.prompt", a.PRICE_ASSUMPTIONS.olio === 9.5 && before !== 9.5);
+    delete els.dialogInput;
+
+    // clients: Mark as sent is gone, review-and-send takes its place
+    const draft = { id: "o1", name: "Aurora", status: "draft", message_it: "Ciao", message_en: "Hi", messages: [], extra: [], chatId: "none" };
+    a.state.clients = [draft]; a.state.activeClientId = "o1"; els.threadPane = fakeEl("threadPane"); els.threadBody = fakeEl("threadBody"); els.clientInput = fakeEl("clientInput"); els.clientSendBtn = fakeEl("clientSendBtn"); els.clientLogisticsBtn = fakeEl("clientLogisticsBtn");
+    a.renderThread();
+    check("a draft's thread has Review and send and no Mark as sent button",
+      els.threadPane.innerHTML.includes("reviewDraft('o1')") && !els.threadPane.innerHTML.includes("markSent(") && !els.threadPane.innerHTML.includes("Mark as sent"));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");
