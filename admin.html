@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Fasto Innova</title>
+</head>
+<body>
+<!-- The private entrance for the admin account (ROADMAP: separate admin account).
+     It is not linked from anywhere. It loads the very same page and scripts as
+     index.html, so there is one source of truth, and tells the app it came in by
+     this door (window.FASTO_ENTRY). The door is NOT the lock: the lock is the
+     database's Row Level Security, which checks the account's role. -->
+<noscript>This page needs JavaScript.</noscript>
+<script>
+window.FASTO_ENTRY = "admin";
+fetch("index.html", { cache: "no-cache" }).then(function (r) {
+  if (!r.ok) throw new Error("index.html " + r.status);
+  return r.text();
+}).then(function (html) {
+  html = html.replace("<head>", '<head><meta name="robots" content="noindex, nofollow">');
+  document.open(); document.write(html); document.close();
+}).catch(function (e) {
+  document.body.textContent = "Could not load the page. Reload to try again.";
+  console.error(e);
+});
+</script>
+</body>
+</html>

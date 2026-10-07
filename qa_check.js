@@ -709,6 +709,19 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   checks.forEach(([what, ok]) => { console.log((ok ? "\u2713 " : "\u2717 ") + "bell: " + what); if (!ok) problems++; });
 }
 
+// The private admin door (admin.html): exists, marks its entry, is not indexed, and nothing public links to it
+{
+  const adm = fs.readFileSync("admin.html", "utf8");
+  const publicPages = [html, fs.readFileSync("buyers.html", "utf8"), js, fs.readFileSync("manifest.json", "utf8")];
+  const checks = [
+    ["admin.html sets window.FASTO_ENTRY = \"admin\"", /window\.FASTO_ENTRY\s*=\s*"admin"/.test(adm)],
+    ["admin.html asks search engines not to index it", /noindex/.test(adm)],
+    ["no public page links to admin.html", publicPages.every(t => !/admin\.html/.test(t))],
+    ["the Admin nav button is role-admin (hidden outside the admin app)", /class="nav-item role-admin"[^>]*id="adminNavItem"/.test(html)]
+  ];
+  checks.forEach(([what, ok]) => { console.log((ok ? "\u2713 " : "\u2717 ") + "admin door: " + what); if (!ok) problems++; });
+}
+
 // Every DataStore.X( call in app.js must exist in supabase-client.js
 const dsMethodsUsed = new Set();
 for (const m of js.matchAll(/DataStore\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)) dsMethodsUsed.add(m[1]);

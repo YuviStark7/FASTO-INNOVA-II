@@ -36,12 +36,12 @@
         <button type="button" data-set-lang="en" data-i18n="lang.en">EN</button>
       </div>
     </div>
-    <div class="tag" data-i18n="auth.tag">Sign in to keep your farm profile, chats and matches saved between visits.</div>
+    <div class="tag" id="authTag" data-i18n="auth.tag">Sign in to keep your farm profile, chats and matches saved between visits.</div>
 
     <!-- aria-pressed, not role="tab": these are two states of one control, the
          same shape the language toggle already uses, and a real tablist would
          also promise arrow-key navigation between panels that don't exist. -->
-    <div class="mode-toggle" role="group" data-i18n-aria="a11y.authTabs" aria-label="Sign in or create an account">
+    <div class="mode-toggle" id="authTabs" role="group" data-i18n-aria="a11y.authTabs" aria-label="Sign in or create an account">
       <button id="authTabIn" class="active" type="button" aria-pressed="true" data-i18n="auth.tabIn">Sign in</button>
       <button id="authTabUp" type="button" aria-pressed="false" data-i18n="auth.tabUp">Sign up</button>
     </div>
@@ -82,7 +82,7 @@
     <div class="onboard-hint" id="authHint" style="margin-top:14px" data-i18n="auth.hintIn">New here? Switch to Sign up above — it only takes an email and a password.</div>
     <!-- The public explainer at buyers.html. Buyers have no account and never
          will on this side of the app, so a link is the only route to it. -->
-    <div class="onboard-hint" style="margin-top:9px"><a href="buyers.html" data-i18n="auth.buyerLink">Not a farmer? See what this is for buyers.</a></div>
+    <div class="onboard-hint" id="authBuyerLink" style="margin-top:9px"><a href="buyers.html" data-i18n="auth.buyerLink">Not a farmer? See what this is for buyers.</a></div>
   </div>
 
   <!-- Step 2: demo mode (shown after sign-in) -->
@@ -140,7 +140,7 @@
     <button type="button" class="nav-item role-farmer" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
-    <button type="button" class="nav-item" data-screen="admin" id="adminNavItem" style="display:none"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="admin" id="adminNavItem"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></button>
 
     <!-- Buyer navigation (ROADMAP item 25). Same sidebar, different buttons:
          #app[data-role="buyer"] hides everything marked role-farmer and

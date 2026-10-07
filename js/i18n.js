@@ -62,6 +62,8 @@ var STRINGS = {
     "a11y.funnel": "Where conversations stop",
 
     /* ---- sign in / sign up ---- */
+    "auth.adminTag": "Administrator sign-in.",
+    "auth.wrongDoor": "This account can't be used on this page.",
     "auth.tag": "Sign in to keep your farm profile, chats and matches saved between visits.",
     "auth.tabIn": "Sign in",
     "auth.tabUp": "Sign up",
@@ -800,6 +802,8 @@ var STRINGS = {
     "a11y.changePrice": "Cambia il prezzo ipotizzato per {cat}",
     "a11y.funnel": "Dove si fermano le conversazioni",
 
+    "auth.adminTag": "Accesso amministratore.",
+    "auth.wrongDoor": "Questo account non può essere usato in questa pagina.",
     "auth.tag": "Accedi per conservare il profilo della tua azienda, le chat e gli abbinamenti da una visita all'altra.",
     "auth.tabIn": "Accedi",
     "auth.tabUp": "Registrati",

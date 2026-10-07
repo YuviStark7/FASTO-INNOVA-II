@@ -183,6 +183,10 @@
    their own display, and "hidden for the other role" must win everywhere. */
 #app[data-role="buyer"] .role-farmer{ display:none !important; }
 #app:not([data-role="buyer"]) .role-buyer{ display:none !important; }
+/* The admin account (opened only through admin.html) sees the Admin screen and nothing else. */
+#app[data-role="admin"] .role-farmer, #app[data-role="admin"] .role-buyer,
+#app[data-role="admin"] #menuEditProfile, #app[data-role="admin"] #menuHelp{ display:none !important; }
+#app:not([data-role="admin"]) .role-admin{ display:none !important; }
 
 .buyer-panel{ flex:1; min-height:0; }
 .buyer-body{ display:flex; flex-direction:column; gap:14px; padding:2px 0 14px; max-width:720px; }

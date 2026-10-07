@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2498,6 +2498,24 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     sb.router = ch => ({ data: null, error: { message: "x" } });
     a.editAdminFarmer("f1"); await a.revealAdminFarmer();
     check("a refused reveal shows nothing", !a.adminFarmersState().revealed);
+  }
+
+  /* ---- separate admin door ---- */
+  {
+    const a = app;
+    check("the public page lets farmers and buyers in, never an admin-role account",
+      a.doorAllows("public", "farmer", false) && a.doorAllows("public", "buyer", false) && !a.doorAllows("public", "admin", true));
+    check("a farmer who still carries the old is_admin flag is a normal farmer on the public page", a.doorAllows("public", "farmer", true));
+    check("the admin page lets in admins only", a.doorAllows("admin", "admin", true) && a.doorAllows("admin", "farmer", true) && !a.doorAllows("admin", "farmer", false) && !a.doorAllows("admin", "buyer", false));
+    check("the app opened without admin.html is not the admin entry", !a.isAdminEntry());
+    sb.reset(); sb.router = ch => ({ data: { id: UID, role: "admin", is_admin: false }, error: null });
+    await a.loadAccountRole(UID);
+    check("the admin role alone makes the account an admin (no flag needed)", a.state.role === "admin" && a.state.isAdmin === true);
+    sb.router = ch => ({ data: { id: UID, role: "buyer", is_admin: true }, error: null });
+    await a.loadAccountRole(UID);
+    check("a buyer is never an admin, even with the flag", a.state.role === "buyer" && a.state.isAdmin === false);
+    sb.router = ch => ({ data: { id: UID, role: "farmer", is_admin: false }, error: null });
+    await a.loadAccountRole(UID);
   }
 
   /* ---- buyer inbox layout, side panel, dialog sheet, no Mark as sent ---- */

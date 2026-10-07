@@ -26,7 +26,10 @@ const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g,
 let state = {
   apiKey: "", model: "claude-haiku-4-5-20251001", offline: true,
   farmerId: null, isAdmin: false,
-  role: "farmer",       // "farmer" | "buyer" — read from the account row, never from the browser
+  role: "farmer",       // "farmer" | "buyer" | "admin" — read from the account row, never from the browser
+  // Which door this page was opened by: the private admin page sets window.FASTO_ENTRY. The door only
+  // picks the sign-in card and which accounts are let in; the real lock is the database.
+  entry: (typeof window !== "undefined" && window.FASTO_ENTRY === "admin") ? "admin" : "public",
   email: "",            // the signed-in address, used only to prefill a buyer's claim
   inbox: [],            // a buyer's conversations from farmers (item 27)
   openThreadId: null,
@@ -1327,6 +1330,7 @@ function renderBell() {
 
 /* ---------- Header identity ---------- */
 function updateHeaderIdentity() {
+  if (isAdminEntry()) { $("whoName").textContent = T("nav.admin").toUpperCase(); return; }
   if (isBuyer()) {
     const biz = myBusiness();
     $("whoName").textContent = (biz ? biz.name : T("buyer.guest")).toUpperCase();
@@ -3284,6 +3288,15 @@ function rotateBackdrop() {
    A rejected buyer is sent back to the form rather than left at a dead end.
    An approved claim always wins over any older or newer one. */
 function isBuyer() { return state.role === "buyer"; }
+function isAdminEntry() { return state.entry === "admin"; }
+/* Which accounts may use which door. The admin page lets in only admins (the
+   `admin` role, or the older is_admin flag until it is cleared); the public page
+   never opens an `admin`-role account and never shows the Admin screen, even to a
+   farmer who still carries the old flag. Pure, so it is tested without a page. */
+function doorAllows(entry, role, isAdmin) {
+  if (entry === "admin") return !!isAdmin;
+  return role !== "admin";
+}
 const CLAIM_NOT_LISTED = "__new";
 const CLAIM_NAME_MIN = 2, CLAIM_NAME_MAX = 120, CLAIM_FIELD_MAX = 120, CLAIM_EMAIL_MAX = 200;
 
@@ -3327,8 +3340,8 @@ function buildClaimRow(uid, form) {
 async function loadAccountRole(uid) {
   const { data, error } = await DataStore.getMyFarmer(uid);
   if (error) throw error;
-  state.role = data && data.role === "buyer" ? "buyer" : "farmer";
-  state.isAdmin = !!(data && data.is_admin) && state.role !== "buyer";
+  state.role = data && data.role === "buyer" ? "buyer" : data && data.role === "admin" ? "admin" : "farmer";
+  state.isAdmin = !!(data && (data.is_admin || data.role === "admin")) && state.role !== "buyer";
   state.farmerProfile = data || {};
 }
 async function loadBuyerData(uid) {
@@ -3889,6 +3902,21 @@ function renderBuyerBusiness() {
 }
 function renderBuyerScreens() { renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
 
+/* Opening the admin app (private admin page only): the Admin screen and nothing else. */
+async function enterAdminApp() {
+  $("onboard").style.display = "none";
+  const app = $("app");
+  app.setAttribute("data-role", "admin");
+  app.classList.add("ready", "booting");
+  setBootLock(true);
+  showBackdrop();
+  try { await loadBuyers(); }
+  catch (e) { console.error("Failed to load the buyer list", e); toast(T("boot.loadFailed")); }
+  finally { app.classList.remove("booting"); setBootLock(false); }
+  updateHeaderIdentity();
+  switchScreen("admin");
+}
+
 /* Opening a buyer's app. Mirrors the farmer path in boot(): into the shell at
    once, locked while the data loads, lock lifted whatever happens. */
 async function enterBuyerApp() {
@@ -4001,6 +4029,11 @@ function boot() {
 
   /* ---- account: sign in / sign up ---- */
   let authMode = "in";
+  // The admin door is sign-in only: no sign-up, no role choice, no link to the buyer page.
+  if (isAdminEntry()) {
+    $("authTabs").style.display = "none"; $("authHint").style.display = "none"; $("authBuyerLink").style.display = "none";
+    $("authTag").setAttribute("data-i18n", "auth.adminTag"); $("authTag").textContent = T("auth.adminTag");
+  }
   function setAuthMode(next) {
     authMode = next;
     $("authTabIn").classList.toggle("active", next === "in");
@@ -4063,7 +4096,15 @@ function boot() {
   async function afterAuth() {
     try { await loadAccountRole(state.farmerId); }
     catch (e) { console.error("couldn't read the account role - treating it as a farmer", e); state.role = "farmer"; }
-    if (state.role === "buyer") enterBuyerApp(); else goToModeCard();
+    // Wrong door: sign the account out again and say so, without naming the other door.
+    if (!doorAllows(state.entry, state.role, state.isAdmin)) {
+      try { await DataStore.signOut(); } catch (e) { console.error("sign out after wrong door failed", e); }
+      state.farmerId = null; state.isAdmin = false; state.role = "farmer";
+      showAuthError("auth.wrongDoor");
+      return;
+    }
+    if (!isAdminEntry()) state.isAdmin = false;   // the farmer and buyer apps never open Admin
+    if (isAdminEntry()) enterAdminApp(); else if (state.role === "buyer") enterBuyerApp(); else goToModeCard();
   }
 
   /* The error box is written to as a KEY, never as a finished sentence, so that
@@ -4188,7 +4229,6 @@ function boot() {
 
       addLog("ok", "Guardian armed. Database loaded: " + DB.buyers.length + " buyers + " + DB.channels.length + " channels (Cassino).");
       addLog("info", "Guardian watching all traffic Brain 1 ⇄ Brain 2.");
-      $("adminNavItem").style.display = state.isAdmin ? "flex" : "none";
 
       if (state.chats.length) { state.activeChatId = state.chats[0].id; updateHeaderIdentity(); renderChatRail(); renderTranscript(); }
       else { bootStatus(T("boot.firstChat")); await startNewChat(); }
