@@ -2851,6 +2851,7 @@ function setAdminBuyerSearch(q) {
 }
 function adminAuditLine(a) {
   const keys = Object.keys(a.new_data || {});
+  if (keys.length === 1 && keys[0] === "revealed") return `${new Date(a.created_at).toLocaleString()} — ${a.row_id}: ${T("admin.auditRevealed")}`;
   return `${new Date(a.created_at).toLocaleString()} — ${a.row_id}: ${keys.join(", ")}`;
 }
 function adminBuyerFormHTML(b) {
@@ -2953,11 +2954,35 @@ function setAdminFarmerSearch(q) {
   adminFarmersCache.q = q;
   paintAdminFarmers(true);
 }
+/* Audited reveal (item 31 pass A): phone, address and VAT are never loaded with the
+   directory. The button calls admin_reveal_farmer_private, which logs the look in
+   admin_audit (the values themselves are never logged). The result lives only in
+   memory, for the one farmer being edited, and is dropped when the form closes. */
+let adminRevealBusy = false;
+function adminRevealHTML(f) {
+  const c = adminFarmersCache, r = c && c.revealed && c.revealed.id === f.id ? c.revealed : null;
+  if (!r) return `<div class="row gap-8"><button type="button" class="btn btn-ghost btn-sm" onclick="revealAdminFarmer()">${esc(T("admin.fReveal"))}</button></div><p class="buyer-lead">${esc(T("admin.fPrivacy"))}</p>`;
+  const line = (k, v) => `<li><b>${esc(T("admin.fr." + k))}:</b> ${esc(v || "—")}</li>`;
+  return `<ul class="foot" id="afReveal">${line("phone", r.phone)}${line("address", r.address)}${line("vat", r.vat_number)}</ul><p class="buyer-lead">${esc(T("admin.fRevealNote"))}</p>`;
+}
+async function revealAdminFarmer() {
+  const c = adminFarmersCache; if (!c || !c.editing || adminRevealBusy || !state.isAdmin) return;
+  adminRevealBusy = true;
+  try {
+    const { data, error } = await DataStore.adminRevealFarmer(c.editing);
+    if (error) throw error;
+    c.revealed = Object.assign({ id: c.editing }, data);
+    if (adminBuyersCache) { const { data: audit } = await DataStore.listAudit(15); if (audit) { adminBuyersCache.audit = audit; paintAdminBuyers(); } }
+  } catch (e) { console.error("admin reveal failed", e); toast(T("admin.fRevealFailed")); }
+  adminRevealBusy = false;
+  paintAdminFarmers();
+}
 function adminFarmerFormHTML(f) {
   const field = (id, key, val) => `<div class="field"><label for="${id}">${esc(T("admin.ff." + key))}</label><input id="${id}" type="text" maxlength="80" value="${escAttr(val == null ? "" : val)}"></div>`;
   return `<form class="buyer-form" id="afForm" onsubmit="return false">
     <div class="eyebrow">${esc(T("admin.fEditing", { name: farmerDisplayName(f) }))}</div>
     ${field("afFirst", "first", f.first_name)}${field("afLast", "last", f.last_name)}${field("afNick", "nickname", f.nickname)}${field("afCompany", "company", f.company_name)}
+    ${adminRevealHTML(f)}
     <div class="row gap-8"><button type="button" class="btn btn-primary" onclick="saveAdminFarmer()">${esc(T("admin.bSave"))}</button>
     <button type="button" class="btn btn-ghost" onclick="editAdminFarmer(null)">${esc(T("admin.bCancel"))}</button></div>
     <p class="buyer-lead">${esc(T("admin.bAuditNote"))}</p></form>`;
@@ -2980,6 +3005,7 @@ function paintAdminFarmers(searchOnly) {
 function editAdminFarmer(id) {
   if (!adminFarmersCache) return;
   adminFarmersCache.editing = id;
+  adminFarmersCache.revealed = null;   // private details never outlive the form they were shown in
   paintAdminFarmers();
   if (id && $("afFirst")) $("afFirst").focus();
 }
@@ -2993,7 +3019,7 @@ async function saveAdminFarmer() {
     if (error) throw error;
     const i = c.farmers.findIndex(x => x.id === c.editing);
     if (i !== -1 && data) c.farmers[i] = Object.assign({}, c.farmers[i], data);
-    c.editing = null;
+    c.editing = null; c.revealed = null;
     toast(T("admin.fSaved"));
     if (adminBuyersCache) { const { data: audit } = await DataStore.listAudit(15); if (audit) { adminBuyersCache.audit = audit; paintAdminBuyers(); } }
   } catch (e) { console.error("admin farmer save failed", e); toast(T("admin.fFailed")); }

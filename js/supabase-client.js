@@ -143,6 +143,8 @@ const DataStore = {
   // so phone, address and VAT never reach the Admin screen; the edit is an audited RPC.
   listFarmerDirectory() { return sb.from("farmers").select("id,farmer_name,first_name,last_name,nickname,company_name,role,created_at").order("created_at", { ascending: false }); },
   adminEditFarmer(id, patch) { return sb.rpc("admin_edit_farmer", { p_id: id, p_patch: patch }); },
+  // Audited reveal of phone, address and VAT: the database function logs the look.
+  adminRevealFarmer(id) { return sb.rpc("admin_reveal_farmer_private", { p_id: id }); },
   listAudit(limit) { return sb.from("admin_audit").select("*").order("created_at", { ascending: false }).limit(limit || 50); },
   listAllOutreach() { return sb.from("outreach").select("*").order("created_at", { ascending: false }); }
 };

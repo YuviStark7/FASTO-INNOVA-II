@@ -180,7 +180,7 @@ function loadApp(root) {
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
-  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, revealAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
@@ -2484,6 +2484,20 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("saving never writes the farmers table directly", sb.chains.every(c => c.table !== "farmers" || c.ops.every(o => o.op === "select")));
     check("after a save the row shows the new name and the form closes",
       a.adminFarmersState().farmers.find(f => f.id === "f1").first_name === "Marie" && a.adminFarmersState().editing === null);
+    // audited reveal
+    a.editAdminFarmer("f1");
+    check("private details are not on screen before a reveal", !els.adminFarmerForm.innerHTML.includes("<b>Phone") && els.adminFarmerForm.innerHTML.includes("revealAdminFarmer"));
+    sb.reset();
+    sb.router = ch => ch.table === "rpc:admin_reveal_farmer_private" ? { data: { id: "f1", phone: "+39 <333>", address: "Via Roma 1", vat_number: "IT123" }, error: null } : { data: [], error: null };
+    await a.revealAdminFarmer();
+    const rpcR = sb.chains.find(c => c.table === "rpc:admin_reveal_farmer_private");
+    check("reveal goes through the audited function with the farmer id", rpcR && rpcR.ops[0].args[0].p_id === "f1");
+    check("revealed values show, escaped", els.adminFarmerForm.innerHTML.includes("IT123") && els.adminFarmerForm.innerHTML.includes("&lt;333&gt;"));
+    a.editAdminFarmer(null);
+    check("closing the form drops the revealed details", !els.adminFarmerForm.innerHTML.includes("IT123") && !a.adminFarmersState().revealed);
+    sb.router = ch => ({ data: null, error: { message: "x" } });
+    a.editAdminFarmer("f1"); await a.revealAdminFarmer();
+    check("a refused reveal shows nothing", !a.adminFarmersState().revealed);
   }
 
   /* ---- buyer inbox layout, side panel, dialog sheet, no Mark as sent ---- */
