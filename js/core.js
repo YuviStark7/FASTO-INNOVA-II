@@ -267,6 +267,19 @@ function guardianValidateAdminBuyer(input) {
   return { ok: true, row: row };
 }
 
+/* Item 31 pass B: village-level points for the admin map. Town centres only
+   (approximate), so a farmer is never placed more precisely than their village
+   and no street address is ever turned into a position. Unknown village -> null. */
+var VILLAGE_POINTS = {
+  "cassino": [41.4905, 13.8330], "sant'elia fiumerapido": [41.5233, 13.8350],
+  "cervaro": [41.4667, 13.9167]
+};
+function villagePoint(village) {
+  var key = String(village == null ? "" : village).toLowerCase().replace(/[\u2019`]/g, "'").replace(/\(.*?\)/g, "").trim().replace(/\s+/g, " ");
+  var p = VILLAGE_POINTS[key];
+  return p ? { lat: p[0], lng: p[1], geo_source: "town" } : null;
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -274,6 +287,6 @@ if (typeof module !== "undefined" && module.exports) {
     volumeBand: volumeBand, totalKg: totalKg, farmerCategories: farmerCategories,
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
-    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS
+    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS
   };
 }
