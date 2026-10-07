@@ -165,7 +165,7 @@ function setLang(lang) {
   renderChats();
   renderChatRail();
   renderTranscript();
-  if (state.screen === "admin") paintAdmin();
+  if (String(state.screen).indexOf("admin") === 0) paintAdmin();
   if (isBuyer()) renderBuyerScreens();
 
   /* The three sheets are deliberately NOT rebuilt. Two of them are forms, and
@@ -2810,14 +2810,32 @@ function adminFunnel(chats, outreach) {
 // without three more round trips to Supabase.
 let adminCache = null;
 
+/* The Dashboard's key numbers, from what the admin screen already loaded. Pure so
+   it is tested without a page. "Researches completed" = conversations that got as
+   far as matched buyers; "outreach sent" = drafts a farmer actually sent to a
+   buyer's inbox; "buyer inquiries" = conversations a buyer started from an offer. */
+function adminKpis(accounts, chats, outreach, claims, listedBusinesses) {
+  const f = adminFunnel(chats, outreach);
+  const count = key => f.stages.find(s => s.key === key).count;
+  return {
+    farmers: (accounts || []).filter(x => x.role !== "buyer").length,
+    buyerAccounts: (accounts || []).filter(x => x.role === "buyer").length,
+    listed: listedBusinesses || 0,
+    claimed: (claims || []).filter(c => c.status === "approved").length,
+    conversations: count("started"),
+    researches: count("drafted"),
+    sent: count("sent"),
+    inquiries: (outreach || []).filter(o => o.initiated_by === "buyer").length
+  };
+}
 async function renderAdmin() {
-  if (!$("adminScreen") || !state.isAdmin) return;
+  if (!$("adminHomeScreen") || !state.isAdmin) return;
   const [{ data: farmers, error: e1 }, { data: chats, error: e2 }, { data: outreach, error: e3 }, { data: claims, error: e4 }] = await Promise.all([
     DataStore.listAllFarmers(), DataStore.listAllChats(), DataStore.listAllOutreach(), DataStore.listAllClaims()
   ]);
   if (e1 || e2 || e3 || e4) { console.error("admin load failed", e1, e2, e3, e4); toast(T("admin.loadFailed")); return; }
   // The accounts table also holds buyers now; "N farmers signed up" must not count them.
-  adminCache = { farmers: (farmers || []).filter(x => x.role !== "buyer"), chats: chats || [], outreach: outreach || [], claims: claims || [] };
+  adminCache = { accounts: farmers || [], farmers: (farmers || []).filter(x => x.role !== "buyer"), chats: chats || [], outreach: outreach || [], claims: claims || [] };
   paintAdmin();
 }
 
@@ -3035,6 +3053,11 @@ async function saveAdminFarmer() {
    it; clicking the selected one again clears the filter. Without this the
    funnel can say "4 stopped at the interview" while the table below has no way
    to show you which four. */
+// From the Dashboard funnel: show exactly that stage on the Conversations screen.
+function openAdminStage(key) {
+  state.adminStage = key;
+  switchScreen("adminConversations");
+}
 function setAdminStage(key) {
   state.adminStage = state.adminStage === key ? "started" : key;
   paintAdmin();
@@ -3110,6 +3133,12 @@ function paintAdmin() {
   paintAdminClaims();
   const { farmers, chats, outreach } = adminCache;
   const f = adminFunnel(chats, outreach);
+  if ($("adminKpis")) {
+    const k = adminKpis(adminCache.accounts, chats, outreach, adminCache.claims, DB.buyers.length);
+    const tile = (n, label) => `<div class="admin-kpi"><b>${esc(String(n))}</b><span>${esc(label)}</span></div>`;
+    $("adminKpis").innerHTML = tile(k.farmers, T("admin.k.farmers")) + tile(k.buyerAccounts, T("admin.k.buyerAccounts")) + tile(k.listed, T("admin.k.listed")) + tile(k.claimed, T("admin.k.claimed"))
+      + tile(k.conversations, T("admin.k.conversations")) + tile(k.researches, T("admin.k.researches")) + tile(k.sent, T("admin.k.sent")) + tile(k.inquiries, T("admin.k.inquiries"));
+  }
   const active = ADMIN_STAGE_KEYS.indexOf(state.adminStage) !== -1 ? state.adminStage : "started";
 
   $("adminFunnel").innerHTML = f.stages.map((s, i) => {
@@ -3122,7 +3151,7 @@ function paintAdmin() {
     // clickable row rather than a label floating over nothing.
     const w = Math.max(s.pctOfStart, 1.5);
     return gap + `<button type="button" class="fn-stage${s.key === active ? " active" : ""}"
-      aria-pressed="${s.key === active}" title="${esc(s.hint)}" onclick="setAdminStage('${s.key}')">
+      aria-pressed="${s.key === active}" title="${esc(s.hint)}" onclick="openAdminStage('${s.key}')">
       <span class="fn-head">
         <span class="fn-label">${esc(s.label)}</span>
         <span class="fn-count">${s.count}</span>
@@ -3908,13 +3937,12 @@ async function enterAdminApp() {
   const app = $("app");
   app.setAttribute("data-role", "admin");
   app.classList.add("ready", "booting");
-  setBootLock(true);
-  showBackdrop();
+  setBootLock(true);                     // no photo backdrop for admin: the page is plain black
   try { await loadBuyers(); }
   catch (e) { console.error("Failed to load the buyer list", e); toast(T("boot.loadFailed")); }
   finally { app.classList.remove("booting"); setBootLock(false); }
   updateHeaderIdentity();
-  switchScreen("admin");
+  switchScreen("adminHome");
 }
 
 /* Opening a buyer's app. Mirrors the farmer path in boot(): into the shell at
@@ -3959,7 +3987,7 @@ function switchScreen(name) {
   if (name === "dashboard") { if (prev !== "dashboard") rotateBackdrop(); renderDashboard(); }
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
-  if (name === "admin") { renderAdmin(); loadAdminFarmers(); loadAdminBuyers(); }
+  if (name.indexOf("admin") === 0) { renderAdmin(); loadAdminFarmers(); loadAdminBuyers(); }
   if (name.indexOf("buyer") === 0) renderBuyerScreens();
 }
 

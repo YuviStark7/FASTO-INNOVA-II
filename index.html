@@ -140,7 +140,10 @@
     <button type="button" class="nav-item role-farmer" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
-    <button type="button" class="nav-item role-admin" data-screen="admin" id="adminNavItem"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.admin">Admin</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="adminHome" id="adminNavItem"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.adminHome">Dashboard</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="adminConversations"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.adminConv">Conversations</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="adminFarmers"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.adminFarmers">Farmers</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="adminBuyers"><img class="ic-svg" src="assets/icon-truck.svg" alt=""><span class="label" data-i18n="nav.adminBuyers">Buyers</span></button>
 
     <!-- Buyer navigation (ROADMAP item 25). Same sidebar, different buttons:
          #app[data-role="buyer"] hides everything marked role-farmer and
@@ -295,21 +298,25 @@
       <div class="biz-outer" id="buyerBusinessBody"></div>
     </section>
 
-    <!-- ---------- ADMIN (visible only when is_admin = true) ---------- -->
-    <section class="screen" id="adminScreen">
+    <!-- ---------- ADMIN (four screens, only in the admin app) ---------- -->
+    <section class="screen" id="adminHomeScreen">
       <!-- Hidden until there is something to decide. Written by paintAdminClaims(). -->
       <div class="research-panel glass-45 admin-panel-claims" id="adminClaimsPanel" style="display:none">
         <div class="research-panel-head"><span class="title-md" id="adminClaimsTitle">Buyer claims waiting for approval</span></div>
         <div id="adminClaims"></div>
       </div>
+      <div class="admin-kpis" id="adminKpis" role="group" data-i18n-aria="admin.kpiAria" aria-label="Key numbers"></div>
       <div class="research-panel glass-45 admin-panel-stats">
         <div class="research-panel-head"><span class="title-md" data-i18n="admin.funnelTitle">Funnel — where conversations stop</span></div>
         <!-- Every bar counts CONVERSATIONS, never drafts; see the note above
              adminStageSets() in js/app.js for why the units have to match.
              Each bar filters the table below it. -->
+        <p class="buyer-lead" data-i18n="admin.funnelHint">Press a stage to see those conversations.</p>
         <div class="fn-list" id="adminFunnel" role="group" data-i18n-aria="a11y.funnel" aria-label="Where conversations stop"></div>
         <div class="row gap-8 fn-aside" id="adminAside"></div>
       </div>
+    </section>
+    <section class="screen" id="adminConversationsScreen">
       <div class="research-panel glass-45 admin-panel-main">
         <div class="research-panel-head">
           <span class="title-md" id="adminTableTitle" data-i18n="admin.everyConv">Every conversation</span>
@@ -321,6 +328,8 @@
         </table>
         <div class="empty-state" id="adminEmpty" data-i18n="admin.empty">No farmer activity yet.</div>
       </div>
+    </section>
+    <section class="screen" id="adminFarmersScreen">
       <div class="research-panel glass-45 admin-panel-main" id="adminFarmersPanel">
         <div class="research-panel-head"><span class="title-md" id="adminFarmersTitle">Farmers</span></div>
         <div class="field"><label for="adminFarmerSearch" data-i18n="admin.fSearch">Search farmers</label>
@@ -333,6 +342,8 @@
         <div id="adminFarmerForm"></div>
         <p class="buyer-lead" data-i18n="admin.fPrivacy">Phone, address and VAT number are not shown here.</p>
       </div>
+    </section>
+    <section class="screen" id="adminBuyersScreen">
       <div class="research-panel glass-45 admin-panel-main" id="adminBuyersPanel">
         <div class="research-panel-head"><span class="title-md" id="adminBuyersTitle">Buyers</span></div>
         <div class="field"><label for="adminBuyerSearch" data-i18n="admin.bSearch">Search buyers</label>

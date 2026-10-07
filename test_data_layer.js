@@ -180,7 +180,7 @@ function loadApp(root) {
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
-  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, revealAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, revealAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminKpis, openAdminStage, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
@@ -1015,7 +1015,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
        leaving them registered would quietly change every earlier test.
        Nothing here asserts anything visual: that needs the real stylesheet and
        a real cascade, which this fake DOM does not have. */
-    ["adminScreen", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
+    ["adminHomeScreen", "adminKpis", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
       .forEach(id => els[id] = fakeEl(id));
 
     const chats = [chat_("c1", "interview"), chat_("c2", "matching"), chat_("c3", "done")];
@@ -1049,7 +1049,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("...and offers the way back out", els.adminClearFilter.style.display === "inline-flex");
     check("the selected stage is the one marked pressed, and only it",
       (els.adminFunnel.innerHTML.match(/aria-pressed="true"/g) || []).length === 1 &&
-      /aria-pressed="true"[^>]*onclick="setAdminStage\('sent'\)"/.test(els.adminFunnel.innerHTML.replace(/\s+/g, " ")));
+      /aria-pressed="true"[^>]*onclick="openAdminStage\('sent'\)"/.test(els.adminFunnel.innerHTML.replace(/\s+/g, " ")));
 
     app.setAdminStage("profile");
     check("a stage nobody has reached says so instead of leaving the last stage's rows on screen",
@@ -1074,7 +1074,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     app.setAdminStage("started");
     app.state.isAdmin = false;
     sb.router = null;
-    ["adminScreen", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
+    ["adminHomeScreen", "adminKpis", "adminFunnel", "adminAside", "adminTableTitle", "adminClearFilter", "adminBody", "adminEmpty"]
       .forEach(id => delete els[id]);
   }
 
@@ -2503,6 +2503,15 @@ console.log("== Test 2: saveProducts and saveMatches ==");
   /* ---- separate admin door ---- */
   {
     const a = app;
+    const accts = [{ role: "farmer" }, { role: "farmer" }, { role: "buyer" }, { role: "admin" }];
+    const kc = [{ id: "c1", farmer_id: "x", phase: "done", pct: 100 }, { id: "c2", farmer_id: "x", phase: "interview", pct: 10 }];
+    const ko = [{ chat_id: "c1", status: "sent", initiated_by: "farmer" }, { chat_id: null, status: "draft", initiated_by: "buyer" }];
+    const k = a.adminKpis(accts, kc, ko, [{ status: "approved" }, { status: "pending" }], 39);
+    check("dashboard numbers: accounts split by role, listed businesses, approved claims only",
+      k.farmers === 3 && k.buyerAccounts === 1 && k.listed === 39 && k.claimed === 1);
+    check("dashboard numbers: conversations, buyer inquiries, and a never-negative funnel",
+      k.conversations === 2 && k.inquiries === 1 && k.sent <= k.researches && k.researches <= k.conversations);
+    check("dashboard numbers survive empty data", a.adminKpis(null, null, null, null, 0).conversations === 0);
     check("the public page lets farmers and buyers in, never an admin-role account",
       a.doorAllows("public", "farmer", false) && a.doorAllows("public", "buyer", false) && !a.doorAllows("public", "admin", true));
     check("a farmer who still carries the old is_admin flag is a normal farmer on the public page", a.doorAllows("public", "farmer", true));

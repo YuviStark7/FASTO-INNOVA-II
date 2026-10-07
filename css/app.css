@@ -174,7 +174,7 @@
    rule short of !important. */
 .admin-panel-stats{ margin-bottom:14px; flex-shrink:0; }
 .admin-panel-main{ flex:1; min-height:0; }
-#adminBuyersPanel{ flex:none; margin-top:14px; }
+#adminBuyersPanel{ flex:none; }
 .admin-panel-claims{ margin-bottom:14px; flex-shrink:0; max-height:40%; overflow-y:auto; }
 
 /* ---- roles (ROADMAP items 24-25) ----
@@ -187,6 +187,16 @@
 #app[data-role="admin"] .role-farmer, #app[data-role="admin"] .role-buyer,
 #app[data-role="admin"] #menuEditProfile, #app[data-role="admin"] #menuHelp{ display:none !important; }
 #app:not([data-role="admin"]) .role-admin{ display:none !important; }
+/* Admin: plain black, no photo and no scrim. */
+#app[data-role="admin"] #main{ background:#000; background-image:none; }
+#app[data-role="admin"] #main::after, #app[data-role="admin"] .backdrop-layer{ display:none; }
+#app[data-role="admin"] .screen.active{ overflow-y:auto; }
+#app[data-role="admin"] .admin-panel-main, #app[data-role="admin"] .admin-panel-stats, #app[data-role="admin"] .admin-panel-claims{ flex:none; max-height:none; overflow:visible; }
+.admin-kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:14px; flex-shrink:0; }
+.admin-kpi{ background:var(--glass-45); border:1px solid var(--hairline); border-radius:var(--radius-md); padding:14px 16px; display:flex; flex-direction:column; gap:4px; }
+.admin-kpi b{ font-size:28px; line-height:1.1; }
+.admin-kpi span{ font-size:12.5px; color:var(--ink-70); }
+@media (max-width:900px){ .admin-kpis{ grid-template-columns:repeat(2,1fr); } }
 
 .buyer-panel{ flex:1; min-height:0; }
 .buyer-body{ display:flex; flex-direction:column; gap:14px; padding:2px 0 14px; max-width:720px; }
@@ -887,7 +897,7 @@
   /* One scroller instead of two. The Admin table used to scroll inside a panel
      roughly 350px tall while the page behind it stayed put, so a flick in the
      wrong place moved nothing. The whole screen scrolls now. */
-  #adminScreen{ overflow-y:auto; }
+  #adminHomeScreen,#adminConversationsScreen,#adminFarmersScreen,#adminBuyersScreen{ overflow-y:auto; }
   .admin-panel-stats,.admin-panel-main,.admin-panel-claims{ flex:none; max-height:none; overflow:visible; }
   .claim-row{ flex-direction:column; align-items:stretch; gap:8px; }
   .claim-actions .btn{ flex:1; justify-content:center; }

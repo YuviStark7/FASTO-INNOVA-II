@@ -43,7 +43,7 @@ README.md describes the product. It is partly out of date on buyers (it still sa
 ## Admin account and its private door (2026-10-07)
 
 - `farmers.role` is `farmer | buyer | admin`. `private.is_admin()` is true for `role = 'admin'` OR the older `is_admin` flag. Nobody signs up as admin: `handle_new_user` only maps buyer, otherwise farmer; admin accounts are created in the Supabase dashboard and promoted by SQL. Never add admin to the sign-up form or the trigger whitelist.
-- `admin.html` is the private entrance (unlinked, noindex). It fetches `index.html` and sets `window.FASTO_ENTRY = "admin"` (`state.entry`). `doorAllows(entry, role, isAdmin)` decides who gets in: the admin page admits admins only, the public page refuses `admin`-role accounts. `#app[data-role="admin"]` shows only `.role-admin` (the Admin nav). The farmer app never shows Admin (`state.isAdmin` is cleared on the public page). Do not link to `admin.html` from any public page (`qa_check.js` fails if you do).
+- `admin.html` is the private entrance (unlinked, noindex). It fetches `index.html` and sets `window.FASTO_ENTRY = "admin"` (`state.entry`). `doorAllows(entry, role, isAdmin)` decides who gets in: the admin page admits admins only, the public page refuses `admin`-role accounts. `#app[data-role="admin"]` shows only `.role-admin` (four nav items: Dashboard, Conversations, Farmers, Buyers, screens `admin*Screen`; plain black background). The farmer app never shows Admin (`state.isAdmin` is cleared on the public page). Do not link to `admin.html` from any public page (`qa_check.js` fails if you do).
 
 ## Admin edits (item 31 pass A)
 
