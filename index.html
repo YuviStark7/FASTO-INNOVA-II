@@ -144,6 +144,7 @@
     <button type="button" class="nav-item role-admin" data-screen="adminConversations"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.adminConv">Conversations</span></button>
     <button type="button" class="nav-item role-admin" data-screen="adminFarmers"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.adminFarmers">Farmers</span></button>
     <button type="button" class="nav-item role-admin" data-screen="adminBuyers"><img class="ic-svg" src="assets/icon-truck.svg" alt=""><span class="label" data-i18n="nav.adminBuyers">Buyers</span></button>
+    <button type="button" class="nav-item role-admin" data-screen="adminMap"><img class="ic-svg" src="assets/icon-truck.svg" alt=""><span class="label" data-i18n="nav.adminMap">Map</span></button>
 
     <!-- Buyer navigation (ROADMAP item 25). Same sidebar, different buttons:
          #app[data-role="buyer"] hides everything marked role-farmer and
@@ -356,6 +357,27 @@
         <div id="adminBuyerForm"></div>
         <div class="eyebrow" data-i18n="admin.auditTitle">Recent admin edits</div>
         <ul id="adminAudit" class="foot"></ul>
+      </div>
+    </section>
+    <section class="screen" id="adminMapScreen">
+      <div class="research-panel glass-45 admin-panel-main">
+        <div class="research-panel-head"><span class="title-md" id="adminMapTitle" data-i18n="admin.mapTitle">Map</span></div>
+        <div class="admin-map-filters">
+          <div class="field"><label for="mapKind" data-i18n="admin.map.kind">Show</label>
+            <select id="mapKind" onchange="setAdminMapFilter('kind', this.value)">
+              <option value="all" data-i18n="admin.map.all">Everything</option><option value="buyer" data-i18n="admin.map.buyers">Buyers</option>
+              <option value="channel" data-i18n="admin.map.channels">Channels</option><option value="farmer" data-i18n="admin.map.farmers">Farmers (by village)</option></select></div>
+          <div class="field"><label for="mapCategory" data-i18n="admin.map.category">Buys</label><select id="mapCategory" onchange="setAdminMapFilter('category', this.value)"></select></div>
+          <div class="field"><label for="mapClaim" data-i18n="admin.map.claim">Claim status</label>
+            <select id="mapClaim" onchange="setAdminMapFilter('claim', this.value)">
+              <option value="any" data-i18n="admin.map.anyClaim">Any</option><option value="claimed" data-i18n="admin.map.claimed">Claimed</option>
+              <option value="pending" data-i18n="admin.map.pending">Claim pending</option><option value="unclaimed" data-i18n="admin.map.unclaimed">Not claimed</option></select></div>
+        </div>
+        <div id="adminMapCanvas" class="admin-map" role="application" data-i18n-aria="admin.map.aria" aria-label="Map of buyers, channels and farmer villages"></div>
+        <p class="buyer-lead" id="adminMapNote"></p>
+        <div class="eyebrow" data-i18n="admin.map.listTitle">Places on the map</div>
+        <div id="adminMapList"></div>
+        <p class="buyer-lead" data-i18n="admin.map.privacy">Farmers appear only as a count per village. Points are approximate town centres.</p>
       </div>
     </section>
   </main>

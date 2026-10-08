@@ -43,7 +43,7 @@ README.md describes the product. It is partly out of date on buyers (it still sa
 ## Admin account and its private door (2026-10-07)
 
 - `farmers.role` is `farmer | buyer | admin`. `private.is_admin()` is true for `role = 'admin'` OR the older `is_admin` flag. Nobody signs up as admin: `handle_new_user` only maps buyer, otherwise farmer; admin accounts are created in the Supabase dashboard and promoted by SQL. Never add admin to the sign-up form or the trigger whitelist.
-- `admin.html` is the private entrance (unlinked, noindex). It fetches `index.html` and sets `window.FASTO_ENTRY = "admin"` (`state.entry`). `doorAllows(entry, role, isAdmin)` decides who gets in: the admin page admits admins only, the public page refuses `admin`-role accounts. `#app[data-role="admin"]` shows only `.role-admin` (four nav items: Dashboard, Conversations, Farmers, Buyers, screens `admin*Screen`; plain black background). The farmer app never shows Admin (`state.isAdmin` is cleared on the public page). Do not link to `admin.html` from any public page (`qa_check.js` fails if you do).
+- `admin.html` is the private entrance (unlinked, noindex). It fetches `index.html` and sets `window.FASTO_ENTRY = "admin"` (`state.entry`). `doorAllows(entry, role, isAdmin)` decides who gets in: the admin page admits admins only, the public page refuses `admin`-role accounts. `#app[data-role="admin"]` shows only `.role-admin` (five nav items: Dashboard, Conversations, Farmers, Buyers, Map, screens `admin*Screen`; plain black background). The farmer app never shows Admin (`state.isAdmin` is cleared on the public page). Do not link to `admin.html` from any public page (`qa_check.js` fails if you do).
 
 ## Admin edits (item 31 pass A)
 
@@ -73,3 +73,7 @@ No install needed, none touch the real database. Add tests for whatever you buil
 - Never touch anything outside the Approved queue. Ideas go under "Proposed" only.
 - If a test fails and you cannot fix it, commit nothing, do not mark the item Done, and leave a dated note under the item.
 - Git: work on `main`. Run `git pull --rebase origin main` first, commit with a clear message, then `git push origin main`.
+
+## Admin map (item 31 pass C)
+
+- `adminMapScreen` uses Leaflet 1.9.4 + OpenStreetMap tiles, loaded from jsDelivr on demand by `loadLeaflet()` (deliberate exception to "no framework"; no key). Points come from the pure `adminMapPoints` / `clusterMapPoints` in `core.js`. Farmers appear only as a count per village (`villagePoint`), never named. The list under the map is the fallback and carries Edit (pass A form) and Approve claim.

@@ -930,3 +930,11 @@
   #onboard{ padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
   .onboard-card{ padding:22px 18px; }
 }
+
+/* Admin map (item 31 pass C). Leaflet's own CSS is loaded on demand by loadLeaflet(). */
+.admin-map-filters{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.admin-map{ height:420px; border-radius:var(--radius-md); overflow:hidden; background:#111; margin:10px 0; }
+.admin-map-group{ border:1px solid var(--hairline); border-radius:var(--radius-md); padding:10px 12px; margin-bottom:8px; }
+.admin-map-group ul{ list-style:none; margin:6px 0 0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.admin-map-group li{ display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+@media (max-width:900px){ .admin-map-filters{ grid-template-columns:1fr; } .admin-map{ height:300px; } }

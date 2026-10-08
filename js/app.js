@@ -3971,6 +3971,118 @@ async function enterBuyerApp() {
   switchScreen("buyerBusiness");
 }
 
+/* ================= ADMIN MAP (item 31 pass C) =================
+   Buyers, channels and farmer villages on one map. The points come from core.js
+   adminMapPoints (pure, tested). Leaflet + OpenStreetMap tiles are loaded from a
+   CDN only when this screen opens (no key, no cost; the attribution stays on the
+   map). If Leaflet or the tiles cannot load, the plain list under the map shows
+   the same places, with the same Edit / Approve buttons. Farmers appear only as a
+   count per village. Edit reuses pass A (the Buyers form), Approve reuses the
+   claim decision, so nothing here writes to the database by itself. */
+let adminMapFilters = { kind: "all", category: "", claim: "any" };
+let adminMapBuyers = null;      // rows from DataStore.listBuyers (with lat/lng)
+let adminMapSelected = null;    // key of the highlighted place group
+let leafletMap = null, leafletLayer = null, leafletLoading = null;
+const MAP_COLORS = { buyer: "#d94a48", channel: "#e8b53a", farmer: "#4cae6a" };
+
+function loadLeaflet() {
+  if (typeof window !== "undefined" && window.L) return Promise.resolve(window.L);
+  if (leafletLoading) return leafletLoading;
+  leafletLoading = new Promise((resolve, reject) => {
+    try {
+      const css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(css);
+      const js = document.createElement("script");
+      js.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+      js.onload = () => (window.L ? resolve(window.L) : reject(new Error("leaflet missing")));
+      js.onerror = () => reject(new Error("leaflet failed"));
+      document.head.appendChild(js);
+    } catch (e) { reject(e); }
+  });
+  leafletLoading.catch(() => { leafletLoading = null; });   // allow a retry next time
+  return leafletLoading;
+}
+function adminMapGroups() {
+  const pts = adminMapPoints(adminMapBuyers || [], (adminCache && adminCache.claims) || [], (adminCache && adminCache.chats) || [], adminMapFilters);
+  return { pts, groups: clusterMapPoints(pts) };
+}
+function pendingClaimFor(buyerId) {
+  return ((adminCache && adminCache.claims) || []).find(c => c.buyer_id === buyerId && c.status === "pending") || null;
+}
+function adminMapItemHTML(p) {
+  if (p.kind === "farmer") return `<li><span>${esc(p.label)} · ${esc(T("admin.map.farmerCount", { n: p.count }))}</span></li>`;
+  const kindLabel = T(p.kind === "channel" ? "admin.map.channels" : "admin.map.buyers");
+  const claim = p.claim === "claimed" ? T("admin.map.claimed") : p.claim === "pending" ? T("admin.map.pending") : T("admin.map.unclaimed");
+  const pc = p.claim === "pending" ? pendingClaimFor(p.id) : null;
+  return `<li><span><b>${esc(p.label)}</b> · ${esc(kindLabel)} · ${esc(claim)}</span><span class="row gap-8">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="editMapBuyer('${escAttr(p.id)}')" aria-label="${escAttr(T("admin.map.editFor", { name: p.label }))}">${esc(T("admin.map.edit"))}</button>
+    ${pc ? `<button type="button" class="btn btn-primary btn-sm" onclick="approveMapClaim('${escAttr(pc.id)}')" aria-label="${escAttr(T("admin.map.approveFor", { name: p.label }))}">${esc(T("admin.map.approve"))}</button>` : ""}</span></li>`;
+}
+function paintAdminMapList() {
+  if (!$("adminMapList")) return;
+  const { pts, groups } = adminMapGroups();
+  $("adminMapNote").textContent = pts.length ? T("admin.map.shown", { n: pts.length }) : T("admin.map.none");
+  $("adminMapList").innerHTML = groups.map(g => `<div class="admin-map-group${g.key === adminMapSelected ? " selected" : ""}">
+    <div class="eyebrow">${esc(g.lat.toFixed(3))}, ${esc(g.lng.toFixed(3))}</div>
+    <ul>${g.items.map(adminMapItemHTML).join("")}</ul></div>`).join("");
+}
+function paintAdminMapMarkers() {
+  if (!leafletMap || !leafletLayer || typeof window === "undefined" || !window.L) return;
+  const L = window.L, { groups } = adminMapGroups();
+  leafletLayer.clearLayers();
+  groups.forEach(g => {
+    const kinds = [...new Set(g.items.map(i => i.kind))];
+    const color = kinds.length === 1 ? MAP_COLORS[kinds[0]] : "#ffffff";
+    const total = g.items.reduce((n, i) => n + (i.count || 1), 0);
+    const m = L.circleMarker([g.lat, g.lng], { radius: Math.min(26, 8 + Math.sqrt(total) * 3), color: "#000", weight: 1, fillColor: color, fillOpacity: 0.85 });
+    m.bindTooltip(g.items.slice(0, 6).map(i => esc(i.label) + (i.count ? " (" + i.count + ")" : "")).join("<br>") + (g.items.length > 6 ? "<br>+" + (g.items.length - 6) : ""));
+    m.on("click", () => { adminMapSelected = g.key; paintAdminMapList(); });
+    m.addTo(leafletLayer);
+  });
+}
+async function paintAdminMap() {
+  if (!state.isAdmin || !$("adminMapCanvas")) return;
+  const sel = $("mapCategory");
+  if (sel && !sel.innerHTML) sel.innerHTML = `<option value="">${esc(T("admin.map.anyCategory"))}</option>` + CATEGORIES.map(c => `<option value="${escAttr(c)}">${esc(catLabel(c))}</option>`).join("");
+  if (!adminMapBuyers) {
+    const { data, error } = await DataStore.listBuyers();
+    if (error) { console.error("admin map load failed", error); toast(T("admin.loadFailed")); return; }
+    adminMapBuyers = data || [];
+  }
+  paintAdminMapList();
+  try {
+    const L = await loadLeaflet();
+    if (!leafletMap) {
+      leafletMap = L.map($("adminMapCanvas")).setView([41.49, 13.83], 11);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: T("admin.map.attribution") }).addTo(leafletMap);
+      leafletLayer = L.layerGroup().addTo(leafletMap);
+    }
+    setTimeout(() => leafletMap && leafletMap.invalidateSize(), 0);   // the screen was hidden when the map was made
+    paintAdminMapMarkers();
+  } catch (e) {
+    console.error("admin map unavailable", e);
+    $("adminMapNote").textContent = T("admin.map.noMap") + " " + $("adminMapNote").textContent;
+  }
+}
+function setAdminMapFilter(key, value) {
+  if (!(key in adminMapFilters)) return;
+  adminMapFilters[key] = String(value || "");
+  if (key !== "category" && !adminMapFilters[key]) adminMapFilters[key] = key === "claim" ? "any" : "all";
+  adminMapSelected = null;
+  paintAdminMapList(); paintAdminMapMarkers();
+}
+async function editMapBuyer(id) {
+  switchScreen("adminBuyers");
+  await loadAdminBuyers();
+  editAdminBuyer(id);
+}
+async function approveMapClaim(claimId) {
+  await decideClaimAdmin(claimId, true);
+  await renderAdmin();
+  paintAdminMapList(); paintAdminMapMarkers();
+}
+
 /* ================= NAVIGATION ================= */
 function switchScreen(name) {
   const prev = state.screen;
@@ -3988,6 +4100,7 @@ function switchScreen(name) {
   if (name === "clients") renderChats();
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
   if (name.indexOf("admin") === 0) { renderAdmin(); loadAdminFarmers(); loadAdminBuyers(); }
+  if (name === "adminMap") { renderAdmin().then(paintAdminMap); }
   if (name.indexOf("buyer") === 0) renderBuyerScreens();
 }
 

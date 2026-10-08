@@ -176,11 +176,11 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
-  adminBuyerMatches, adminFarmerMatches, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, revealAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminKpis, openAdminStage, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
+  adminBuyerMatches, adminFarmerMatches, adminMapGroups, renderAdmin, setAdminMapFilter, paintAdminMap, paintAdminMapList, editMapBuyer, approveMapClaim, adminMapItemHTML, loadLeaflet, loadAdminFarmers, editAdminFarmer, saveAdminFarmer, revealAdminFarmer, adminFarmersState: () => adminFarmersCache, loadAdminBuyers, editAdminBuyer, saveAdminBuyer, guardianValidateAdminBuyer, adminKpis, openAdminStage, adminBuyersState: () => adminBuyersCache, adminStageSets, adminFunnel, adminStages, ADMIN_STAGE_KEYS, setAdminStage, renderAdmin,
   T, currentLang, setLangValue, setLang, applyI18n, engineText, catLabel, monthNames, offlineScript,
   STRINGS, ENGINE_PATTERNS, OFFLINE_SCRIPT_KEYS, phaseLabel, relDate, chatTitle, greetingText,
   profileFieldLabel, humanList, buildLogisticsPayload, paintModePill, lgField,
@@ -2457,6 +2457,47 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.editAdminBuyer("b2"); els.abName.value = "   "; sb.reset();
     await a.saveAdminBuyer();
     check("an empty name is refused before anything is sent", sb.chains.length === 0);
+  }
+
+  /* ---- Item 31 pass C: the admin map ---- */
+  {
+    const a = app;
+    const bs = [{ id: "b1", name: "Edra <b>Palace</b>", lat: "41.4905", lng: "13.8330", geo_source: "town", needs: ["vino", "olio"] },
+                { id: "b2", name: "Trattoria", lat: 41.5233, lng: 13.835, needs: ["verdure"] },
+                { id: "c01", name: "Mercato", lat: 41.4905, lng: 13.8330, needs: ["frutta"] },
+                { id: "c02", name: "Rete", lat: null, lng: null, needs: [] }];
+    const cl = [{ id: "k1", buyer_id: "b1", status: "approved" }, { id: "k2", buyer_id: "b2", status: "pending" }, { id: "k3", buyer_id: "b2", status: "rejected" }];
+    const ch = [{ farmer_id: "f1", village: "Cassino" }, { farmer_id: "f1", village: "cassino" }, { farmer_id: "f2", village: "Cassino (campagna)" }, { farmer_id: "f3", village: "Atlantis" }];
+    const all = a.adminMapPoints(bs, cl, ch, {});
+    check("map: rows without coordinates are skipped, numeric strings are coerced",
+      !all.some(p => p.id === "c02") && all.find(p => p.id === "b1").lat === 41.4905);
+    check("map: channels are told apart from buyers and claim status is read from claims",
+      all.find(p => p.id === "c01").kind === "channel" && all.find(p => p.id === "b1").claim === "claimed" && all.find(p => p.id === "b2").claim === "pending" && all.find(p => p.id === "c01").claim === "unclaimed");
+    const fm = all.filter(p => p.kind === "farmer");
+    check("map: farmers appear only as one count per known village, with no names or ids of farmers",
+      fm.length === 1 && fm[0].count === 2 && !JSON.stringify(fm).includes("f1") && !JSON.stringify(fm).includes("f2"));
+    check("map filters: kind, category and claim status",
+      eq(a.adminMapPoints(bs, cl, ch, { kind: "channel" }).map(p => p.id), ["c01"]) &&
+      eq(a.adminMapPoints(bs, cl, ch, { category: "vino" }).map(p => p.id), ["b1"]) &&
+      eq(a.adminMapPoints(bs, cl, ch, { claim: "pending" }).map(p => p.id), ["b2"]) &&
+      a.adminMapPoints(bs, cl, ch, { kind: "farmer" }).length === 1);
+    const cs = a.clusterMapPoints(all);
+    check("map: points on the same spot merge into one group", cs.length === 2 && cs.find(g => g.items.length === 3));
+
+    ["adminHomeScreen", "adminMapCanvas", "adminMapNote", "adminMapList", "mapCategory"].forEach(id => els[id] = fakeEl(id));
+    a.state.isAdmin = true; sb.reset();
+    sb.router = ch2 => ({ data: ch2.table === "buyers" ? bs : ch2.table === "chats" ? ch : ch2.table === "buyer_claims" ? cl : [], error: null });
+    await a.renderAdmin();
+    sb.chains.length = 0;
+    await a.paintAdminMap();
+    check("opening the map reads buyers only and writes nothing",
+      sb.chains.every(c => c.table === "buyers" && c.ops.every(o => o.op === "select")));
+    check("the place list shows names escaped and has Edit buttons for buyers",
+      els.adminMapList.innerHTML.includes("Edra &lt;b&gt;Palace") && !els.adminMapList.innerHTML.includes("<b>Palace") && els.adminMapList.innerHTML.includes("editMapBuyer('b1')"));
+    check("the category filter is filled with the categories", els.mapCategory.innerHTML.includes('value="vino"'));
+    a.setAdminMapFilter("kind", "farmer");
+    check("changing a filter redraws the list", !els.adminMapList.innerHTML.includes("editMapBuyer") && els.adminMapList.innerHTML.includes("farmer"));
+    a.setAdminMapFilter("kind", "all");
   }
 
   /* ---- Item 31 pass A (farmers): directory with display fields only, audited edit ---- */

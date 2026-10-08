@@ -280,6 +280,53 @@ function villagePoint(village) {
   return p ? { lat: p[0], lng: p[1], geo_source: "town" } : null;
 }
 
+/* Item 31 pass C: the admin map. Pure, so it is tested without a page.
+   adminMapPoints turns buyers (with lat/lng from the database), their claims and
+   the farmers' chats into plain points; clusterMapPoints merges points that sit on
+   the same spot (all our points are town centres, so many share one). Farmers are
+   only ever counted per village (never named, never placed more precisely than the
+   village) because the admin map must not become a farmer location list. */
+function adminMapPoints(buyers, claims, chats, filters) {
+  var f = filters || {}, kind = f.kind || "all", cat = f.category || "", claim = f.claim || "any", out = [];
+  var status = {};   // buyer id -> "claimed" | "pending"
+  (claims || []).forEach(function (c) {
+    if (!c.buyer_id) return;
+    if (c.status === "approved") status[c.buyer_id] = "claimed";
+    else if (c.status === "pending" && status[c.buyer_id] !== "claimed") status[c.buyer_id] = "pending";
+  });
+  (buyers || []).forEach(function (b) {
+    if (b.lat == null || b.lng == null || isNaN(Number(b.lat)) || isNaN(Number(b.lng))) return;
+    var k = /^c\d/.test(String(b.id)) ? "channel" : "buyer";
+    var cs = status[b.id] || "unclaimed";
+    if (kind !== "all" && kind !== k) return;
+    if (cat && (b.needs || []).indexOf(cat) === -1) return;
+    if (claim !== "any" && claim !== cs) return;
+    out.push({ kind: k, id: b.id, label: b.name, lat: Number(b.lat), lng: Number(b.lng), geo_source: b.geo_source || "town", claim: cs });
+  });
+  if ((kind === "all" || kind === "farmer") && !cat && (claim === "any")) {
+    var byVillage = {};
+    (chats || []).forEach(function (c) {
+      var p = villagePoint(c.village); if (!p || !c.farmer_id) return;
+      var key = p.lat + "," + p.lng, g = byVillage[key] || (byVillage[key] = { p: p, village: c.village, ids: {} });
+      g.ids[c.farmer_id] = 1;
+    });
+    Object.keys(byVillage).forEach(function (key) {
+      var g = byVillage[key];
+      out.push({ kind: "farmer", id: "village:" + key, label: g.village, lat: g.p.lat, lng: g.p.lng, geo_source: "town", claim: "n/a", count: Object.keys(g.ids).length });
+    });
+  }
+  return out;
+}
+function clusterMapPoints(points) {
+  var groups = {}, order = [];
+  (points || []).forEach(function (p) {
+    var key = p.lat.toFixed(3) + "," + p.lng.toFixed(3);
+    if (!groups[key]) { groups[key] = { key: key, lat: p.lat, lng: p.lng, items: [] }; order.push(key); }
+    groups[key].items.push(p);
+  });
+  return order.map(function (k) { return groups[k]; });
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -287,6 +334,6 @@ if (typeof module !== "undefined" && module.exports) {
     volumeBand: volumeBand, totalKg: totalKg, farmerCategories: farmerCategories,
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
-    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS
+    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS
   };
 }
