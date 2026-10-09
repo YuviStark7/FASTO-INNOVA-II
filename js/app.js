@@ -50,6 +50,7 @@ let state = {
   activeClientId: null,
   showAllResearch: false,
   adminStage: "started",  // which funnel stage the Admin table is filtered to
+  railMenuId: null,       // which chat-rail 3-dot menu is open (item 21)
   search: ""              // the top-bar query — see SEARCH below. It lives in state, not in the DOM
 };
 
@@ -418,6 +419,7 @@ async function loadFarmerData(uid) {
       } : null,
       candidates: [], recs: null,
       offlineStep: (msgs || []).length, offlineReady: (msgs || []).length >= OFFLINE_SCRIPT_KEYS.length,
+      pinnedAt: row.pinned_at ? new Date(row.pinned_at).getTime() : null,
       ts: new Date(row.created_at).getTime()
     });
   }
@@ -691,13 +693,52 @@ function renderChatRail() {
     el.innerHTML = `<div class="chat-rail-empty">${esc(T("search.noneChats", { q: state.search.trim() }))}</div>`;
     return;
   }
-  el.innerHTML = list.map(c => {
+  el.innerHTML = sortPinnedFirst(list).map(c => {
     const on = c.id === state.activeChatId;
+    const open = state.railMenuId === c.id;
+    const pinned = !!c.pinnedAt;
     return `
+    <div class="chat-rail-row">
     <button type="button" class="chat-rail-item ${on ? "active" : ""}" data-chat-id="${esc(c.id)}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openChat", { title: c.title }))}" onclick="selectChat('${c.id}')">
-      <img class="ic-svg sm" src="assets/icon-chat-item.svg" alt="">${esc(c.title)}
-    </button>`;
+      <img class="ic-svg sm" src="assets/icon-chat-item.svg" alt="">${pinned ? `<span class="pin-mark" title="${escAttr(T("rail.pinned"))}">&#128204;</span>` : ""}${esc(c.title)}
+    </button>
+    <button type="button" class="chat-rail-more" aria-haspopup="menu" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T("a11y.chatMenu", { title: c.title }))}" onclick="toggleRailMenu('${c.id}')">&#8943;</button>
+    ${open ? `<div class="chat-rail-menu" role="menu">
+      <button type="button" role="menuitem" onclick="renameChat('${c.id}')">${esc(T("rail.rename"))}</button>
+      <button type="button" role="menuitem" onclick="togglePinChat('${c.id}')">${esc(T(pinned ? "rail.unpin" : "rail.pin"))}</button>
+    </div>` : ""}
+    </div>`;
   }).join("");
+}
+/* ---------- Chat list management (item 21, pass A: rename + pin) ----------
+   Pinned chats first, newest-pinned first; the rest keep their order. Pure. */
+function sortPinnedFirst(list) {
+  const pinned = list.filter(c => c.pinnedAt).sort((a, b) => b.pinnedAt - a.pinnedAt);
+  return pinned.concat(list.filter(c => !c.pinnedAt));
+}
+// Trim, cap at 60 characters; empty means "no change".
+function cleanChatTitle(t) { return String(t == null ? "" : t).replace(/\s+/g, " ").trim().slice(0, 60); }
+function toggleRailMenu(id) { state.railMenuId = state.railMenuId === id ? null : id; renderChatRail(); }
+function closeRailMenu() { if (!state.railMenuId) return false; state.railMenuId = null; renderChatRail(); return true; }
+function togglePinChat(id) {
+  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  if (!chat) return renderChatRail();
+  chat.pinnedAt = chat.pinnedAt ? null : Date.now();
+  if (!isLocalId(chat.id)) bgSave(DataStore.updateChat(chat.id, { pinned_at: chat.pinnedAt ? new Date(chat.pinnedAt).toISOString() : null }), "save.profile");
+  renderChatRail();
+}
+async function renameChat(id) {
+  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  renderChatRail();
+  if (!chat) return;
+  const v = await showDialog({ titleKey: "rail.renameTitle", bodyKey: "rail.renameBody", okKey: "dlg.save", cancelKey: "dlg.cancel",
+    input: { labelKey: "rail.renameLabel", value: chat.title, inputmode: "text" } });
+  const t = cleanChatTitle(v);
+  if (v == null || !t || t === chat.title) return;
+  chat.title = t; chat.titleLocked = true;   // a name the farmer chose sticks (this session)
+  if (!isLocalId(chat.id)) bgSave(DataStore.updateChat(chat.id, { title: t }), "save.profile");
+  if (chat.id === state.activeChatId) updateHeaderIdentity();
+  renderChatRail();
 }
 // Briefly outline the rail entry, so reusing a chat doesn't look like the
 // button did nothing — especially when the reused chat was already the open one.
@@ -814,7 +855,7 @@ async function onProfileCaptured(raw, chat) {
   addLog("ok", "Guardian · profile valid (" + v.profile.products.length + " products, " + totalKg(v.profile) + " kg/week) → forwarded to Brain 2");
   chat.profile = v.profile;
   chat.phase = "matching"; chat.pct = 45; chat.ts = Date.now();
-  chat.title = chatTitle(chat);
+  if (!chat.titleLocked) chat.title = chatTitle(chat);
   if (chat.id === state.activeChatId) updateHeaderIdentity();
   renderChatRail(); renderDashboard();
 
@@ -2290,7 +2331,7 @@ function applyProfileEdit(chat, raw) {
   if (!changed.length) return { ok: true, errors: [], warnings: v.warnings, changed: [], rescored: false, staleDrafts: 0, saved: false };
 
   chat.profile = after;
-  chat.title = chatTitle(chat);
+  if (!chat.titleLocked) chat.title = chatTitle(chat);
   chat.ts = Date.now();
 
   // The engine is pure and cheap, so the ranking is rebuilt from the new
@@ -2553,7 +2594,7 @@ function showDialog(opts) {
     $("dialogTitle").textContent = T(opts.titleKey);
     const inp = opts.input;
     $("dialogBody").innerHTML = `<p>${esc(T(opts.bodyKey, opts.vars))}</p>` + (inp
-      ? `<div class="field"><label for="dialogInput">${esc(T(inp.labelKey, opts.vars))}</label><input type="text" id="dialogInput" inputmode="decimal" value="${escAttr(inp.value || "")}" autocomplete="off"></div>` : "");
+      ? `<div class="field"><label for="dialogInput">${esc(T(inp.labelKey, opts.vars))}</label><input type="text" id="dialogInput" inputmode="${escAttr(inp.inputmode || "decimal")}" value="${escAttr(inp.value || "")}" autocomplete="off"></div>` : "");
     $("dialogOk").textContent = T(opts.okKey || "dlg.ok");
     $("dialogCancel").textContent = T(opts.cancelKey || "dlg.cancel");
     $("dialogCancel").style.display = opts.cancelKey ? "" : "none";
@@ -4451,8 +4492,10 @@ function boot() {
      listeners each closed their own sheet, so a single press while correcting a
      profile also closed the match sheet waiting behind it. Tab is held inside
      whichever sheet is on top — see trapSheetTab(). */
+  document.addEventListener("click", e => { if (state.railMenuId && !(e.target.closest && e.target.closest(".chat-rail-row"))) closeRailMenu(); });
   document.addEventListener("keydown", e => {
     if (profileMenuOpen() && profileMenuKey(e)) return;
+    if (e.key === "Escape" && !topSheet() && closeRailMenu()) return;
     if (e.key === "Escape" && !topSheet() && (closeFarmerPanel(true) || closeClientPanel(true))) return;
     if (e.key === "Escape") { closeTopSheet(); return; }
     if (e.key === "Tab") trapSheetTab(e);

@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, toggleRailMenu, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2655,6 +2655,21 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.state.role = "buyer"; a.openHelp();
     check("and different steps for a buyer", els.helpBody.innerHTML.includes("Claim your business") && !els.helpBody.innerHTML.includes("Fasto-AI"));
     a.closeHelp(); a.state.role = "farmer";
+
+    // chat list management (item 21 pass A)
+    const sp = a.sortPinnedFirst([{ id: "a" }, { id: "b", pinnedAt: 5 }, { id: "c", pinnedAt: 9 }, { id: "d" }]);
+    check("pinned chats first, newest pin first, others keep order", sp.map(c => c.id).join("") === "cbad");
+    check("chat title is trimmed, collapsed and capped at 60", a.cleanChatTitle("  a   b \n c ") === "a b c" && a.cleanChatTitle("x".repeat(90)).length === 60 && a.cleanChatTitle(null) === "");
+    els.chatRailList = els.chatRailList || fakeEl("chatRailList");
+    a.state.chats = [{ id: "L1", title: "Tomatoes", pinnedAt: null, messages: [] }, { id: "L2", title: "Olives", pinnedAt: 7, messages: [] }];
+    a.state.search = "";
+    a.toggleRailMenu("L1");
+    check("opening a 3-dot menu shows Rename and Pin, one menu at a time", els.chatRailList.innerHTML.includes("Pin to top") && els.chatRailList.innerHTML.includes("Rename") && (els.chatRailList.innerHTML.match(/class="chat-rail-menu"/g) || []).length === 1);
+    a.togglePinChat("L1");
+    check("pinning sets pinnedAt, closes the menu and sorts it first", a.state.chats[0].pinnedAt > 0 && a.state.railMenuId === null && els.chatRailList.innerHTML.indexOf("Tomatoes") < els.chatRailList.innerHTML.indexOf("Olives"));
+    a.togglePinChat("L1");
+    check("pressing Pin again unpins", a.state.chats[0].pinnedAt === null);
+    a.state.chats = []; a.renderChatRail && 0;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");
