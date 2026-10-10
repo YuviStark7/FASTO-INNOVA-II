@@ -706,6 +706,7 @@ function renderChatRail() {
     ${open ? `<div class="chat-rail-menu" role="menu">
       <button type="button" role="menuitem" onclick="renameChat('${c.id}')">${esc(T("rail.rename"))}</button>
       <button type="button" role="menuitem" onclick="togglePinChat('${c.id}')">${esc(T(pinned ? "rail.unpin" : "rail.pin"))}</button>
+      <button type="button" role="menuitem" class="danger" onclick="deleteChat('${c.id}')">${esc(T("rail.delete"))}</button>
     </div>` : ""}
     </div>`;
   }).join("");
@@ -739,6 +740,33 @@ async function renameChat(id) {
   if (!isLocalId(chat.id)) bgSave(DataStore.updateChat(chat.id, { title: t }), "save.profile");
   if (chat.id === state.activeChatId) updateHeaderIdentity();
   renderChatRail();
+}
+/* Delete (item 21, pass B). Real deletion, asked for by Yuvi. The database
+   removes the chat's messages, products and matches with it; outreach threads
+   are kept (their chat link is just cleared) so a buyer never loses a
+   conversation they were part of. The local list only changes once the
+   database has said yes. */
+async function deleteChat(id) {
+  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  renderChatRail();
+  if (!chat) return false;
+  const ok = await showDialog({ titleKey: "rail.deleteTitle", bodyKey: "rail.deleteBody", vars: { title: chat.title },
+    okKey: "rail.delete", cancelKey: "dlg.cancel" });
+  if (!ok) return false;
+  if (!isLocalId(chat.id)) {
+    let res = null;
+    try { res = await DataStore.deleteChat(chat.id); } catch (e) { res = { error: e }; }
+    if (res && res.error) { saveFailed("save.profile", res.error); return false; }
+    saveOk();
+  }
+  state.chats = state.chats.filter(c => c.id !== id);
+  if (state.activeChatId === id) {
+    state.activeChatId = null;
+    if (state.chats.length) selectChat(sortPinnedFirst(state.chats)[0].id);
+    else await startNewChat();
+  }
+  renderChatRail();
+  return true;
 }
 // Briefly outline the rail entry, so reusing a chat doesn't look like the
 // button did nothing — especially when the reused chat was already the open one.

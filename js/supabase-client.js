@@ -46,6 +46,8 @@ const DataStore = {
   listMyChats(uid) { return sb.from("chats").select("*").eq("farmer_id", uid).order("created_at", { ascending: false }); },
   createChat(uid) { return sb.from("chats").insert({ farmer_id: uid }).select().single(); },
   updateChat(chatId, patch) { return sb.from("chats").update(patch).eq("id", chatId); },
+  // Real deletion (item 21). RLS allows only the owner; messages/products/matches cascade.
+  deleteChat(chatId) { return sb.from("chats").delete().eq("id", chatId); },
 
   listMessages(chatId) { return sb.from("messages").select("*").eq("chat_id", chatId).order("created_at", { ascending: true }); },
   addMessage(chatId, role, text) { return sb.from("messages").insert({ chat_id: chatId, role, text }); },

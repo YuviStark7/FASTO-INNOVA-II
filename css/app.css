@@ -313,6 +313,7 @@
 .chat-rail-menu{ position:absolute; right:2px; top:100%; z-index:5; min-width:140px; padding:4px; border-radius:var(--radius-sm); background:#241a19; box-shadow:0 6px 18px rgba(0,0,0,.5); display:flex; flex-direction:column; }
 .chat-rail-menu button{ border:none; background:none; color:#fff; font:inherit; font-size:12.5px; text-align:left; padding:8px 10px; border-radius:var(--radius-sm); cursor:pointer; }
 .chat-rail-menu button:hover{ background:rgba(255,255,255,.12); }
+.chat-rail-menu button.danger{ color:#ff9b96; }
 .pin-mark{ font-size:10px; flex-shrink:0; }
 .chat-rail-item .ic-svg{ opacity:.6; flex-shrink:0; }
 /* "nothing matched" inside the rail (item 17). --ink-70 rather than --ink-50:

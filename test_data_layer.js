@@ -176,7 +176,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, toggleRailMenu, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, toggleRailMenu, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2669,6 +2669,25 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("pinning sets pinnedAt, closes the menu and sorts it first", a.state.chats[0].pinnedAt > 0 && a.state.railMenuId === null && els.chatRailList.innerHTML.indexOf("Tomatoes") < els.chatRailList.innerHTML.indexOf("Olives"));
     a.togglePinChat("L1");
     check("pressing Pin again unpins", a.state.chats[0].pinnedAt === null);
+    // pass B: delete
+    check("the 3-dot menu offers Delete", (a.toggleRailMenu("L1"), els.chatRailList.innerHTML.includes("Delete")));
+    let delCalls = [], delErr = null;
+    a.DataStore.deleteChat = async id => { delCalls.push(id); return { error: delErr }; };
+    const clickDlg = ok => setTimeout(() => a.settleDialog(ok), 0);
+    a.state.activeChatId = "L2";
+    clickDlg(false); const r1 = await a.deleteChat("L1");
+    check("cancelling the confirm deletes nothing", r1 === false && a.state.chats.length === 2 && delCalls.length === 0);
+    a.state.chats[0].id = "local-1";
+    clickDlg(true); const r2 = await a.deleteChat("local-1");
+    check("local-only chat is removed without a database call", r2 === true && a.state.chats.length === 1 && delCalls.length === 0);
+    a.state.chats = [{ id: "11111111-1111-4111-8111-111111111111", title: "Olives", messages: [] }, { id: "22222222-2222-4222-8222-222222222222", title: "Figs", messages: [] }];
+    a.state.activeChatId = a.state.chats[0].id;
+    delErr = { message: "nope" };
+    clickDlg(true); const r3 = await a.deleteChat(a.state.chats[0].id);
+    check("a database refusal keeps the chat", r3 === false && a.state.chats.length === 2);
+    delErr = null;
+    clickDlg(true); const r4 = await a.deleteChat(a.state.chats[0].id);
+    check("a saved delete removes the chat, calls the database once more and opens another", r4 === true && delCalls.length === 2 && a.state.chats.length === 1 && a.state.activeChatId === a.state.chats[0].id);
     a.state.chats = []; a.renderChatRail && 0;
   }
 
