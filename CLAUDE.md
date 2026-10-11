@@ -77,3 +77,7 @@ No install needed, none touch the real database. Add tests for whatever you buil
 ## Admin map (item 31 pass C)
 
 - `adminMapScreen` uses Leaflet 1.9.4 + OpenStreetMap tiles, loaded from jsDelivr on demand by `loadLeaflet()` (deliberate exception to "no framework"; no key). Points come from the pure `adminMapPoints` / `clusterMapPoints` in `core.js`. Farmers appear only as a count per village (`villagePoint`), never named. The list under the map is the fallback and carries Edit (pass A form) and Approve claim.
+
+## Attachments (item 16 pass A)
+
+- Private bucket `farmer-files` (5 MB, JPEG/PNG/WebP/PDF); object path must be `<auth uid>/<file>`; four storage policies restrict each user to their own folder. `message_attachments` records one file against an `outreach_messages` row (owner reads/inserts/deletes own; admin reads; buyers cannot see them yet). No UI until pass B.
