@@ -108,6 +108,8 @@ const DataStore = {
   updateProduct(id, patch) { return sb.from("farmer_products").update(patch).eq("id", id).select().single(); },
   listProductDocuments(productId) { return sb.from("product_documents").select("*").eq("product_id", productId).order("created_at", { ascending: true }); },
   addProductDocument(row) { return sb.from("product_documents").insert(row).select().single(); },
+  // One small row per document, only to count them per product on the My products page.
+  listMyProductDocCounts(uid) { return sb.from("product_documents").select("product_id").eq("owner_id", uid); },
   // The draft product a chat created (a chat makes at most one).
   productForChat(chatId) { return sb.from("farmer_products").select("*").eq("source_chat_id", chatId).order("created_at", { ascending: true }).limit(1); },
   // Files live in the private "farmer-files" bucket; RLS limits each user to their own folder.

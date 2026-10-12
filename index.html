@@ -140,6 +140,7 @@
     <button type="button" class="nav-item role-farmer" data-screen="dashboard"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.dashboard">Dashboard</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="clients"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.clients">Clients</span></button>
     <button type="button" class="nav-item role-farmer" data-screen="assistant"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.assistant">Fasto - AI</span></button>
+    <button type="button" class="nav-item role-farmer" data-screen="products"><img class="ic-svg" src="assets/icon-chat-item.svg" alt=""><span class="label" data-i18n="nav.products">My products</span></button>
     <button type="button" class="nav-item role-admin" data-screen="adminHome" id="adminNavItem"><img class="ic-svg" src="assets/icon-dashboard.svg" alt=""><span class="label" data-i18n="nav.adminHome">Dashboard</span></button>
     <button type="button" class="nav-item role-admin" data-screen="adminConversations"><img class="ic-svg" src="assets/icon-clients.svg" alt=""><span class="label" data-i18n="nav.adminConv">Conversations</span></button>
     <button type="button" class="nav-item role-admin" data-screen="adminFarmers"><img class="ic-svg" src="assets/icon-ai.svg" alt=""><span class="label" data-i18n="nav.adminFarmers">Farmers</span></button>
@@ -213,6 +214,35 @@
     </header>
 
     <!-- ---------- DASHBOARD ---------- -->
+    <!-- ---------- MY PRODUCTS (ROADMAP item 32 pass E) ----------
+         Every product the farmer has made through Fasto-AI, drafts included.
+         Products are never edited here: "Open chat" goes to the conversation
+         that made the product, where changes are asked for. -->
+    <section class="screen" id="productsScreen">
+      <div class="research-panel glass-45">
+        <div class="research-panel-head">
+          <span class="title-md" data-i18n="products.title">My products</span>
+          <button type="button" class="see-all" id="addProductBtn" data-i18n="products.add">Add product</button>
+        </div>
+        <div class="prod-filters" role="group" data-i18n-aria="products.filters" aria-label="Filter products">
+          <label>
+            <span data-i18n="products.fKind">Type</span>
+            <select id="prodKind"><option value="" data-i18n="products.kindAll">All types</option><option value="packaged" data-i18n="products.kindPackaged">Finished products</option><option value="fresh" data-i18n="products.kindFresh">Fresh produce</option></select>
+          </label>
+          <label>
+            <span data-i18n="products.fStatus">Status</span>
+            <select id="prodStatus"><option value="open" data-i18n="products.stOpen">Drafts and active</option><option value="draft" data-i18n="products.stDraft">Drafts</option><option value="active" data-i18n="products.stActive">Active</option><option value="archived" data-i18n="products.stArchived">Archived</option><option value="all" data-i18n="products.stAll">Everything</option></select>
+          </label>
+          <label>
+            <span data-i18n="products.fCategory">Category</span>
+            <select id="prodCategory"><option value="" data-i18n="products.catAll">All categories</option></select>
+          </label>
+        </div>
+        <div class="prod-grid" id="productsGrid"></div>
+        <div class="empty-state" id="productsEmpty" role="status"></div>
+      </div>
+    </section>
+
     <section class="screen" id="dashboardScreen">
       <div class="research-panel glass-45">
         <div class="research-panel-head">

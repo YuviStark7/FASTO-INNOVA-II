@@ -37,6 +37,9 @@ let state = {
   clientPanelOpen: false, // the farmer's side panel about the buyer
   bizViews: [],         // a buyer's profile views (rows with viewed_on)
   offers: [],           // a farmer's own published/unpublished offers (item 29)
+  products: [],         // the farmer's own product sheets (farmer_products), newest change first
+  productDocCounts: {}, // product id -> number of attached documents
+  productFilter: { kind: "", status: "open", category: "" },
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
   contactOfferId: null, // the offer whose Contact box is open
@@ -1142,6 +1145,92 @@ function discardScan(id) {
   renderTranscript();
 }
 
+/* ---------- My products screen (ROADMAP item 32 pass E) ----------
+   Read-only list of the farmer's product sheets. Nothing is edited here: a
+   change is asked for in the chat that made the product ("Open chat"), so the
+   conversation stays the single record of how the product came to be. */
+async function loadProducts() {
+  if (!state.farmerId) return;
+  try {
+    const [pr, dr] = await Promise.all([DataStore.listMyProducts(state.farmerId), DataStore.listMyProductDocCounts(state.farmerId)]);
+    if (pr.error) throw pr.error;
+    state.products = pr.data || [];
+    const counts = {};
+    ((dr && dr.data) || []).forEach(d => { counts[d.product_id] = (counts[d.product_id] || 0) + 1; });
+    state.productDocCounts = counts;
+  } catch (e) { noteSaveFailure("save.product", e); }
+  if (state.screen === "products") renderProducts();
+}
+function productStatusLabel(st) {
+  return st === "active" ? T("products.statusActive") : st === "archived" ? T("products.statusArchived") : T("products.statusDraft");
+}
+function productCardHTML(p) {
+  const pc = productCompleteness(p, state.productDocCounts[p.id] || 0);
+  const src = p.source_chat_id ? state.chats.find(c => c.id === p.source_chat_id) : null;
+  const name = p.name;
+  const primary = p.source_chat_id && src
+    ? `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.openChatFor", { name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.openChat"))}</button>`
+    : `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.editNewFor", { name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.editNew"))}</button>`;
+  const arch = p.status === "archived"
+    ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.restoreFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', false)">${esc(T("products.restore"))}</button>`
+    : `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.archiveFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', true)">${esc(T("products.archive"))}</button>`;
+  return `<article class="prod-card"><h3>${esc(name)}</h3><div class="chips">` +
+    `<span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
+    `<span class="chip">${esc(p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"))}</span>` +
+    (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
+    `<p>${esc(pc.complete ? T("products.complete") : T("products.missing", { n: pc.missing.length }))} · ${esc(T("products.docs", { n: state.productDocCounts[p.id] || 0 }))}</p>` +
+    `<p>${esc(p.source_chat_id && src ? T("products.fromChat", { title: src.title }) : T("products.noChat"))} · ${esc(relDate(p.updated_at))}</p>` +
+    `<div class="prod-actions">${primary}${arch}</div></article>`;
+}
+function productSearchFields(p) {
+  const d = p.details || {};
+  return [p.name, p.ai_category, p.kind, p.status].concat(d.ingredients || []).concat(d.pack_sizes || []);
+}
+function renderProducts() {
+  const grid = $("productsGrid"); if (!grid) return;
+  // Category options come from the products themselves (the AI invents them).
+  const sel = $("prodCategory");
+  if (sel) {
+    const cats = productCategoriesOf(state.products);
+    if (state.productFilter.category && cats.indexOf(state.productFilter.category) === -1) state.productFilter.category = "";
+    sel.innerHTML = `<option value="">${esc(T("products.catAll"))}</option>` + cats.map(c => `<option value="${escAttr(c)}"${c === state.productFilter.category ? " selected" : ""}>${esc(c)}</option>`).join("");
+  }
+  const rows = filterProductRows(state.products, state.productFilter).filter(p => matchesSearch(productSearchFields(p), state.search));
+  grid.innerHTML = rows.map(productCardHTML).join("");
+  const empty = $("productsEmpty");
+  if (empty) empty.textContent = rows.length ? "" : T(state.products.length ? "products.emptyFilter" : "products.empty");
+}
+// Add: a fresh chat; Brain 1 works out from what is said whether it is a finished product.
+async function addProduct() {
+  await startNewChat();
+  switchScreen("assistant");
+  toast(T("products.addHint"));
+  const input = $("userInput"); if (input) input.focus();
+}
+// Open: the chat that created the product; if that chat was deleted, a new chat adopts the product.
+async function openProductChat(id) {
+  const p = state.products.find(x => x.id === id); if (!p) return;
+  let chat = p.source_chat_id ? state.chats.find(c => c.id === p.source_chat_id) : null;
+  if (!chat) {
+    chat = await startNewChat(); if (!chat) return;
+    if (isLocalId(chat.id)) { toast(T("attach.errNoChat")); return; }
+    const r = await DataStore.updateProduct(p.id, { source_chat_id: chat.id });
+    if (r.error) { saveFailedWithOwnMessage("save.product", r.error, T("save.couldnt", { what: T("save.product") })); return; }
+    Object.assign(p, r.data || { source_chat_id: chat.id });
+    chat.product = p; chat.docsState = null;
+  }
+  selectChat(chat.id);
+  switchScreen("assistant");
+}
+async function setProductArchived(id, archive) {
+  const p = state.products.find(x => x.id === id); if (!p) return;
+  const r = await DataStore.updateProduct(id, { status: archive ? "archived" : "draft" });
+  if (r.error) { saveFailedWithOwnMessage("save.product", r.error, T("save.couldnt", { what: T("save.product") })); return; }
+  Object.assign(p, r.data || { status: archive ? "archived" : "draft" });
+  toast(T(archive ? "products.archived" : "products.restored", { name: p.name }));
+  renderProducts();
+}
+
 function addMsg(chat, role, text) {
   chat.messages.push({ role, text, ts: Date.now() });
   if (chat.id === state.activeChatId) renderTranscript();
@@ -1795,7 +1884,7 @@ function bootStatus(text) {
    So the same controls the stylesheet dims are really disabled here.
    Anything added to the #app.booting rules in css/app.css belongs in this
    list too, or the lock holds for a mouse and leaks for a keyboard. */
-const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #userInput, .sugg-chip";
+const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #addProductBtn, #userInput, .sugg-chip";
 function setBootLock(on) {
   if (!document.querySelectorAll) return;
   document.querySelectorAll(BOOT_LOCK_SEL).forEach(el => { el.disabled = !!on; });
@@ -1894,6 +1983,7 @@ function repaintForSearch() {
   if (state.screen === "dashboard") renderDashboard();
   else if (state.screen === "clients") renderClientList();
   else if (state.screen === "assistant") renderChatRail();
+  else if (state.screen === "products") renderProducts();
 }
 
 /* ================= RENDERERS ================= */
@@ -4535,6 +4625,7 @@ function switchScreen(name) {
   });
   if (name === "dashboard") { if (prev !== "dashboard") rotateBackdrop(); renderDashboard(); }
   if (name === "clients") renderChats();
+  if (name === "products") { renderProducts(); loadProducts(); }
   if (name === "assistant") { renderChatRail(); renderTranscript(); }
   if (name.indexOf("admin") === 0) { renderAdmin(); loadAdminFarmers(); loadAdminBuyers(); }
   if (name === "adminMap") { renderAdmin().then(paintAdminMap); }
@@ -4831,6 +4922,9 @@ function boot() {
   $("sendBtn").onclick = () => { const v = $("userInput").value.trim(); if (v) { $("userInput").value = ""; sendUserMessage(v); } };
   $("userInput").addEventListener("keydown", e => { if (e.key === "Enter") $("sendBtn").onclick(); });
   $("attachBtn").onclick = pickAttachment;
+  $("addProductBtn").onclick = addProduct;
+  [["prodKind", "kind"], ["prodStatus", "status"], ["prodCategory", "category"]].forEach(([id, key]) =>
+    $(id).addEventListener("change", e => { state.productFilter[key] = e.target.value; renderProducts(); }));
   $("attachInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });
   document.querySelectorAll(".sugg-chip").forEach(ch => ch.onclick = () => { $("userInput").value = ch.dataset.fill; $("userInput").focus(); });
 

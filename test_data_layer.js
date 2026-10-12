@@ -208,6 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
@@ -2195,6 +2196,52 @@ console.log("== Test 2: saveProducts and saveMatches ==");
 
     box.fetch = savedFetch; st.offline = savedOffline; st.apiKey = savedKey;
     st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive;
+  }
+
+  /* ---- ROADMAP item 32 pass E: My products screen ---- */
+  {
+    const a = app, st = a.state;
+    const rows = [
+      { id: "a", name: "Brie", status: "draft", kind: "packaged", ai_category: "Soft cheese", source_chat_id: "c1", details: {}, nutrition: {}, updated_at: "2026-10-12T10:00:00Z" },
+      { id: "b", name: "Jam", status: "active", kind: "packaged", ai_category: "jam", source_chat_id: null, details: {}, nutrition: {}, updated_at: "2026-10-11T10:00:00Z" },
+      { id: "c", name: "Old", status: "archived", kind: "packaged", ai_category: "jam", source_chat_id: "c1", details: {}, nutrition: {}, updated_at: "2026-10-10T10:00:00Z" },
+      { id: "d", name: "Tomatoes", status: "draft", kind: "fresh", ai_category: "", source_chat_id: "c1", details: {}, nutrition: {}, updated_at: "2026-10-09T10:00:00Z" }];
+    const ids = f => a.filterProductRows(rows, f).map(r => r.id).join("");
+    check("by default drafts and active show and archived are tucked away", ids({}) === "abd" && ids({ status: "open" }) === "abd");
+    check("filters narrow by status, kind and category", ids({ status: "archived" }) === "c" && ids({ status: "all" }) === "abcd" && ids({ kind: "fresh" }) === "d" && ids({ category: "jam" }) === "b" && ids({ status: "all", category: "jam" }) === "bc");
+    check("categories are the distinct, lowercase, sorted AI-chosen ones", JSON.stringify(a.productCategoriesOf(rows)) === JSON.stringify(["jam", "soft cheese"]));
+
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId, savedScreen = st.screen;
+    st.farmerId = "u1";
+    st.chats.length = 0; st.chats.push({ id: "c1", title: "Brie chat", messages: [] });
+    sb.reset();
+    sb.router = ch => ch.table === "farmer_products" ? { data: rows, error: null } : ch.table === "product_documents" ? { data: [{ product_id: "a" }, { product_id: "a" }, { product_id: "b" }], error: null } : { data: [], error: null };
+    await a.loadProducts();
+    check("the list is read by owner and document counts are tallied per product",
+      st.products.length === 4 && st.productDocCounts.a === 2 && st.productDocCounts.b === 1 && sb.chains.some(c => c.table === "product_documents" && c.ops.some(o => o.op === "select" && o.args[0] === "product_id")));
+    const card = a.productCardHTML(rows[0]);
+    check("a card names the product and its chat, shows documents, and its buttons name the product",
+      card.includes("Brie") && card.includes("From chat: Brie chat") && card.includes("2 documents") && card.includes('aria-label="Open the chat for Brie"') && card.includes('aria-label="Archive Brie"'));
+    check("a product whose chat was deleted offers a new chat instead", (() => { const h = a.productCardHTML(rows[1]); return h.includes("The chat it came from was deleted") && h.includes("Edit in a new chat"); })());
+    check("an archived product offers Restore", a.productCardHTML(rows[2]).includes('aria-label="Restore Old"'));
+    check("a card escapes the product name", a.productCardHTML(Object.assign({}, rows[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
+
+    // archive / restore
+    sb.reset(); sb.router = ch => ({ data: Object.assign({}, rows[0], ch.ops[0].op === "update" ? ch.ops[0].args[0] : {}), error: null });
+    st.products = rows.map(r => Object.assign({}, r));
+    await a.setProductArchived("a", true);
+    const up = sb.chains.find(c => c.table === "farmer_products" && c.ops[0].op === "update");
+    check("archiving only changes the status (nothing is deleted)", up && JSON.stringify(up.ops[0].args[0]) === JSON.stringify({ status: "archived" }) && st.products[0].status === "archived" && !sb.chains.some(c => c.ops.some(o => o.op === "delete")));
+    await a.setProductArchived("a", false);
+    check("restoring brings it back as a draft", st.products[0].status === "draft");
+
+    // open the chat that made it
+    st.activeChatId = null;
+    els.whoName = els.whoName || fakeEl("whoName");   // selectChat repaints the header
+    await a.openProductChat("a");
+    check("Open chat selects the chat that created the product", st.activeChatId === "c1" && st.screen === "assistant");
+
+    st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.screen = savedScreen;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */

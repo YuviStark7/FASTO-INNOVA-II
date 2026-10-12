@@ -447,6 +447,26 @@ function productCompleteness(row, docCount) {
   return { complete: missing.length === 0, missing: missing };
 }
 
+/* ---------- "My products" list filters (ROADMAP item 32 pass E) ----------
+   status filter: "open" = drafts and active (the default; archived are tucked
+   away), "all", or one status. kind and category "" mean any. */
+function filterProductRows(rows, f) {
+  var fl = f || {};
+  var st = fl.status === undefined ? "open" : fl.status;
+  return (rows || []).filter(function (p) {
+    if (st === "open" ? p.status === "archived" : (st !== "all" && p.status !== st)) return false;
+    if (fl.kind && p.kind !== fl.kind) return false;
+    if (fl.category && String(p.ai_category || "").toLowerCase() !== fl.category) return false;
+    return true;
+  });
+}
+// Distinct AI-chosen categories (they are free text), lowercase, sorted.
+function productCategoriesOf(rows) {
+  var seen = {};
+  (rows || []).forEach(function (p) { var c = String(p.ai_category || "").trim().toLowerCase(); if (c) seen[c] = true; });
+  return Object.keys(seen).sort();
+}
+
 /* ---------- Attachments (ROADMAP item 32 pass B) ----------
    Pure rules for a file a producer attaches: which types, how big, and the
    storage path. The database enforces the same limits (bucket + table checks),
@@ -474,6 +494,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
+    filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     checkProductFile: checkProductFile, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }
