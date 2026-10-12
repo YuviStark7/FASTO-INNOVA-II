@@ -102,7 +102,8 @@ function scoreBuyer(profile, buyer, month) {
 }
 
 function rankMatches(profile, db, month) {
-  var pool = (db.buyers || []).concat(db.channels || []);
+  // A business with no recorded fresh-produce needs (for example one added only for finished products) has nothing to match here.
+  var pool = (db.buyers || []).concat(db.channels || []).filter(function (b) { return b.needs && b.needs.length; });
   var ranked = pool.map(function (b) {
     var r = scoreBuyer(profile, b, month);
     return {
@@ -467,6 +468,77 @@ function productCategoriesOf(rows) {
   return Object.keys(seen).sort();
 }
 
+/* ---------- Matching finished products to buyers (ROADMAP item 32 pass I) ----------
+   Fresh produce is matched on categories, volume, distance, quality and season.
+   A finished, packaged product is different: what matters is WHAT KIND of
+   business the buyer is (a food shop stocks finished products, a wholesaler buys
+   them in volume, a restaurant mostly cooks), plus whether our (inferred) notes
+   say it already buys this sort of product, and how close it is. The reasons are
+   small objects {k, v}, not sentences, so the screen can translate them; the
+   numbers below are judgment calls and are tested, not facts about any business. */
+var PACKAGED_TYPE_FIT = [
+  [/gastronom|salumer|enoteca|delicatessen|alimentari/, 50, "shop"],
+  [/ingrosso|wholesale|cash/, 45, "wholesale"],
+  [/supermerc/, 40, "supermarket"],
+  [/bottega|negozio/, 45, "shop"],
+  [/cater|banquet|eventi|hotel|agritur/, 35, "kitchen"],
+  [/panific|pasticc|forno/, 30, "bakery"],
+  [/istituz|mensa/, 30, "institution"],
+  [/ristorant|trattor|osteri|pizz|steak|rostic|birr|sushi|locanda/, 25, "restaurant"],
+  [/mercato|km0/, 25, "market"]
+];
+// Words in the AI-chosen category (free text) that point at a need we track.
+var PACKAGED_NEED_WORDS = [
+  ["formaggi", /chees|formagg|latticin|mozzarell|ricott|pecorin|burrat/i], ["miele", /honey|miele/i],
+  ["olio", /\boil\b|olio|olive/i], ["vino", /wine|vino|spumant/i], ["conserve", /jam|preserv|conserv|marmellat|sott|sugo|sauce|pesto/i],
+  ["uova", /\begg|uova|pasta all/i], ["castagne", /chestnut|castagn/i], ["legumi", /legum|bean|fagiol|lentic|ceci/i]
+];
+function scorePackagedBuyer(product, buyer) {
+  var why = [];
+  var type = String(buyer.type || "").toLowerCase(), tier = [20, "other"];
+  for (var i = 0; i < PACKAGED_TYPE_FIT.length; i++) if (PACKAGED_TYPE_FIT[i][0].test(type)) { tier = [PACKAGED_TYPE_FIT[i][1], PACKAGED_TYPE_FIT[i][2]]; break; }
+  why.push({ k: "type", v: tier[1] });
+  var typePts = tier[0];
+
+  var text = String((product && product.ai_category) || "") + " " + String((product && product.name) || "");
+  var needs = buyer.needs || [], needPts = 0, matchedNeed = null;
+  for (var j = 0; j < PACKAGED_NEED_WORDS.length; j++) {
+    if (PACKAGED_NEED_WORDS[j][1].test(text) && needs.indexOf(PACKAGED_NEED_WORDS[j][0]) !== -1) { matchedNeed = PACKAGED_NEED_WORDS[j][0]; needPts = 20; break; }
+  }
+  if (matchedNeed) why.push({ k: "need", v: matchedNeed });
+
+  var distPts;
+  if (buyer.distance_km === null || buyer.distance_km === undefined || buyer.distance_km === "" || !isFinite(Number(buyer.distance_km))) { distPts = 5; why.push({ k: "farUnknown" }); }
+  else {
+    var d = Math.min(Number(buyer.distance_km), 25);
+    distPts = 15 * (1 - d / 25);
+    if (d <= 3) why.push({ k: "near", v: Math.round(Number(buyer.distance_km)) });
+  }
+
+  var conf = buyer.confidence, confPts = conf === "high" ? 8 : conf === "medium" ? 6 : 4;
+  if (conf === "low") why.push({ k: "lowConf" });
+
+  var declPts = 0;
+  if (buyer.declared_by_buyer && matchedNeed) { declPts = 5; why.push({ k: "declared" }); }
+
+  var score = Math.round(typePts + needPts + distPts + confPts + declPts);
+  return { score: Math.max(0, Math.min(100, score)), reasons: why };
+}
+function rankPackaged(product, db) {
+  var pool = (db.buyers || []).concat(db.channels || []);
+  var ranked = pool.map(function (b) {
+    var r = scorePackagedBuyer(product, b);
+    return {
+      id: b.id, name: b.name, type: b.type, zone: b.zone, distance_km: b.distance_km,
+      needs: b.needs, volume: b.volume, quality_focus: b.quality_focus, notes: b.notes,
+      confidence: b.confidence, declared_by_buyer: !!b.declared_by_buyer, is_channel: (db.channels || []).indexOf(b) !== -1,
+      source: b.source, score: r.score, reasons: r.reasons
+    };
+  });
+  ranked.sort(function (a, b) { return b.score - a.score; });
+  return ranked;
+}
+
 /* ---------- Attachments (ROADMAP item 32 pass B) ----------
    Pure rules for a file a producer attaches: which types, how big, and the
    storage path. The database enforces the same limits (bucket + table checks),
@@ -495,6 +567,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
+    scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
     checkProductFile: checkProductFile, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }

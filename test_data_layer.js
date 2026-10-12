@@ -208,6 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
   launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
@@ -2349,6 +2350,73 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("a document opens through a signed link on the private bucket", opened === "https://signed.example/u1/products/x" && sb.storageCalls.some(c => c.fn === "signed" && c.bucket === "farmer-files"), String(opened));
 
     st.products = saved.products; st.productDocCounts = saved.counts; st.claims = saved.claims; st.productFeed = saved.feed; st.screen = saved.screen; st.openFeedProductId = null;
+  }
+
+  /* ---- ROADMAP item 32 pass I: matching finished products to buyers ---- */
+  {
+    const a = app, st = a.state;
+    const cheese = { name: "Cheese slices", ai_category: "sliced cheese" };
+    const B = (o) => Object.assign({ id: "x", name: "N", type: "gastronomia", zone: "Cassino", distance_km: 1, needs: [], volume: null, quality_focus: [], confidence: "low" }, o);
+    const sc = (o, prod) => a.scorePackagedBuyer(prod || cheese, B(o));
+    check("a food shop outranks a restaurant, a restaurant outranks nothing known", sc({ type: "gastronomia" }).score > sc({ type: "pizzeria" }).score && sc({ type: "pizzeria" }).score > sc({ type: "ufficio" }).score);
+    check("a wholesaler, a supermarket and a caterer rank in that order of fit", sc({ type: "ingrosso" }).score > sc({ type: "supermercato" }).score && sc({ type: "supermercato" }).score > sc({ type: "catering" }).score);
+    check("'bottega_supermercato' counts as a supermarket and 'ristorante_eventi' as an events kitchen, not a plain restaurant",
+      sc({ type: "bottega_supermercato" }).reasons[0].v === "supermarket" && sc({ type: "ristorante_eventi" }).reasons[0].v === "kitchen" && sc({ type: "hotel_ristorante" }).reasons[0].v === "kitchen");
+    check("a business whose (estimated) needs include cheese gets a boost for a cheese product, and says so",
+      (() => { const withNeed = sc({ type: "pizzeria", needs: ["formaggi"] }), without = sc({ type: "pizzeria" }); return withNeed.score === without.score + 20 && withNeed.reasons.some(r => r.k === "need" && r.v === "formaggi"); })());
+    check("the boost only applies when the product is of that kind", sc({ type: "pizzeria", needs: ["formaggi"] }, { name: "Honey", ai_category: "wild honey" }).reasons.every(r => r.k !== "need"));
+    check("a missing distance is unknown, not zero: fewer points than a nearby business", sc({ distance_km: null }).score < sc({ distance_km: 1 }).score && sc({ distance_km: null }).reasons.some(r => r.k === "farUnknown"));
+    check("low confidence is worth fewer points and is stated", sc({ confidence: "high" }).score > sc({ confidence: "low" }).score && sc({ confidence: "low" }).reasons.some(r => r.k === "lowConf"));
+    check("scores stay between 0 and 100", [sc({ type: "gastronomia", needs: ["formaggi"], confidence: "high", declared_by_buyer: true }).score, sc({ type: "zzz", distance_km: 99 }).score].every(n => n >= 0 && n <= 100));
+    const ranked = a.rankPackaged(cheese, { buyers: [B({ id: "a", type: "pizzeria" }), B({ id: "b", type: "gastronomia" })], channels: [] });
+    check("buyers come back best first with the same fields the screens expect", ranked[0].id === "b" && ranked[0].name === "N" && typeof ranked[0].score === "number" && Array.isArray(ranked[0].reasons));
+
+    // fresh-produce ranking now ignores businesses that record no needs at all
+    const fr = a.rankMatches({ products: [{ name: "pomodori", category: "pomodori", kg_per_week: 50 }], organic: "no", available_months: [] },
+      { buyers: [B({ id: "n1", needs: [] }), B({ id: "n2", needs: ["pomodori"], volume: "medium" })], channels: [] }, 7);
+    check("a buyer with no recorded needs is not offered to fresh-produce farmers", fr.length === 1 && fr[0].id === "n2");
+
+    // the app side
+    const done = { id: "pp", name: "Brie", kind: "packaged", status: "draft", ai_category: "soft cheese",
+      details: { ingredients: ["milk"], allergens: ["milk"], shelf_life_days: 60, storage: "fridge", pack_sizes: ["150 g"], min_order: "10 cases", certifications: [], suggested: [] },
+      nutrition: { energy_kcal: 330, fat_g: 26, saturated_fat_g: 17, carbs_g: 1, sugars_g: 1, protein_g: 22, salt_g: 1.8 } };
+    const incomplete = Object.assign({}, done, { details: { ingredients: ["milk"] } });
+    const chatDone = { id: "cd", title: "Brie", messages: [], product: done, docs: [{ id: "d" }], ts: 1 };
+    check("a chat counts as a finished-product match chat only when its sheet is complete and has a document",
+      a.isPackagedChat(chatDone) && !a.isPackagedChat(Object.assign({}, chatDone, { docs: [] })) && !a.isPackagedChat(Object.assign({}, chatDone, { product: incomplete })) && !a.isPackagedChat(Object.assign({}, chatDone, { profile: { products: [] } })));
+    const prof = a.packagedProfile(chatDone);
+    check("the product profile claims organic only if the certifications say so", prof.organic === "no" && a.packagedProfile(Object.assign({}, chatDone, { product: Object.assign({}, done, { details: Object.assign({}, done.details, { certifications: ["Bio EU"] }) }) })).organic === "yes");
+
+    const savedBuyers = a.DB.buyers, savedChannels = a.DB.channels, savedChats = st.chats.slice(), savedActive = st.activeChatId, savedClients = st.clients;
+    a.DB.buyers = [B({ id: "g1", name: "Il Rustico", type: "gastronomia" }), B({ id: "r1", name: "Pizzeria X", type: "pizzeria", needs: ["formaggi"], confidence: "high" })]; a.DB.channels = [];
+    const rows = a.matchRowsFor(chatDone);
+    check("matching rows for a finished product come from the packaged ranking", rows.length === 2 && rows[0].cand.id === "g1" && !rows[0].pitch, JSON.stringify(rows.map(r => r.cand.id)));
+    const cards = a.matchCardsHTML(chatDone);
+    check("the cards render with translated reason chips and open the buyer sheet",
+      cards.includes("Il Rustico") && cards.includes("Food shop: sells finished products") && cards.includes("openBuyerCard('cd','g1')") && !cards.includes("[object"), cards.slice(0, 300));
+    check("an incomplete product shows no buyer cards", a.matchCardsHTML(Object.assign({}, chatDone, { product: incomplete })) === "");
+    check("reasons from both worlds are translated: objects by key, sentences by the engine map", a.reasonText({ k: "near", v: 1 }) === "Very close (1 km)" && a.reasonText("Very close (2 km)") !== "");
+
+    // template draft: only facts from the sheet; organic only when certified; no prices
+    const t = a.templateDraftProduct(prof, { name: "Il Rustico" }, "Marco");
+    check("the plain draft names the product, pack sizes and minimum order, and never mentions a price or organic",
+      t.message_it.includes("Brie") && t.message_it.includes("150 g") && t.message_it.includes("10 cases") && !/€|euro|prezzo|biolog/i.test(t.message_it) && !/€|price|organic/i.test(t.message_en), t.message_it);
+    check("the AI prompt for finished products forbids invented prices and certifications", /Never invent prices, certifications/.test(a.SYSTEM_MATCH_PRODUCT) && /ONLY the provided buyer_id/.test(a.SYSTEM_MATCH_PRODUCT));
+
+    // draft in offline mode (no API): template, per buyer
+    const savedOffline = st.offline; st.offline = true; st.clients = [];
+    const d = await a.draftFor(chatDone, rows[0].cand);
+    st.offline = savedOffline;
+    check("the on-demand draft for a finished product falls back to the product template", d.source === "template" && d.it.includes("Brie") && d.flagged === false);
+
+    // what the buyer is shown beside the thread: the product, not the person
+    const sum = a.buildFarmerSummary(prof);
+    check("the summary for a buyer has the product and pack facts, and no place, name or contact",
+      sum.village === null && sum.products[0].name === "Brie" && sum.product.pack_sizes[0] === "150 g" && sum.product.min_order === "10 cases" && !JSON.stringify(sum).match(/phone|address|vat|Marco/i));
+    const html = a.farmerSummaryHTML(sum);
+    check("the buyer inbox shows pack sizes and minimum order for a product thread", html.includes("150 g") && html.includes("10 cases") && !html.includes("Village"));
+
+    a.DB.buyers = savedBuyers; a.DB.channels = savedChannels; st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.clients = savedClients;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */

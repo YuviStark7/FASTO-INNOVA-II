@@ -123,7 +123,7 @@ const SYSTEM_PRODUCT = `
 FINISHED PRODUCTS: if the person makes a finished, packaged product (for example sliced cheese, jam, pasta, olive oil in bottles, biscuits) rather than selling fresh produce by the kilo, do NOT call submit_farmer_profile. Instead build a product sheet by interviewing them, still ONE question per message, under 65 words, mirroring their language. Start with what the product is, then ask in this order, skipping what you already know: ingredients; allergens (ask even if they think there are none; "none" is a valid answer); shelf life; how it must be stored; pack sizes; minimum order; the nutrition table per 100 g (energy kcal, fat, saturated fat, carbohydrates, sugars, protein, salt); certifications (optional); price range (optional). Tell them they can also attach a photo of the label or a document with the paperclip button, and that at least one document is needed to finish.
 At the END of every turn in which you learned something new, call save_product_sheet with the facts so far (only fields you actually know). You invent the category yourself, in lowercase and in the person's language (e.g. "sliced cheese"), as ai_category.
 If they do not know a value for shelf_life_days, storage, pack_sizes or a nutrition number, you MAY suggest a typical value, say clearly that it is only a suggestion to confirm, and list that field in suggested_fields (use "nutrition.salt_g" style for nutrition). NEVER suggest or invent ingredients, allergens, certifications, minimum order or prices: those must come from the person or from a document. When they confirm a suggestion, send it again WITHOUT listing it in suggested_fields.
-A sheet is finished when every field above except certifications and price range is confirmed and a document is attached. Then tell them the sheet is saved as a draft product and that finding buyers for finished products is coming soon. Never promise buyers or prices.`;
+A sheet is finished when every field above except certifications and price range is confirmed and a document is attached. Then tell them the sheet is saved as a draft product and that the best local buyers now appear as cards below the conversation, each with a message already drafted that they can read and send. Never promise that anyone will buy, and never promise prices.`;
 
 const TOOL_PRODUCT = {
   name: "save_product_sheet",
@@ -570,6 +570,13 @@ function buildMessageRow(outreachId, uid, body, role) {
    their account) and not their name beyond what the message itself says. */
 function buildFarmerSummary(profile) {
   if (!profile) return null;
+  // A finished product: what the buyer needs to judge it, never who the producer is.
+  if (profile.kind === "packaged") {
+    const pr = profile.product || {};
+    return { village: null, distance_km: null, organic: profile.organic || null, months: [],
+      products: [{ name: String(pr.name || "").slice(0, 60), category: pr.ai_category || null, kg_per_week: 0 }],
+      product: { pack_sizes: (pr.pack_sizes || []).slice(0, 10).map(x => String(x).slice(0, 60)), shelf_life_days: pr.shelf_life_days || null, min_order: pr.min_order || null } };
+  }
   return {
     village: profile.village || null,
     distance_km: profile.distance_km_from_cassino != null ? Number(profile.distance_km_from_cassino) : null,
@@ -931,7 +938,7 @@ async function onAttachFiles(files) {
   if (state.attachBusy) return;
   state.attachBusy = true;
   try { for (const f of files) { if (!(await attachOne(chat, f))) break; } }
-  finally { state.attachBusy = false; if (chat.id === state.activeChatId) renderAttachStrip(); }
+  finally { state.attachBusy = false; if (chat.id === state.activeChatId) { renderAttachStrip(); renderTranscript(); } }
 }
 async function removeAttachment(id) {
   const chat = activeChat(); if (!chat || !chat.docs) return;
@@ -1593,6 +1600,7 @@ function closeTopSheet() {
 function scorePillClass(score) { return score >= 70 ? "pill-accent" : score >= 40 ? "pill-amber" : "pill-muted"; }
 
 function matchRowsFor(chat) {
+  if (isPackagedChat(chat)) return rankPackaged(chat.product, DB).slice(0, 8).map(c => ({ cand: c, pitch: "" })).slice(0, 5);
   // candidates carry the engine's score + reasons; recs carry Brain 2's
   // written sentence. A chat restored from a previous session arrives with
   // neither in memory — but scoring is deterministic, so we can rebuild the
@@ -1618,17 +1626,69 @@ function matchRowsFor(chat) {
    ranked them. A card opens that buyer's detail: where it is, what we know, every
    reason chip, and a message already drafted for the farmer to read and send.
    Asking for a change in the chat re-ranks, and the cards are redrawn. */
+/* ---------- Matching finished products (ROADMAP item 32 pass I) ----------
+   A chat whose product sheet is COMPLETE gets the same buyer cards, buyer sheet
+   and drafted message as a fresh-produce chat. Ranking is rankPackaged (core.js);
+   the reasons are {k, v} objects, translated here. The product sheet is turned
+   into a small "profile" so the existing draft / Guardian / send / inbox code is
+   reused; it is never saved as a fresh-produce profile. */
+function isPackagedChat(chat) {
+  return !!(chat && !chat.profile && chat.product && chat.product.kind === "packaged" &&
+    productCompleteness(chat.product, (chat.docs || []).length).complete);
+}
+function packagedProfile(chat) {
+  const p = chat.product, d = p.details || {};
+  const certs = (d.certifications || []).join(" ");
+  return { kind: "packaged", farmer_name: accountFirstName() || undefined, village: null, distance_km_from_cassino: null,
+    organic: /bio|organic/i.test(certs) ? "yes" : "no", available_months: [],
+    products: [{ name: p.name, category: p.ai_category || null, kg_per_week: 0 }],
+    product: { name: p.name, ai_category: p.ai_category, pack_sizes: d.pack_sizes || [], shelf_life_days: d.shelf_life_days, storage: d.storage,
+      min_order: d.min_order, certifications: d.certifications || [], ingredients: d.ingredients || [], allergens: d.allergens || [], price_range: d.price_range || null } };
+}
+function chatProfile(chat) { return chat && (chat.profile || (isPackagedChat(chat) ? packagedProfile(chat) : null)); }
+// An engine reason is a sentence (fresh produce) or an {k, v} object (finished products).
+function reasonText(x) {
+  if (x && typeof x === "object") {
+    switch (x.k) {
+      case "type": return T("pm.type." + x.v);
+      case "need": return T("pm.need", { what: catLabel(x.v) || x.v });
+      case "near": return T("pm.near", { km: x.v });
+      case "farUnknown": return T("pm.farUnknown");
+      case "lowConf": return T("pm.lowConf");
+      case "declared": return T("pm.declared");
+      default: return "";
+    }
+  }
+  return engineText(x);
+}
+function templateDraftProduct(profile, buyer, firstName) {
+  const pr = profile.product || {};
+  const who = firstName ? "sono " + firstName + ", " : "sono ", whoEn = firstName ? "I'm " + firstName + ", " : "I'm ";
+  const packs = (pr.pack_sizes || []).join(", ");
+  const itBits = [packs && "Formati: " + packs + ".", pr.shelf_life_days && "Conservabilità: " + pr.shelf_life_days + " giorni.", pr.min_order && "Ordine minimo: " + pr.min_order + "."].filter(Boolean).join(" ");
+  const enBits = [packs && "Pack sizes: " + packs + ".", pr.shelf_life_days && "Shelf life: " + pr.shelf_life_days + " days.", pr.min_order && "Minimum order: " + pr.min_order + "."].filter(Boolean).join(" ");
+  const bio = profile.organic === "yes";
+  const it = "Buongiorno " + (buyer.name || "") + ", " + who + "un piccolo produttore di " + pr.name + (bio ? ", con certificazione biologica" : "") + ". " + itBits +
+    " Posso inviarvi la scheda con ingredienti, allergeni e valori nutrizionali, insieme ai documenti. Mi piacerebbe proporvi una fornitura diretta, con consegna gestita dal partner logistico di Fasto Innova. Possiamo sentirci per un campione? Grazie!";
+  const en = "Good morning " + (buyer.name || "") + ", " + whoEn + "a small producer of " + pr.name + (bio ? ", certified organic" : "") + ". " + enBits +
+    " I can send the sheet with ingredients, allergens and nutrition values, together with the documents. I would love to propose a direct supply, with delivery handled by Fasto Innova's logistics partner. Could we arrange a sample? Thank you!";
+  return { message_it: it, message_en: en, flagged_claim: false };
+}
+const SYSTEM_MATCH_PRODUCT = `You write the first outreach message from a small producer of a FINISHED, packaged food product to one local business, inside Brain 2 of Fasto Innova. You receive the producer's product sheet and ONE candidate buyer already chosen from our verified database. Tasks: 1. Return that buyer in ranked with one plain sentence on why it could fit (use only the buyer data given; its "buys" list is our estimate, say so if you rely on it). 2. Leave creative_suggestions empty. 3. Draft the outreach: Italian version plus English translation, max 90 words each, warm and professional, from the producer's perspective, mentioning the product, pack sizes, shelf life and minimum order only if they are in the sheet, offering the sheet with ingredients, allergens and nutrition values and a sample, and that Fasto Innova's logistics partner handles delivery.
+STRICT: use ONLY the provided buyer_id. Never invent prices, certifications, awards or facts. Never claim organic or certified status unless the sheet's certifications say so. Answer ONLY by calling submit_recommendations.`;
+
 const MATCH_CARDS = 4;
 function matchCardsHTML(chat) {
-  const ready = chat.phase === "done" || (chat.candidates && chat.candidates.length);
-  if (!ready || !chat.profile) return "";
+  const packaged = isPackagedChat(chat);
+  const ready = packaged || chat.phase === "done" || (chat.candidates && chat.candidates.length);
+  if (!ready || !(chat.profile || packaged)) return "";
   const rows = matchRowsFor(chat).slice(0, MATCH_CARDS);
   if (!rows.length) return "";
   const cards = rows.map((r, i) => {
     const c = r.cand;
     const where = [c.zone, (c.type || "").replace(/_/g, " ")].filter(Boolean).map(esc).join(" · ");
     const km = isFinite(Number(c.distance_km)) ? " · " + Math.round(Number(c.distance_km)) + " km" : "";
-    const chips = (c.reasons || []).slice(0, 2).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("");
+    const chips = (c.reasons || []).slice(0, 2).map(x => `<span class="reason-chip">${esc(reasonText(x))}</span>`).join("");
     return `<button type="button" class="mcard" onclick="openBuyerCard('${esc(chat.id)}','${esc(c.id)}')" aria-label="${escAttr(T("card.open", { name: c.name, score: c.score }))}">
       <span class="mcard-top"><span class="mc-rank">${i + 1}</span><span class="pill ${scorePillClass(c.score)}">${c.score}/100</span></span>
       <b class="mcard-name">${esc(c.name)}</b>
@@ -1714,19 +1774,21 @@ async function draftFor(chat, cand) {
   if (!state.offline) {
     try {
       const month = new Date().getMonth() + 1;
-      const payload = { farmer_profile: chat.profile, current_month: month, candidates: [{ buyer_id: cand.id, name: cand.name, type: cand.type, zone: cand.zone,
+      const profile = chatProfile(chat), packaged = profile.kind === "packaged";
+      const candidate = { buyer_id: cand.id, name: cand.name, type: cand.type, zone: cand.zone,
         distance_km: cand.distance_km, buys: cand.needs, volume_capacity: cand.volume, quality_focus: cand.quality_focus, notes: cand.notes,
-        engine_score: cand.score, engine_reasons: cand.reasons, is_channel: cand.is_channel }] };
-      const resp = await callClaude(SYSTEM_MATCH, [{ role: "user", content: JSON.stringify(payload) }], [TOOL_RECS], 1200, "submit_recommendations");
+        engine_score: cand.score, engine_reasons: (cand.reasons || []).map(reasonText), is_channel: cand.is_channel };
+      const payload = packaged ? { product_sheet: profile.product, candidates: [candidate] } : { farmer_profile: profile, current_month: month, candidates: [candidate] };
+      const resp = await callClaude(packaged ? SYSTEM_MATCH_PRODUCT : SYSTEM_MATCH, [{ role: "user", content: JSON.stringify(payload) }], [TOOL_RECS], 1200, "submit_recommendations");
       const tu = resp.content.find(b => b.type === "tool_use");
       if (tu) {
-        const check = guardianVerifyRecs(tu.input, [cand.id], chat.profile);
+        const check = guardianVerifyRecs(tu.input, [cand.id], profile);
         check.issues.forEach(i => addLog(i.level, "Guardian · " + i.msg));
         if (check.verified.outreach && check.verified.outreach.buyer_id === cand.id) { out = check.verified.outreach; source = "brain2"; }
       }
     } catch (e) { addLog("warn", "Brain 2 · on-demand draft failed, using the plain template: " + e.message); }
   }
-  if (!out) out = templateDraft(chat.profile, cand, first);
+  if (!out) { const pf = chatProfile(chat); out = pf.kind === "packaged" ? templateDraftProduct(pf, cand, first) : templateDraft(pf, cand, first); }
   return (chat.cardDrafts[cand.id] = { it: out.message_it, en: out.message_en || "", flagged: !!out.flagged_claim, source, client: existing || null, stampTs: chat.ts });
 }
 
@@ -1752,7 +1814,7 @@ function renderCardMessage() {
 async function openBuyerCard(chatId, buyerId) {
   const chat = state.chats.find(c => c.id === chatId);
   const sheet = $("matchSheet");
-  if (!chat || !chat.profile || !sheet) return;
+  if (!chat || !chatProfile(chat) || !sheet) return;
   const row = matchRowsFor(chat).find(r => r.cand.id === buyerId);
   if (!row) return;
   const cand = row.cand;
@@ -1764,7 +1826,7 @@ async function openBuyerCard(chatId, buyerId) {
   const vol = VOLUME_BANDS.indexOf(live.volume) !== -1 ? T("band." + live.volume) : "—";
   const needs = (live.needs || []).map(n => `<span class="reason-chip">${esc(catLabel(n) || n)}</span>`).join("");
   const quals = (live.quality_focus || []).map(t => `<span class="reason-chip">${esc(STRINGS.en["qtag." + t] ? T("qtag." + t) : String(t).replace(/_/g, " "))}</span>`).join("");
-  const reasons = (cand.reasons || []).map(x => `<span class="reason-chip">${esc(engineText(x))}</span>`).join("");
+  const reasons = (cand.reasons || []).map(x => `<span class="reason-chip">${esc(reasonText(x))}</span>`).join("");
 
   $("matchTitle").textContent = live.name;
   $("matchSubtitle").textContent = T("card.subtitle", { rank: rank, score: cand.score });
@@ -1908,7 +1970,7 @@ async function markSent(id) {
   const chatOfDraft = state.chats.find(x => x.id === c.chatId);
   toast(T("clients.markedSent", { name: c.name }));
   renderChats(); renderDashboard(); renderBell();
-  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString(), farmer_summary: buildFarmerSummary(chatOfDraft && chatOfDraft.profile) }), "save.sentMark");
+  if (!isLocalId(id)) bgSave(DataStore.updateOutreach(id, { status: "sent", sent_at: new Date().toISOString(), farmer_summary: buildFarmerSummary(chatOfDraft && chatProfile(chatOfDraft)) }), "save.sentMark");
 }
 
 /* ---------- Notification bell ---------- */
@@ -4100,9 +4162,12 @@ function farmerSummaryHTML(s) {
   if (!s) return `<div class="buyer-note"><p>${esc(T("buyer.sumNone"))}</p></div>`;
   const prods = (s.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
   return `<div class="buyer-note"><dl class="buyer-facts">
-    <dt>${esc(T("buyer.sumVillage"))}</dt><dd>${esc(s.village || "—")}${s.distance_km != null ? " · " + esc(T("buyer.km", { n: s.distance_km })) : ""}</dd>
+    ${s.product ? "" : `<dt>${esc(T("buyer.sumVillage"))}</dt><dd>${esc(s.village || "—")}${s.distance_km != null ? " · " + esc(T("buyer.km", { n: s.distance_km })) : ""}</dd>`}
     <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
-    <dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(s.months) || T("buyer.sumAllYear"))}</dd>
+    ${s.product ? `<dt>${esc(productFieldLabel("pack_sizes"))}</dt><dd>${esc((s.product.pack_sizes || []).join(", ") || "—")}</dd>
+    <dt>${esc(productFieldLabel("shelf_life_days"))}</dt><dd>${esc(s.product.shelf_life_days ? T("prod.days", { n: s.product.shelf_life_days }) : "—")}</dd>
+    <dt>${esc(productFieldLabel("min_order"))}</dt><dd>${esc(s.product.min_order || "—")}</dd>`
+      : `<dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(s.months) || T("buyer.sumAllYear"))}</dd>`}
   </dl></div>`;
 }
 function renderBuyerInbox() {
