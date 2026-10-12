@@ -438,6 +438,7 @@ async function loadFarmerData(uid) {
   ]);
   state.isAdmin = !!(farmer && farmer.is_admin);
   state.farmerProfile = farmer || {};
+  loadProducts();   // not awaited: the My products page and the new-chat picker use it when ready
 
   state.chats = [];
   for (const row of (chatRows || [])) {
@@ -651,6 +652,7 @@ function interviewSystem(chat) {
     const pc = productCompleteness(chat.product, (chat.docs || []).length);
     s += "\n\nA product sheet already exists for this chat: " + JSON.stringify({ name: chat.product.name, ai_category: chat.product.ai_category, details: chat.product.details, nutrition: chat.product.nutrition }) +
       "\nDocuments attached: " + (chat.docs || []).length + ". Still missing: " + (pc.missing.length ? pc.missing.join(", ") : "nothing (the sheet is complete)") +
+      (chat.copiedFrom ? ". This sheet was COPIED from the producer's existing product \"" + chat.copiedFrom + "\" (documents were not copied): they are making a variation, so first ask what is different and what the new product is called" : "") +
       ". Ask about the next missing thing; do not ask again for what is already there. Fields listed in details.suggested are only suggestions still waiting for the producer's confirmation.";
   }
   if (chat && chat.profile) {
@@ -862,7 +864,7 @@ async function loadChatDocs(chat) {
     chat.docsState = "done";
   } catch (e) { chat.docsState = null; noteSaveFailure("save.file", e); release(); return; }
   release();
-  if (chat.id === state.activeChatId) renderAttachStrip();
+  if (chat.id === state.activeChatId) { renderAttachStrip(); renderTranscript(); }
 }
 // Images get a small preview through a short-lived signed link (the bucket is private).
 async function loadThumb(chat, d) {
@@ -883,6 +885,7 @@ async function ensureChatProduct(chat) {
   const r = await DataStore.createProduct({ kind: "packaged", status: "draft", name: T("attach.newProduct"), source_chat_id: chat.id });
   if (r.error) throw r.error;
   chat.product = r.data; chat.docs = chat.docs || [];
+  rememberProduct(r.data);
   return chat.product;
 }
 async function attachOne(chat, file) {
@@ -898,6 +901,7 @@ async function attachOne(chat, file) {
     const rec = await DataStore.addProductDocument({ product_id: product.id, storage_path: path, file_name: file.name.slice(0, 200), mime_type: file.type, size_bytes: file.size });
     if (rec.error) throw rec.error;
     chat.docs.push(rec.data); loadThumb(chat, rec.data);
+    state.productDocCounts[product.id] = (state.productDocCounts[product.id] || 0) + 1;
     toast(T("attach.added", { name: file.name }));
     uploadedOk = true; savedDoc = rec.data;
   } catch (e) {
@@ -925,6 +929,7 @@ async function removeAttachment(id) {
     const r = await DataStore.removeProductDocument(id);
     if (r.error) throw r.error;
     chat.docs = chat.docs.filter(x => x.id !== id);
+    if (chat.product) state.productDocCounts[chat.product.id] = Math.max(0, (state.productDocCounts[chat.product.id] || 1) - 1);
     DataStore.removeProductFile(d.storage_path).catch(() => {}); // the record is the truth; a stray file is invisible and private
     toast(T("attach.removed", { name: d.file_name }));
   } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") })); }
@@ -983,6 +988,7 @@ async function saveProductSnapshot(chat, sheet) {
     const res = await DataStore.updateProduct(product.id, { name: merged.name, ai_category: merged.ai_category || null, details: merged.details, nutrition: merged.nutrition });
     if (res.error) throw res.error;
     chat.product = res.data || Object.assign({}, product, merged);
+    rememberProduct(chat.product);
     saveOk();
     if (!chat.titleLocked && !chat.profile && merged.name && PRODUCT_PLACEHOLDER_NAMES.indexOf(merged.name) === -1) {
       chat.title = merged.name.length > 40 ? merged.name.slice(0, 39) + "…" : merged.name;
@@ -1231,6 +1237,50 @@ async function setProductArchived(id, archive) {
   renderProducts();
 }
 
+/* ---------- Pick an existing product in a new chat (ROADMAP item 32 pass F) ----------
+   A brand-new, empty conversation offers the farmer's existing products as cards.
+   "Change this product" goes to the chat that made it (one thread per product);
+   "Use as a starting point" copies the sheet into THIS chat as a new draft
+   product (documents are not copied: a new product needs its own). */
+function productPickerRows(chat) {
+  if (!chat || chat.product || !isChatUntouched(chat) || state.screen !== "assistant") return [];
+  if (!(chat.docsState === "done" || isLocalId(chat.id))) return [];
+  return state.products.filter(p => p.status !== "archived" && productHasContent(p)).slice(0, 4);
+}
+function productPickerHTML(chat) {
+  const rows = productPickerRows(chat);
+  if (!rows.length) return "";
+  const cards = rows.map(p => {
+    const pc = productCompleteness(p, state.productDocCounts[p.id] || 0);
+    return `<article class="prod-card"><h3>${esc(p.name)}</h3><div class="chips"><span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
+      (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
+      `<p>${esc(pc.complete ? T("products.complete") : T("products.missing", { n: pc.missing.length }))}</p>` +
+      `<div class="prod-actions"><button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.changeFor", { name: p.name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.change"))}</button>` +
+      `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.useBaseFor", { name: p.name }))}" onclick="startFromProduct('${esc(p.id)}')">${esc(T("products.useBase"))}</button></div></article>`;
+  }).join("");
+  return `<section class="prod-picker" aria-label="${escAttr(T("products.pickTitle"))}"><h3>${esc(T("products.pickTitle"))}</h3><p>${esc(T("products.pickHint"))}</p><div class="prod-grid">${cards}</div></section>`;
+}
+async function startFromProduct(id) {
+  const chat = activeChat(), base = state.products.find(x => x.id === id);
+  if (!chat || !base || chat.product) return;
+  if (isLocalId(chat.id)) { toast(T("attach.errNoChat")); return; }
+  try {
+    const r = await DataStore.createProduct({ kind: base.kind, status: "draft", name: base.name, ai_category: base.ai_category || null,
+      details: base.details || {}, nutrition: base.nutrition || {}, source_chat_id: chat.id });
+    if (r.error) throw r.error;
+    chat.product = r.data; chat.docs = []; chat.docsState = "done"; chat.copiedFrom = base.name;
+    rememberProduct(r.data);
+    addMsg(chat, "sys", T("products.startedFrom", { name: base.name }));
+    renderTranscript();
+  } catch (e) { saveFailedWithOwnMessage("save.product", e, T("save.couldnt", { what: T("save.product") })); }
+}
+// Keeps the My products list and the picker in step with what this session creates or changes.
+function rememberProduct(row) {
+  if (!row || !row.id) return;
+  const i = state.products.findIndex(p => p.id === row.id);
+  if (i === -1) state.products.unshift(row); else state.products[i] = Object.assign({}, state.products[i], row);
+}
+
 function addMsg(chat, role, text) {
   chat.messages.push({ role, text, ts: Date.now() });
   if (chat.id === state.activeChatId) renderTranscript();
@@ -1248,7 +1298,7 @@ function renderTranscript() {
   // buyers as cards, and (if the farmer wants it) a way to publish an offer.
   // There is no "edit details" button on purpose: changes are made by asking in
   // the chat, and the cards below are redrawn when the ranking changes.
-  const cta = matchCardsHTML(chat) + productSheetHTML(chat) + scanCardHTML(chat);
+  const cta = matchCardsHTML(chat) + productSheetHTML(chat) + scanCardHTML(chat) + productPickerHTML(chat);
   el.innerHTML = bubbles + cta;
   refreshAttachStrip();
   el.scrollTop = el.scrollHeight;

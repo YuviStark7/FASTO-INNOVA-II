@@ -208,7 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
-  filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
+  productPickerRows, productPickerHTML, startFromProduct, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
@@ -2242,6 +2242,41 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("Open chat selects the chat that created the product", st.activeChatId === "c1" && st.screen === "assistant");
 
     st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.screen = savedScreen;
+  }
+
+  /* ---- ROADMAP item 32 pass F: pick an existing product in a new chat ---- */
+  {
+    const a = app, st = a.state;
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId, savedScreen = st.screen, savedProducts = st.products, savedCounts = st.productDocCounts;
+    st.farmerId = "u1"; st.screen = "assistant";
+    st.products = [
+      { id: "a", name: "Brie", status: "draft", kind: "packaged", ai_category: "soft cheese", details: { storage: "fridge" }, nutrition: {}, updated_at: "2026-10-12T10:00:00Z" },
+      { id: "b", name: "Old jam", status: "archived", kind: "packaged", ai_category: "jam", details: { storage: "cool" }, nutrition: {} },
+      { id: "c", name: "Empty", status: "draft", kind: "packaged", ai_category: "", details: {}, nutrition: {} }];
+    st.productDocCounts = {};
+    const fresh = { id: "c9", title: "New chat", messages: [{ role: "ai", text: "Hi" }], docsState: "done" };
+    st.chats.length = 0; st.chats.push(fresh); st.activeChatId = "c9";
+    check("an empty new chat offers existing products, but not archived or empty ones", a.productPickerRows(fresh).map(p => p.id).join("") === "a");
+    const html = a.productPickerHTML(fresh);
+    check("the cards offer Change and Use as a starting point, each naming the product",
+      html.includes('aria-label="Change Brie"') && html.includes('aria-label="Use Brie as the starting point for a new product"') && html.includes("Changing something you already made?"));
+    check("the picker waits until the chat's own product has been looked up", a.productPickerRows(Object.assign({}, fresh, { docsState: "loading" })).length === 0);
+    check("a chat the farmer has typed in, or one with a product, shows no picker",
+      a.productPickerRows(Object.assign({}, fresh, { messages: [{ role: "ai", text: "Hi" }, { role: "user", text: "hello" }] })).length === 0 && a.productPickerRows(Object.assign({}, fresh, { product: { id: "x" } })).length === 0);
+    check("it only shows on the Fasto-AI screen", (() => { st.screen = "products"; const n = a.productPickerRows(fresh).length; st.screen = "assistant"; return n === 0; })());
+
+    sb.reset();
+    sb.router = ch => ({ data: Object.assign({ id: "p77" }, ch.ops[0].op === "insert" ? ch.ops[0].args[0] : {}), error: null });
+    await a.startFromProduct("a");
+    const ins = sb.chains.find(c => c.table === "farmer_products" && c.ops[0].op === "insert");
+    const row = ins && ins.ops[0].args[0];
+    check("using a product as a starting point inserts a NEW draft linked to this chat, copying details but not documents",
+      row && row.status === "draft" && row.source_chat_id === "c9" && row.details.storage === "fridge" && !sb.chains.some(c => c.table === "product_documents") && fresh.product.id === "p77" && fresh.docs.length === 0);
+    check("the original product is untouched and the copy is remembered", !sb.chains.some(c => c.ops[0].op === "update") && st.products[0].id === "p77");
+    check("Brain 1 is told the sheet is a copy and to ask what differs", a.interviewSystem(fresh).includes("COPIED from the producer's existing product \"Brie\""));
+    check("the picker is gone once the chat has its product", a.productPickerRows(fresh).length === 0);
+
+    st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.screen = savedScreen; st.products = savedProducts; st.productDocCounts = savedCounts;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */

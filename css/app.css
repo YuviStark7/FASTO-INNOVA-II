@@ -383,6 +383,10 @@
 .prod-card p{ margin:0; font-size:12.5px; opacity:.85; }
 .prod-card .prod-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
 
+.prod-picker{ margin:12px 0; padding:14px 16px; border-radius:var(--radius-lg); background:var(--glass-45); color:#fff; }
+.prod-picker h3{ margin:0 0 4px; font-size:15px; }
+.prod-picker p{ margin:0 0 10px; font-size:12.5px; opacity:.85; }
+
 /* Attached files strip (item 32 pass B) */
 .attach-strip{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
 .attach-strip[hidden]{ display:none; }
