@@ -652,7 +652,8 @@ function interviewSystem(chat) {
     const pc = productCompleteness(chat.product, (chat.docs || []).length);
     s += "\n\nA product sheet already exists for this chat: " + JSON.stringify({ name: chat.product.name, ai_category: chat.product.ai_category, details: chat.product.details, nutrition: chat.product.nutrition }) +
       "\nDocuments attached: " + (chat.docs || []).length + ". Still missing: " + (pc.missing.length ? pc.missing.join(", ") : "nothing (the sheet is complete)") +
-      (chat.copiedFrom ? ". This sheet was COPIED from the producer's existing product \"" + chat.copiedFrom + "\" (documents were not copied): they are making a variation, so first ask what is different and what the new product is called" : "") +
+      (chat.productLinked ? ". This chat was opened to ADD to or CHANGE this existing product (made in another conversation): ask what they want to change or add" : "") +
+      ". If they give new or corrected details, apply them by calling save_product_sheet again" +
       ". Ask about the next missing thing; do not ask again for what is already there. Fields listed in details.suggested are only suggestions still waiting for the producer's confirmation.";
   }
   if (chat && chat.profile) {
@@ -854,6 +855,13 @@ async function loadChatDocs(chat) {
     const pr = await DataStore.productForChat(chat.id);
     if (pr.error) throw pr.error;
     chat.product = (pr.data && pr.data[0]) || null;
+    if (!chat.product) {
+      // Not the chat that made a product, but it may have been asked to work on one.
+      const lr = await DataStore.linkedProductForChat(chat.id);
+      if (lr.error) throw lr.error;
+      const link = lr.data && lr.data[0];
+      if (link && link.farmer_products) { chat.product = link.farmer_products; chat.productLinked = true; }
+    }
     chat.docs = [];
     if (chat.product) {
       const dr = await DataStore.listProductDocuments(chat.product.id);
@@ -1239,9 +1247,10 @@ async function setProductArchived(id, archive) {
 
 /* ---------- Pick an existing product in a new chat (ROADMAP item 32 pass F) ----------
    A brand-new, empty conversation offers the farmer's existing products as cards.
-   "Change this product" goes to the chat that made it (one thread per product);
-   "Use as a starting point" copies the sheet into THIS chat as a new draft
-   product (documents are not copied: a new product needs its own). */
+   Picking one makes THIS chat work on that same product (add or change details);
+   the product keeps the chat that made it as its home, and "Edit" on the My
+   products page still goes back to that original chat. The link is saved in
+   product_chat_links so the chat remembers after a reload. */
 function productPickerRows(chat) {
   if (!chat || chat.product || !isChatUntouched(chat) || state.screen !== "assistant") return [];
   if (!(chat.docsState === "done" || isLocalId(chat.id))) return [];
@@ -1255,22 +1264,26 @@ function productPickerHTML(chat) {
     return `<article class="prod-card"><h3>${esc(p.name)}</h3><div class="chips"><span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
       (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
       `<p>${esc(pc.complete ? T("products.complete") : T("products.missing", { n: pc.missing.length }))}</p>` +
-      `<div class="prod-actions"><button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.changeFor", { name: p.name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.change"))}</button>` +
-      `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.useBaseFor", { name: p.name }))}" onclick="startFromProduct('${esc(p.id)}')">${esc(T("products.useBase"))}</button></div></article>`;
+      `<div class="prod-actions"><button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.workHereFor", { name: p.name }))}" onclick="adoptProductHere('${esc(p.id)}')">${esc(T("products.workHere"))}</button></div></article>`;
   }).join("");
   return `<section class="prod-picker" aria-label="${escAttr(T("products.pickTitle"))}"><h3>${esc(T("products.pickTitle"))}</h3><p>${esc(T("products.pickHint"))}</p><div class="prod-grid">${cards}</div></section>`;
 }
-async function startFromProduct(id) {
-  const chat = activeChat(), base = state.products.find(x => x.id === id);
-  if (!chat || !base || chat.product) return;
+async function adoptProductHere(id) {
+  const chat = activeChat(), p = state.products.find(x => x.id === id);
+  if (!chat || !p || chat.product) return;
   if (isLocalId(chat.id)) { toast(T("attach.errNoChat")); return; }
   try {
-    const r = await DataStore.createProduct({ kind: base.kind, status: "draft", name: base.name, ai_category: base.ai_category || null,
-      details: base.details || {}, nutrition: base.nutrition || {}, source_chat_id: chat.id });
+    const r = await DataStore.linkProductToChat(p.id, chat.id);
     if (r.error) throw r.error;
-    chat.product = r.data; chat.docs = []; chat.docsState = "done"; chat.copiedFrom = base.name;
-    rememberProduct(r.data);
-    addMsg(chat, "sys", T("products.startedFrom", { name: base.name }));
+    chat.docsState = null; chat.product = null;
+    await loadChatDocs(chat);          // finds the product through the new link and loads its documents
+    if (!chat.product) chat.product = p;
+    if (!chat.titleLocked && !chat.profile) {
+      chat.title = p.name.length > 40 ? p.name.slice(0, 39) + "…" : p.name;
+      bgSave(DataStore.updateChat(chat.id, { title: chat.title }), "save.profile");
+      renderChatRail();
+    }
+    addMsg(chat, "sys", T("products.workingOn", { name: p.name }));
     renderTranscript();
   } catch (e) { saveFailedWithOwnMessage("save.product", e, T("save.couldnt", { what: T("save.product") })); }
 }

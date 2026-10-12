@@ -208,7 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
-  productPickerRows, productPickerHTML, startFromProduct, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
+  productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
@@ -2221,7 +2221,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       st.products.length === 4 && st.productDocCounts.a === 2 && st.productDocCounts.b === 1 && sb.chains.some(c => c.table === "product_documents" && c.ops.some(o => o.op === "select" && o.args[0] === "product_id")));
     const card = a.productCardHTML(rows[0]);
     check("a card names the product and its chat, shows documents, and its buttons name the product",
-      card.includes("Brie") && card.includes("From chat: Brie chat") && card.includes("2 documents") && card.includes('aria-label="Open the chat for Brie"') && card.includes('aria-label="Archive Brie"'));
+      card.includes("Brie") && card.includes("From chat: Brie chat") && card.includes("2 documents") && card.includes('aria-label="Edit Brie in the chat that created it"') && card.includes('aria-label="Archive Brie"'));
     check("a product whose chat was deleted offers a new chat instead", (() => { const h = a.productCardHTML(rows[1]); return h.includes("The chat it came from was deleted") && h.includes("Edit in a new chat"); })());
     check("an archived product offers Restore", a.productCardHTML(rows[2]).includes('aria-label="Restore Old"'));
     check("a card escapes the product name", a.productCardHTML(Object.assign({}, rows[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
@@ -2258,23 +2258,32 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     st.chats.length = 0; st.chats.push(fresh); st.activeChatId = "c9";
     check("an empty new chat offers existing products, but not archived or empty ones", a.productPickerRows(fresh).map(p => p.id).join("") === "a");
     const html = a.productPickerHTML(fresh);
-    check("the cards offer Change and Use as a starting point, each naming the product",
-      html.includes('aria-label="Change Brie"') && html.includes('aria-label="Use Brie as the starting point for a new product"') && html.includes("Changing something you already made?"));
+    check("each card offers one button that edits that product in this chat, naming the product",
+      html.includes('aria-label="Edit Brie in this chat"') && !html.includes("starting point") && html.includes("Changing something you already made?"));
     check("the picker waits until the chat's own product has been looked up", a.productPickerRows(Object.assign({}, fresh, { docsState: "loading" })).length === 0);
     check("a chat the farmer has typed in, or one with a product, shows no picker",
       a.productPickerRows(Object.assign({}, fresh, { messages: [{ role: "ai", text: "Hi" }, { role: "user", text: "hello" }] })).length === 0 && a.productPickerRows(Object.assign({}, fresh, { product: { id: "x" } })).length === 0);
     check("it only shows on the Fasto-AI screen", (() => { st.screen = "products"; const n = a.productPickerRows(fresh).length; st.screen = "assistant"; return n === 0; })());
 
     sb.reset();
-    sb.router = ch => ({ data: Object.assign({ id: "p77" }, ch.ops[0].op === "insert" ? ch.ops[0].args[0] : {}), error: null });
-    await a.startFromProduct("a");
-    const ins = sb.chains.find(c => c.table === "farmer_products" && c.ops[0].op === "insert");
-    const row = ins && ins.ops[0].args[0];
-    check("using a product as a starting point inserts a NEW draft linked to this chat, copying details but not documents",
-      row && row.status === "draft" && row.source_chat_id === "c9" && row.details.storage === "fridge" && !sb.chains.some(c => c.table === "product_documents") && fresh.product.id === "p77" && fresh.docs.length === 0);
-    check("the original product is untouched and the copy is remembered", !sb.chains.some(c => c.ops[0].op === "update") && st.products[0].id === "p77");
-    check("Brain 1 is told the sheet is a copy and to ask what differs", a.interviewSystem(fresh).includes("COPIED from the producer's existing product \"Brie\""));
-    check("the picker is gone once the chat has its product", a.productPickerRows(fresh).length === 0);
+    sb.router = ch => ch.table === "product_chat_links" && ch.ops[0].op === "select"
+      ? { data: [{ product_id: "a", farmer_products: st.products[0] }], error: null }
+      : { data: [], error: null };
+    await a.adoptProductHere("a");
+    const link = sb.chains.find(c => c.table === "product_chat_links" && c.ops[0].op === "insert");
+    check("picking a product links THIS chat to the SAME product; no copy, no change to the product",
+      link && link.ops[0].args[0].product_id === "a" && link.ops[0].args[0].chat_id === "c9" && !sb.chains.some(c => c.table === "farmer_products" && (c.ops[0].op === "insert" || c.ops[0].op === "update")), JSON.stringify(sb.chains.map(c => c.table + ":" + c.ops[0].op)));
+    check("the chat now holds that product (found through the link), is titled by it, and the picker is gone",
+      fresh.product && fresh.product.id === "a" && fresh.productLinked === true && fresh.title === "Brie" && a.productPickerRows(fresh).length === 0);
+    check("the product's original chat is not changed", st.products[0].source_chat_id === undefined || st.products[0].source_chat_id === null);
+    check("Brain 1 is told this chat edits an existing product made elsewhere and to save changes with the tool",
+      a.interviewSystem(fresh).includes("ADD to or CHANGE this existing product") && a.interviewSystem(fresh).includes("save_product_sheet again"));
+    // after a reload the link is found again
+    const reloaded = { id: "c9", title: "x", messages: [], docs: [] };
+    st.chats.push(reloaded);
+    sb.reset(); sb.router = ch => ch.table === "farmer_products" ? { data: [], error: null } : ch.table === "product_chat_links" ? { data: [{ product_id: "a", farmer_products: st.products[0] }], error: null } : { data: [], error: null };
+    await a.loadChatDocs(reloaded);
+    check("after a reload the chat finds the product it was working on", reloaded.product && reloaded.product.id === "a" && reloaded.productLinked === true);
 
     st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.screen = savedScreen; st.products = savedProducts; st.productDocCounts = savedCounts;
   }
