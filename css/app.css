@@ -366,6 +366,8 @@
 .prod-status.ok{ opacity:1; color:#bff0c2; }
 @media (max-width:600px){ .prod-row{ flex-direction:column; gap:0; } .prod-row dt{ flex:none; } }
 
+.scan-actions{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+
 /* Attached files strip (item 32 pass B) */
 .attach-strip{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
 .attach-strip[hidden]{ display:none; }
