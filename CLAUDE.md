@@ -85,3 +85,4 @@ No install needed, none touch the real database. Add tests for whatever you buil
 ## Packaged products (item 32, pass A)
 
 - `farmer_products` (owner-only; admin read; no delete, archive instead; update column-granted to status, kind, name, ai_category, details, nutrition, source_chat_id) and `product_documents` (files in `farmer-files` at `<uid>/products/...`). `source_chat_id` is how a product links back to the chat that made it. Buyers get no access until pass G. `DataStore` has the six methods; no UI yet.
+- Pass B: the Fasto-AI attach button (`#attachBtn`, hidden `#attachInput`, strip `#attachStrip`) uploads to `farmer-files/<uid>/products/...`, creates a draft product per chat on the first file, and records `product_documents`. Rules in `core.js` (`checkProductFile`, `productFilePath`); flow in `app.js` (`onAttachFiles`, `attachOne`, `removeAttachment`, `loadChatDocs`). The attach icon in the Clients thread is still inert.

@@ -327,6 +327,24 @@ function clusterMapPoints(points) {
   return order.map(function (k) { return groups[k]; });
 }
 
+/* ---------- Attachments (ROADMAP item 32 pass B) ----------
+   Pure rules for a file a producer attaches: which types, how big, and the
+   storage path. The database enforces the same limits (bucket + table checks),
+   this is the friendly first line. Path must be <user id>/products/<name>. */
+var PRODUCT_FILE_MAX = 5 * 1024 * 1024;
+var PRODUCT_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+function checkProductFile(f) {
+  if (!f || !f.size) return { ok: false, key: "attach.errEmpty" };
+  if (PRODUCT_FILE_TYPES.indexOf(f.type) === -1) return { ok: false, key: "attach.errType" };
+  if (f.size > PRODUCT_FILE_MAX) return { ok: false, key: "attach.errSize" };
+  return { ok: true };
+}
+function productFilePath(uid, name, stamp, rand) {
+  var safe = String(name || "file").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "").slice(-80);
+  if (!safe) safe = "file";
+  return uid + "/products/" + stamp + "-" + rand + "-" + safe;
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -334,6 +352,7 @@ if (typeof module !== "undefined" && module.exports) {
     volumeBand: volumeBand, totalKg: totalKg, farmerCategories: farmerCategories,
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
-    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS
+    guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
+    checkProductFile: checkProductFile, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }

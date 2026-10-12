@@ -352,6 +352,16 @@
    thing this item fixed, on the one state a farmer is looking straight at. */
 .sugg-chip:hover{ background:rgba(0,0,0,.58); color:#fff; }
 
+/* Attached files strip (item 32 pass B) */
+.attach-strip{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+.attach-strip[hidden]{ display:none; }
+.attach-chip{ display:inline-flex; align-items:center; gap:8px; max-width:100%; padding:4px 6px 4px 10px; border-radius:999px; background:var(--glass-45); color:#fff; font-size:12.5px; }
+.attach-chip img{ width:28px; height:28px; border-radius:6px; object-fit:cover; }
+.attach-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+.attach-x{ border:none; background:rgba(255,255,255,.14); color:#fff; width:24px; height:24px; border-radius:50%; cursor:pointer; font:inherit; line-height:1; }
+.attach-x:hover{ background:rgba(255,255,255,.28); }
+.attach-x:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+
 .prompt-bar{ margin-top:auto; border-radius:var(--radius-lg); padding:10px 14px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow-1); }
 .prompt-bar input{ flex:1; background:transparent; border:none; outline:none; color:#fff; font-size:13.5px; }
 .prompt-bar input::placeholder{ color:var(--ink-50); }

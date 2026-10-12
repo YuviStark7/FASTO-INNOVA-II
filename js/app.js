@@ -779,6 +779,107 @@ function flashChatRailItem(id) {
   clearTimeout(flashChatRailItem._t);
   flashChatRailItem._t = setTimeout(() => el.classList.remove("flash"), 1300);
 }
+/* ---------- Attachments in the Fasto-AI composer (ROADMAP item 32 pass B) ----------
+   A producer attaches a photo or PDF. The first file in a conversation creates
+   a DRAFT product linked to that chat (source_chat_id); each file is uploaded
+   to the private bucket under <user id>/products/ and recorded in
+   product_documents. Nothing is read by the AI yet (pass D), and nothing is
+   shared with buyers (pass G). */
+function attachChipHTML(d) {
+  const thumb = d.thumbUrl ? `<img src="${escAttr(d.thumbUrl)}" alt="">` : "";
+  return `<span class="attach-chip">${thumb}<span class="attach-name">${esc(d.file_name)}</span>` +
+    `<button type="button" class="attach-x" aria-label="${escAttr(T("attach.remove", { name: d.file_name }))}" onclick="removeAttachment('${esc(d.id)}')">×</button></span>`;
+}
+function renderAttachStrip() {
+  const el = $("attachStrip"); if (!el) return;
+  const chat = activeChat();
+  const docs = chat && chat.docs ? chat.docs : [];
+  el.hidden = docs.length === 0;
+  el.innerHTML = docs.map(attachChipHTML).join("");
+}
+// Loads (once per chat) the draft product this chat made and its files.
+async function loadChatDocs(chat) {
+  if (!chat || chat.docsState || isLocalId(chat.id)) return;
+  chat.docsState = "loading";
+  try {
+    const pr = await DataStore.productForChat(chat.id);
+    if (pr.error) throw pr.error;
+    chat.product = (pr.data && pr.data[0]) || null;
+    chat.docs = [];
+    if (chat.product) {
+      const dr = await DataStore.listProductDocuments(chat.product.id);
+      if (dr.error) throw dr.error;
+      chat.docs = dr.data || [];
+      chat.docs.forEach(d => loadThumb(chat, d));
+    }
+    chat.docsState = "done";
+  } catch (e) { chat.docsState = null; noteSaveFailure("save.file", e); return; }
+  if (chat.id === state.activeChatId) renderAttachStrip();
+}
+// Images get a small preview through a short-lived signed link (the bucket is private).
+async function loadThumb(chat, d) {
+  if (String(d.mime_type).indexOf("image/") !== 0) return;
+  try {
+    const r = await DataStore.signedFileUrl(d.storage_path);
+    if (r && r.data && r.data.signedUrl) { d.thumbUrl = r.data.signedUrl; if (chat.id === state.activeChatId) renderAttachStrip(); }
+  } catch (e) { /* no preview is fine; the file name is still shown */ }
+}
+function refreshAttachStrip() {
+  renderAttachStrip();
+  const chat = activeChat();
+  if (chat && !chat.docsState) loadChatDocs(chat);
+}
+function pickAttachment() { const i = $("attachInput"); if (i) i.click(); }
+async function ensureChatProduct(chat) {
+  if (chat.product) return chat.product;
+  const r = await DataStore.createProduct({ kind: "packaged", status: "draft", name: T("attach.newProduct"), source_chat_id: chat.id });
+  if (r.error) throw r.error;
+  chat.product = r.data; chat.docs = chat.docs || [];
+  return chat.product;
+}
+async function attachOne(chat, file) {
+  const check = checkProductFile(file);
+  if (!check.ok) { toast(T(check.key)); return false; }
+  const path = productFilePath(state.farmerId, file.name, Date.now(), Math.random().toString(36).slice(2, 8));
+  let uploaded = false;
+  try {
+    const product = await ensureChatProduct(chat);
+    const up = await DataStore.uploadProductFile(path, file);
+    if (up.error) throw up.error;
+    uploaded = true;
+    const rec = await DataStore.addProductDocument({ product_id: product.id, storage_path: path, file_name: file.name.slice(0, 200), mime_type: file.type, size_bytes: file.size });
+    if (rec.error) throw rec.error;
+    chat.docs.push(rec.data); loadThumb(chat, rec.data);
+    toast(T("attach.added", { name: file.name }));
+    return true;
+  } catch (e) {
+    // Do not leave a file in storage that nothing points at.
+    if (uploaded) { try { await DataStore.removeProductFile(path); } catch (e2) { /* nothing more to do */ } }
+    saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") }));
+    return false;
+  }
+}
+async function onAttachFiles(files) {
+  const chat = activeChat();
+  if (!chat || isLocalId(chat.id) || !state.farmerId) { toast(T("attach.errNoChat")); return; }
+  if (state.attachBusy) return;
+  state.attachBusy = true;
+  try { for (const f of files) { if (!(await attachOne(chat, f))) break; } }
+  finally { state.attachBusy = false; if (chat.id === state.activeChatId) renderAttachStrip(); }
+}
+async function removeAttachment(id) {
+  const chat = activeChat(); if (!chat || !chat.docs) return;
+  const d = chat.docs.find(x => x.id === id); if (!d) return;
+  try {
+    const r = await DataStore.removeProductDocument(id);
+    if (r.error) throw r.error;
+    chat.docs = chat.docs.filter(x => x.id !== id);
+    DataStore.removeProductFile(d.storage_path).catch(() => {}); // the record is the truth; a stray file is invisible and private
+    toast(T("attach.removed", { name: d.file_name }));
+  } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") })); }
+  renderAttachStrip();
+}
+
 function addMsg(chat, role, text) {
   chat.messages.push({ role, text, ts: Date.now() });
   if (chat.id === state.activeChatId) renderTranscript();
@@ -798,6 +899,7 @@ function renderTranscript() {
   // the chat, and the cards below are redrawn when the ranking changes.
   const cta = matchCardsHTML(chat);
   el.innerHTML = bubbles + cta;
+  refreshAttachStrip();
   el.scrollTop = el.scrollHeight;
 }
 
@@ -4462,6 +4564,8 @@ function boot() {
   // Chat
   $("sendBtn").onclick = () => { const v = $("userInput").value.trim(); if (v) { $("userInput").value = ""; sendUserMessage(v); } };
   $("userInput").addEventListener("keydown", e => { if (e.key === "Enter") $("sendBtn").onclick(); });
+  $("attachBtn").onclick = pickAttachment;
+  $("attachInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });
   document.querySelectorAll(".sugg-chip").forEach(ch => ch.onclick = () => { $("userInput").value = ch.dataset.fill; $("userInput").focus(); });
 
   /* Search. The box only ever writes the query into state — the renderers do

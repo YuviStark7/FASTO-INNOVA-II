@@ -74,7 +74,7 @@ function makeFakeSupabase() {
     queue: [],        // programmed answers, taken in order
     router: null,     // ...or one function that answers by table
     session: { data: { session: null } },
-    reset() { chains.length = 0; authCalls.length = 0; fake.queue.length = 0; fake.router = null; },
+    reset() { fake.storageCalls.length = 0; fake.storageResult = null; chains.length = 0; authCalls.length = 0; fake.queue.length = 0; fake.router = null; },
     last() { return chains[chains.length - 1]; },
     from(table) {
       const chain = { table, ops: [] };
@@ -106,6 +106,18 @@ function makeFakeSupabase() {
       signInWithPassword(a) { authCalls.push({ fn: "signInWithPassword", args: a }); return Promise.resolve({ data: {}, error: null }); },
       signOut() { authCalls.push({ fn: "signOut" }); return Promise.resolve({ error: null }); },
       getSession() { authCalls.push({ fn: "getSession" }); return Promise.resolve(fake.session); }
+    },
+    storageCalls: [],
+    storageResult: null,   // set to { error } to make uploads fail
+    storage: {
+      from(bucket) {
+        const rec = (fn, args) => { fake.storageCalls.push({ bucket, fn, args }); };
+        return {
+          upload(path, file, opts) { rec("upload", [path, file, opts]); return Promise.resolve(fake.storageResult || { data: { path }, error: null }); },
+          remove(paths) { rec("remove", [paths]); return Promise.resolve({ data: [], error: null }); },
+          createSignedUrl(path, secs) { rec("signed", [path, secs]); return Promise.resolve({ data: { signedUrl: "https://signed.example/" + path }, error: null }); }
+        };
+      }
     },
     createClient(url, key) { fake.url = url; fake.key = key; return fake; }
   };
@@ -192,7 +204,8 @@ function loadApp(root) {
   normalizeQuery, searchTerms, matchesSearch, filterResearch, filterClients, filterChatRail,
   researchSearchFields, clientSearchFields, chatSearchFields, setSearch, repaintForSearch,
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
-  draftCount, renderBell };`;
+  draftCount, renderBell,
+  checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
 }
@@ -1976,6 +1989,78 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       c[1].ops[0].op === "insert" && c[2].ops[0].op === "update" && !c.slice(0, 3).some(x => x.ops.some(o => o.op === "delete")));
     check("documents are read per product and recorded in product_documents",
       c[3].table === "product_documents" && c[3].ops.some(o => o.op === "eq") && c[4].table === "product_documents" && c[4].ops[0].op === "insert");
+  }
+
+  /* ---- ROADMAP item 32 pass B: attachments in the composer ---- */
+  {
+    const a = app;
+    const good = { name: "Label.PDF", type: "application/pdf", size: 1000 };
+    check("an image or PDF under 5 MB is accepted", a.checkProductFile(good).ok && a.checkProductFile({ name: "a.png", type: "image/png", size: 5 * 1024 * 1024 }).ok);
+    check("wrong type, too big and empty files are refused with their own message",
+      a.checkProductFile({ type: "text/html", size: 5 }).key === "attach.errType" &&
+      a.checkProductFile({ type: "image/png", size: 5 * 1024 * 1024 + 1 }).key === "attach.errSize" &&
+      a.checkProductFile({ type: "image/png", size: 0 }).key === "attach.errEmpty");
+    const path1 = a.productFilePath("u1", "My Cheese (v2)!.PDF", 123, "abc");
+    check("the storage path sits in the user's own products folder and is made safe",
+      path1 === "u1/products/123-abc-my-cheese-v2-.pdf", path1);
+    check("a hostile or empty name cannot climb out of the folder",
+      a.productFilePath("u1", "../../x", 1, "r").indexOf("u1/products/") === 0 && !a.productFilePath("u1", "../../x", 1, "r").includes("..") && a.productFilePath("u1", "", 1, "r").endsWith("-file"));
+    check("a file name is escaped in the chip and the remove button names it",
+      a.attachChipHTML({ id: "d1", file_name: "<b>x</b>.pdf" }).indexOf("<b>x") === -1 && a.attachChipHTML({ id: "d1", file_name: "x.pdf" }).indexOf('aria-label="Remove x.pdf"') > -1);
+
+    // a saved chat: first file makes a draft product linked to the chat, uploads, records
+    let docSeq = 0;
+    const st = a.state; st.farmerId = "u1";
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId;
+    const chat = { id: "c1", title: "t", messages: [] }; st.chats.push(chat); st.activeChatId = "c1";
+    chat.docsState = "done"; chat.docs = [];
+    sb.reset();
+    sb.router = ch => ch.table === "farmer_products" ? { data: { id: "p1" }, error: null } : ch.table === "product_documents" ? { data: { id: "d" + (++docSeq), file_name: "Label.PDF", mime_type: "application/pdf", storage_path: "x" }, error: null } : { data: [], error: null };
+    await a.onAttachFiles([good]);
+    const prod = sb.chains.find(c => c.table === "farmer_products");
+    const row = prod && prod.ops[0].args[0];
+    check("the first attachment creates one draft product linked to the chat",
+      row && row.status === "draft" && row.source_chat_id === "c1" && chat.product && chat.product.id === "p1", JSON.stringify(row));
+    const up = sb.storageCalls.find(c => c.fn === "upload");
+    check("the file goes to the private farmer-files bucket under the user's folder, never overwriting",
+      up && up.bucket === "farmer-files" && up.args[0].indexOf("u1/products/") === 0 && up.args[2].upsert === false);
+    const rec = sb.chains.find(c => c.table === "product_documents");
+    check("the upload is recorded against the product", rec && rec.ops[0].args[0].product_id === "p1" && chat.docs.length === 1);
+
+    // a second file reuses the product
+    sb.chains.length = 0;
+    await a.onAttachFiles([good]);
+    check("a second attachment reuses the same product", !sb.chains.some(c => c.table === "farmer_products") && chat.docs.length === 2);
+
+    // refused file: nothing is sent
+    sb.reset();
+    await a.onAttachFiles([{ name: "x.exe", type: "application/x-msdownload", size: 10 }]);
+    check("a refused file touches neither storage nor the database", sb.storageCalls.length === 0 && sb.chains.length === 0);
+
+    // upload fails: nothing recorded, the failure is reported
+    sb.reset(); sb.storageResult = { error: { message: "denied" } };
+    const before = chat.docs.length, failsBefore = a.saveState.failures;
+    await a.onAttachFiles([good]);
+    check("a failed upload records nothing and counts as a failed save",
+      chat.docs.length === before && !sb.chains.some(c => c.table === "product_documents") && a.saveState.failures === failsBefore + 1);
+
+    // database refuses the record after a good upload: the stray file is removed
+    sb.reset(); sb.router = ch => ch.table === "product_documents" ? { data: null, error: { message: "rls" } } : { data: [], error: null };
+    await a.onAttachFiles([good]);
+    check("if the record is refused the uploaded file is cleaned up", sb.storageCalls.some(c => c.fn === "remove"));
+
+    // removal
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    const n = chat.docs.length, id0 = chat.docs[0].id;
+    await a.removeAttachment(id0);
+    check("removing a file deletes its record and the stored file",
+      chat.docs.length === n - 1 && sb.chains.some(c => c.table === "product_documents" && c.ops[0].op === "delete") && sb.storageCalls.some(c => c.fn === "remove"));
+
+    // an unsaved (local) chat cannot attach
+    st.chats.push({ id: "local-1", title: "t", messages: [] }); st.activeChatId = "local-1"; sb.reset();
+    await a.onAttachFiles([good]);
+    check("a conversation that was never saved refuses attachments", sb.storageCalls.length === 0 && sb.chains.length === 0);
+    st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */

@@ -268,8 +268,12 @@
         <button type="button" class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio." data-i18n="assist.chip2">Demo farmer (IT)</button>
         <button type="button" class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?" data-i18n="assist.chip3">Autumn chestnuts</button>
       </div>
+      <!-- Files attached to this conversation's product (item 32 pass B). The
+           picker input is hidden; the visible, keyboard-reachable control is #attachBtn. -->
+      <div class="attach-strip" id="attachStrip" role="group" data-i18n-aria="attach.stripLabel" aria-label="Attached files" hidden></div>
+      <input type="file" id="attachInput" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden tabindex="-1">
       <div class="prompt-bar glass-45">
-        <button class="round-icon-btn" id="attachBtn" title="Attach (not needed for this demo)" data-i18n-title="clients.attachTitle" data-i18n-aria="clients.attachTitle" aria-label="Attach (not needed for this demo)"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
+        <button type="button" class="round-icon-btn" id="attachBtn" title="Attach a photo or document (image or PDF, up to 5 MB)" data-i18n-title="assist.attachTitle" data-i18n-aria="assist.attachTitle" aria-label="Attach a photo or document (image or PDF, up to 5 MB)"><img class="ic-svg sm" src="assets/icon-attach.svg" alt=""></button>
         <input type="text" id="userInput" placeholder="Type your message here" data-i18n-ph="clients.typeHere" data-i18n-aria="a11y.messageBox" aria-label="Your message to Fasto" autocomplete="off">
         <button class="round-icon-btn" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle" data-i18n-aria="clients.sendTitle" aria-label="Send"><img class="ic-svg sm" src="assets/icon-send.svg" alt=""></button>
       </div>
