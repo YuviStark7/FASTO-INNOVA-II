@@ -81,3 +81,7 @@ No install needed, none touch the real database. Add tests for whatever you buil
 ## Attachments (item 16 pass A)
 
 - Private bucket `farmer-files` (5 MB, JPEG/PNG/WebP/PDF); object path must be `<auth uid>/<file>`; four storage policies restrict each user to their own folder. `message_attachments` records one file against an `outreach_messages` row (owner reads/inserts/deletes own; admin reads; buyers cannot see them yet). No UI until pass B.
+
+## Packaged products (item 32, pass A)
+
+- `farmer_products` (owner-only; admin read; no delete, archive instead; update column-granted to status, kind, name, ai_category, details, nutrition, source_chat_id) and `product_documents` (files in `farmer-files` at `<uid>/products/...`). `source_chat_id` is how a product links back to the chat that made it. Buyers get no access until pass G. `DataStore` has the six methods; no UI yet.

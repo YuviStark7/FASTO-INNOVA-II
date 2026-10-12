@@ -1961,6 +1961,23 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       c[1].table === "outreach_messages" && c[1].ops[0].op === "insert" && !c.some(x => x.ops.some(o => o.op === "update" || o.op === "delete")));
   }
 
+  /* ---- ROADMAP item 32 pass A: packaged-product data layer ---- */
+  {
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await app.DataStore.listMyProducts("u1");
+    await app.DataStore.createProduct({ name: "Cheese slices", kind: "packaged" });
+    await app.DataStore.updateProduct("p1", { status: "active" });
+    await app.DataStore.listProductDocuments("p1");
+    await app.DataStore.addProductDocument({ product_id: "p1", storage_path: "u1/products/a.pdf" });
+    const c = sb.chains;
+    check("products are read by owner, newest change first",
+      c[0].table === "farmer_products" && c[0].ops.some(o => o.op === "eq") && c[0].ops.some(o => o.op === "order"));
+    check("products are inserted and updated, never deleted (archive instead)",
+      c[1].ops[0].op === "insert" && c[2].ops[0].op === "update" && !c.slice(0, 3).some(x => x.ops.some(o => o.op === "delete")));
+    check("documents are read per product and recorded in product_documents",
+      c[3].table === "product_documents" && c[3].ops.some(o => o.op === "eq") && c[4].table === "product_documents" && c[4].ops[0].op === "insert");
+  }
+
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */
   {
     const a = app;

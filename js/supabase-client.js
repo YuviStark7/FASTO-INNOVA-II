@@ -98,6 +98,18 @@ const DataStore = {
   },
   sendOutreachMessage(row) { return sb.from("outreach_messages").insert(row).select().single(); },
 
+  /* ---------- packaged products (ROADMAP item 32, pass A: data layer only) ----------
+     A farmer's own product sheets. RLS shows a farmer only their own rows and
+     there is no delete: a product is archived (status "archived"), never removed.
+     Documents are files in the private "farmer-files" bucket under
+     <user id>/products/..., recorded in product_documents. */
+  listMyProducts(uid) { return sb.from("farmer_products").select("*").eq("owner_id", uid).order("updated_at", { ascending: false }); },
+  createProduct(row) { return sb.from("farmer_products").insert(row).select().single(); },
+  updateProduct(id, patch) { return sb.from("farmer_products").update(patch).eq("id", id).select().single(); },
+  listProductDocuments(productId) { return sb.from("product_documents").select("*").eq("product_id", productId).order("created_at", { ascending: true }); },
+  addProductDocument(row) { return sb.from("product_documents").insert(row).select().single(); },
+  removeProductDocument(id) { return sb.from("product_documents").delete().eq("id", id); },
+
   /* ---------- buyer inbox (ROADMAP item 27) ----------
      A buyer's outreach rows: RLS only returns ones addressed to the business
      they own AND that already have a message on them. */
