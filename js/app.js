@@ -109,6 +109,42 @@ const TOOL_RECS = {
   }
 };
 
+/* Packaged / finished products (ROADMAP item 32 pass C). Appended to Brain 1's
+   instructions for every chat; the model decides from what the producer says
+   whether this is fresh produce (old flow) or a finished product (this flow). */
+const SYSTEM_PRODUCT = `
+
+FINISHED PRODUCTS: if the person makes a finished, packaged product (for example sliced cheese, jam, pasta, olive oil in bottles, biscuits) rather than selling fresh produce by the kilo, do NOT call submit_farmer_profile. Instead build a product sheet by interviewing them, still ONE question per message, under 65 words, mirroring their language. Start with what the product is, then ask in this order, skipping what you already know: ingredients; allergens (ask even if they think there are none; "none" is a valid answer); shelf life; how it must be stored; pack sizes; minimum order; the nutrition table per 100 g (energy kcal, fat, saturated fat, carbohydrates, sugars, protein, salt); certifications (optional); price range (optional). Tell them they can also attach a photo of the label or a document with the paperclip button, and that at least one document is needed to finish.
+At the END of every turn in which you learned something new, call save_product_sheet with the facts so far (only fields you actually know). You invent the category yourself, in lowercase and in the person's language (e.g. "sliced cheese"), as ai_category.
+If they do not know a value for shelf_life_days, storage, pack_sizes or a nutrition number, you MAY suggest a typical value, say clearly that it is only a suggestion to confirm, and list that field in suggested_fields (use "nutrition.salt_g" style for nutrition). NEVER suggest or invent ingredients, allergens, certifications, minimum order or prices: those must come from the person or from a document. When they confirm a suggestion, send it again WITHOUT listing it in suggested_fields.
+A sheet is finished when every field above except certifications and price range is confirmed and a document is attached. Then tell them the sheet is saved as a draft product and that finding buyers for finished products is coming soon. Never promise buyers or prices.`;
+
+const TOOL_PRODUCT = {
+  name: "save_product_sheet",
+  description: "Save what is known so far about a finished (packaged) product. Send only fields you actually know; later calls add to or correct earlier ones.",
+  input_schema: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Product name as the producer calls it" },
+      ai_category: { type: "string", description: "Short category you choose yourself, lowercase, e.g. 'sliced cheese'" },
+      ingredients: { type: "array", items: { type: "string" } },
+      allergens: { type: "array", items: { type: "string" }, description: "Empty array means the producer confirmed none" },
+      shelf_life_days: { type: "number" },
+      storage: { type: "string" },
+      pack_sizes: { type: "array", items: { type: "string" } },
+      min_order: { type: "string" },
+      certifications: { type: "array", items: { type: "string" } },
+      price_range: { type: "string", description: "Only what the producer states" },
+      nutrition: { type: "object", description: "Per 100 g", properties: {
+        energy_kcal: { type: "number" }, fat_g: { type: "number" }, saturated_fat_g: { type: "number" },
+        carbs_g: { type: "number" }, sugars_g: { type: "number" }, protein_g: { type: "number" },
+        salt_g: { type: "number" }, fibre_g: { type: "number" } } },
+      suggested_fields: { type: "array", items: { type: "string" }, description: "Fields whose value is YOUR suggestion, not confirmed by the producer" }
+    },
+    required: ["name"]
+  }
+};
+
 /* ---------- small UI helpers ---------- */
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600); }
 function setTyping(on) { const t = $("typingInd"); if (t) t.style.display = on ? "block" : "none"; const b = $("sendBtn"); if (b) b.disabled = on; }
@@ -607,6 +643,13 @@ function interviewSystem(chat) {
   let s = SYSTEM_INTERVIEW;
   const first = accountFirstName();
   s += first ? `\n\nThe farmer's first name is "${first}" (from their account). Never ask for it.` : "\n\nThe farmer's name is unknown. Do not ask for it; just carry on.";
+  s += SYSTEM_PRODUCT;
+  if (chat && chat.product && productHasContent(chat.product)) {
+    const pc = productCompleteness(chat.product, (chat.docs || []).length);
+    s += "\n\nA product sheet already exists for this chat: " + JSON.stringify({ name: chat.product.name, ai_category: chat.product.ai_category, details: chat.product.details, nutrition: chat.product.nutrition }) +
+      "\nDocuments attached: " + (chat.docs || []).length + ". Still missing: " + (pc.missing.length ? pc.missing.join(", ") : "nothing (the sheet is complete)") +
+      ". Ask about the next missing thing; do not ask again for what is already there. Fields listed in details.suggested are only suggestions still waiting for the producer's confirmation.";
+  }
   if (chat && chat.profile) {
     s += "\n\nThis farmer's profile has ALREADY been captured and matched. Current profile: " + JSON.stringify(chat.profile) +
       "\nIf they ask to change anything (a quantity, a product, months, village, organic status), apply it and immediately call submit_farmer_profile again with the COMPLETE updated profile (no need to ask \"Shall I search for matches?\" again), after one short sentence saying what you changed. Do not restart the interview. For any other question, answer briefly.";
@@ -801,6 +844,7 @@ function renderAttachStrip() {
 async function loadChatDocs(chat) {
   if (!chat || chat.docsState || isLocalId(chat.id)) return;
   chat.docsState = "loading";
+  let release; chat.docsPromise = new Promise(r => { release = r; });
   try {
     const pr = await DataStore.productForChat(chat.id);
     if (pr.error) throw pr.error;
@@ -813,7 +857,8 @@ async function loadChatDocs(chat) {
       chat.docs.forEach(d => loadThumb(chat, d));
     }
     chat.docsState = "done";
-  } catch (e) { chat.docsState = null; noteSaveFailure("save.file", e); return; }
+  } catch (e) { chat.docsState = null; noteSaveFailure("save.file", e); release(); return; }
+  release();
   if (chat.id === state.activeChatId) renderAttachStrip();
 }
 // Images get a small preview through a short-lived signed link (the bucket is private).
@@ -880,6 +925,109 @@ async function removeAttachment(id) {
   renderAttachStrip();
 }
 
+/* ---------- Product sheet (ROADMAP item 32 pass C) ---------- */
+function productHasContent(p) {
+  return !!p && (Object.keys(p.details || {}).filter(k => k !== "suggested").length > 0 || Object.keys(p.nutrition || {}).length > 0 || (p.ai_category || "") !== "");
+}
+// Guardian error codes -> sentences (literal T calls so qa_check can see the keys).
+function productErrorText(code) {
+  switch (code) {
+    case "scan": return T("prod.errScan");
+    case "name": return T("prod.errName");
+    case "category": return T("prod.errCategory");
+    case "nutrition_sum": return T("prod.errSum");
+    case "nutrition_sugars": return T("prod.errSugars");
+    case "nutrition_sat": return T("prod.errSat");
+    default: return code;
+  }
+}
+function productFieldLabel(k) {
+  switch (k) {
+    case "name": return T("prod.f.name");
+    case "ai_category": return T("prod.f.category");
+    case "ingredients": return T("prod.f.ingredients");
+    case "allergens": return T("prod.f.allergens");
+    case "shelf_life_days": return T("prod.f.shelfLife");
+    case "storage": return T("prod.f.storage");
+    case "pack_sizes": return T("prod.f.packSizes");
+    case "min_order": return T("prod.f.minOrder");
+    case "certifications": return T("prod.f.certifications");
+    case "price_range": return T("prod.f.priceRange");
+    case "documents": return T("prod.f.documents");
+    case "nutrition.energy_kcal": return T("prod.n.energy");
+    case "nutrition.fat_g": return T("prod.n.fat");
+    case "nutrition.saturated_fat_g": return T("prod.n.sat");
+    case "nutrition.carbs_g": return T("prod.n.carbs");
+    case "nutrition.sugars_g": return T("prod.n.sugars");
+    case "nutrition.protein_g": return T("prod.n.protein");
+    case "nutrition.salt_g": return T("prod.n.salt");
+    case "nutrition.fibre_g": return T("prod.n.fibre");
+    default: return k;
+  }
+}
+/* Brain 1 sent a snapshot. Guardian checks it, it is merged into the draft
+   product row (created on first use, shared with the attach button), saved,
+   and the transcript card is redrawn. Returns the text given back to Brain 1
+   as the tool result: what was kept and what is still missing. */
+async function onProductSheet(raw, chat) {
+  addLog("info", "Brain 1 → Guardian · product sheet");
+  const v = guardianValidateProductSheet(raw);
+  if (!v.ok) {
+    v.errors.forEach(er => addLog("block", "Guardian · product sheet REJECTED: " + er));
+    addMsg(chat, "sys", T("prod.rejected", { errors: v.errors.map(productErrorText).join("; ") }));
+    return "Rejected by the Guardian: " + v.errors.join(", ") + ". Ask the producer to check those values.";
+  }
+  v.warnings.forEach(w => addLog("warn", "Guardian · product sheet: " + w));
+  if (isLocalId(chat.id)) { addMsg(chat, "sys", T("attach.errNoChat")); return "Not saved: the conversation was never saved."; }
+  try {
+    if (chat.docsPromise) await chat.docsPromise;
+    const product = await ensureChatProduct(chat);
+    const merged = mergeProductSheet(product, v.sheet);
+    const res = await DataStore.updateProduct(product.id, { name: merged.name, ai_category: merged.ai_category || null, details: merged.details, nutrition: merged.nutrition });
+    if (res.error) throw res.error;
+    chat.product = res.data || Object.assign({}, product, merged);
+    saveOk();
+    if (!chat.titleLocked && !chat.profile && merged.name) {
+      chat.title = merged.name.length > 40 ? merged.name.slice(0, 39) + "…" : merged.name;
+      bgSave(DataStore.updateChat(chat.id, { title: chat.title }), "save.profile");
+      renderChatRail();
+    }
+  } catch (e) {
+    saveFailedWithOwnMessage("save.product", e, T("save.couldnt", { what: T("save.product") }));
+    return "Could not save the product sheet; tell the producer and carry on.";
+  }
+  if (chat.id === state.activeChatId) renderTranscript();
+  const pc = productCompleteness(chat.product, (chat.docs || []).length);
+  const dropped = v.warnings.filter(w => w.indexOf("dropped:") === 0).map(w => w.slice(8));
+  return "Saved. " + (pc.complete ? "The sheet is complete." : "Still missing: " + pc.missing.join(", ") + ".") +
+    (dropped.length ? " Not stored because they cannot be suggested, ask the producer: " + dropped.join(", ") + "." : "");
+}
+function productSheetHTML(chat) {
+  const p = chat.product;
+  if (!productHasContent(p)) return "";
+  const d = p.details || {}, n = p.nutrition || {}, sug = d.suggested || [];
+  const pc = productCompleteness(p, (chat.docs || []).length);
+  const tag = k => sug.indexOf(k) !== -1 ? ` <em class="prod-sug">${esc(T("prod.suggested"))}</em>` : "";
+  const row = (k, val) => val === "" || val == null ? "" :
+    `<div class="prod-row"><dt>${esc(productFieldLabel(k))}</dt><dd>${esc(val)}${tag(k)}</dd></div>`;
+  const list = a => Array.isArray(a) ? a.join(", ") : "";
+  const rows = [
+    row("ai_category", p.ai_category || ""),
+    row("ingredients", list(d.ingredients)),
+    Array.isArray(d.allergens) ? row("allergens", d.allergens.length ? list(d.allergens) : T("prod.noAllergens")) : "",
+    row("shelf_life_days", typeof d.shelf_life_days === "number" ? T("prod.days", { n: d.shelf_life_days }) : ""),
+    row("storage", d.storage || ""), row("pack_sizes", list(d.pack_sizes)), row("min_order", d.min_order || ""),
+    row("certifications", list(d.certifications)), row("price_range", d.price_range || "")
+  ].join("");
+  const nutr = PRODUCT_NUTRIENTS.concat(["fibre_g"]).filter(k => typeof n[k] === "number")
+    .map(k => `<div class="prod-row"><dt>${esc(productFieldLabel("nutrition." + k))}</dt><dd>${esc(n[k])}${tag("nutrition." + k)}</dd></div>`).join("");
+  const status = pc.complete ? T("prod.complete") : T("prod.stillNeeded", { list: humanList(pc.missing.map(productFieldLabel)) });
+  return `<section class="prod-sheet glass-45" aria-label="${escAttr(T("prod.sheetTitle"))}">` +
+    `<h3>${esc(p.name)} <span class="prod-badge">${esc(T("prod.draft"))}</span></h3><dl>${rows}</dl>` +
+    (nutr ? `<h4>${esc(T("prod.per100"))}</h4><dl>${nutr}</dl>` : "") +
+    `<p class="prod-status${pc.complete ? " ok" : ""}">${esc(status)}</p></section>`;
+}
+
 function addMsg(chat, role, text) {
   chat.messages.push({ role, text, ts: Date.now() });
   if (chat.id === state.activeChatId) renderTranscript();
@@ -897,7 +1045,7 @@ function renderTranscript() {
   // buyers as cards, and (if the farmer wants it) a way to publish an offer.
   // There is no "edit details" button on purpose: changes are made by asking in
   // the chat, and the cards below are redrawn when the ranking changes.
-  const cta = matchCardsHTML(chat);
+  const cta = matchCardsHTML(chat) + productSheetHTML(chat);
   el.innerHTML = bubbles + cta;
   refreshAttachStrip();
   el.scrollTop = el.scrollHeight;
@@ -922,18 +1070,22 @@ async function sendUserMessage(text) {
   chat.apiMessages.push({ role: "user", content: text });
   setTyping(true);
   try {
-    const resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE], 600);
+    const resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE, TOOL_PRODUCT], 700);
     setTyping(false);
     chat.apiMessages.push({ role: "assistant", content: resp.content });
 
-    let toolUse = null;
+    let toolUse = null, sheetUse = null;
     for (const block of resp.content) {
       if (block.type === "text" && block.text.trim()) addMsg(chat, "ai", block.text.trim());
       if (block.type === "tool_use" && block.name === "submit_farmer_profile") toolUse = block;
+      if (block.type === "tool_use" && block.name === "save_product_sheet") sheetUse = block;
     }
     addLog("info", "Brain 1 · replied (" + (resp.usage ? resp.usage.output_tokens + " tokens" : "ok") + ")");
 
-    if (toolUse) {
+    if (sheetUse) {
+      const outcome = await onProductSheet(sheetUse.input, chat);
+      chat.apiMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: sheetUse.id, content: outcome }] });
+    } else if (toolUse) {
       chat.apiMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUse.id, content: "Profile received by Guardian for validation." }] });
       // A profile that already exists means this is an edit asked for in the chat.
       if (chat.profile) onProfileRevised(toolUse.input, chat); else await onProfileCaptured(toolUse.input, chat);

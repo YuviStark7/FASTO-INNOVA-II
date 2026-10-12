@@ -352,6 +352,20 @@
    thing this item fixed, on the one state a farmer is looking straight at. */
 .sugg-chip:hover{ background:rgba(0,0,0,.58); color:#fff; }
 
+/* Product sheet card in the Fasto-AI transcript (item 32 pass C) */
+.prod-sheet{ margin:12px 0; padding:14px 16px; border-radius:var(--radius-lg); color:#fff; }
+.prod-sheet h3{ margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.prod-sheet h4{ margin:12px 0 6px; font-size:13px; opacity:.85; }
+.prod-badge{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.16); font-weight:500; }
+.prod-sheet dl{ margin:0; display:grid; gap:4px; }
+.prod-row{ display:flex; gap:10px; font-size:13px; }
+.prod-row dt{ flex:0 0 150px; opacity:.7; }
+.prod-row dd{ margin:0; flex:1; }
+.prod-sug{ font-style:normal; font-size:11.5px; padding:1px 6px; border-radius:999px; background:rgba(255,200,80,.22); color:#ffe2a0; margin-left:6px; }
+.prod-status{ margin:12px 0 0; font-size:12.5px; opacity:.85; }
+.prod-status.ok{ opacity:1; color:#bff0c2; }
+@media (max-width:600px){ .prod-row{ flex-direction:column; gap:0; } .prod-row dt{ flex:none; } }
+
 /* Attached files strip (item 32 pass B) */
 .attach-strip{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
 .attach-strip[hidden]{ display:none; }

@@ -327,6 +327,126 @@ function clusterMapPoints(points) {
   return order.map(function (k) { return groups[k]; });
 }
 
+/* ---------- Packaged-product sheet (ROADMAP item 32 pass C) ----------
+   Brain 1 fills a product sheet by interviewing the producer. Brain 3 (here)
+   checks it before anything is saved. Two honesty rules live in this code:
+   1. Some things may be SUGGESTED by the AI when the producer does not know
+      (shelf life, storage, pack sizes, nutrition values) and are then stored as
+      "suggested" until the producer confirms them. Others are business or safety
+      facts that must come from the producer or a document and are NEVER taken
+      from the AI: ingredients, allergens, certifications, minimum order, price.
+   2. A sheet is complete only when every required field is present, nothing is
+      still "suggested", and at least one document is attached. */
+var PRODUCT_NUTRIENTS = ["energy_kcal", "fat_g", "saturated_fat_g", "carbs_g", "sugars_g", "protein_g", "salt_g"];
+var PRODUCT_NUTRIENT_OPTIONAL = ["fibre_g"];
+var PRODUCT_NUTRIENT_MAX = { energy_kcal: 900, fat_g: 100, saturated_fat_g: 100, carbs_g: 100, sugars_g: 100, protein_g: 100, salt_g: 100, fibre_g: 100 };
+var PRODUCT_LIST_FIELDS = ["ingredients", "allergens", "pack_sizes", "certifications"];
+var PRODUCT_TEXT_FIELDS = ["storage", "min_order", "price_range"];
+var PRODUCT_REQUIRED = ["name", "ai_category", "ingredients", "allergens", "shelf_life_days", "storage", "pack_sizes", "min_order"];
+// What the attach button names a draft before the interview has given it a real name (i18n "attach.newProduct").
+var PRODUCT_PLACEHOLDER_NAMES = ["New product", "Nuovo prodotto"];
+var PRODUCT_NEVER_SUGGESTED = ["ingredients", "allergens", "certifications", "min_order", "price_range"];
+
+function cleanSheetText(v, max) { return typeof v === "string" ? v.replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, max) : ""; }
+
+/* Returns { ok, errors: [codes], warnings: [text], sheet: {name, ai_category, details, nutrition} }.
+   `sheet` holds only the fields that were present in the input (so it can be merged). */
+function guardianValidateProductSheet(raw) {
+  var codes = [], notes = [];
+  var r = raw && typeof raw === "object" ? raw : {};
+  var details = {}, nutrition = {}, sheet = { details: details, nutrition: nutrition };
+
+  var allText = JSON.stringify(r);
+  if (guardianScanText(allText).some(function (f) { return f.level === "block"; })) codes.push("scan");
+
+  if (r.name !== undefined) { var n = cleanSheetText(r.name, 120); if (n) sheet.name = n; else codes.push("name"); }
+  if (r.ai_category !== undefined) {
+    var c = cleanSheetText(r.ai_category, 60).toLowerCase();
+    if (c) sheet.ai_category = c; else codes.push("category");
+  }
+
+  var suggested = Array.isArray(r.suggested_fields) ? r.suggested_fields.filter(function (k) { return typeof k === "string"; }) : [];
+  var keptSuggested = [];
+  function markSuggested(key) {
+    if (suggested.indexOf(key) === -1) return true;
+    if (PRODUCT_NEVER_SUGGESTED.indexOf(key.split(".")[0]) !== -1) return false; // dropped: must come from the producer
+    keptSuggested.push(key); return true;
+  }
+
+  PRODUCT_LIST_FIELDS.forEach(function (k) {
+    if (!Array.isArray(r[k])) return;
+    var arr = r[k].map(function (x) { return cleanSheetText(x, 80); }).filter(Boolean).slice(0, 25);
+    if (!markSuggested(k)) { notes.push("dropped:" + k); return; }
+    details[k] = arr;
+  });
+  PRODUCT_TEXT_FIELDS.forEach(function (k) {
+    if (r[k] === undefined) return;
+    var t = cleanSheetText(r[k], 200);
+    if (!t) return;
+    if (!markSuggested(k)) { notes.push("dropped:" + k); return; }
+    details[k] = t;
+  });
+  if (r.shelf_life_days !== undefined) {
+    var d = Number(r.shelf_life_days);
+    if (isFinite(d) && d > 0 && d <= 3650) { if (markSuggested("shelf_life_days")) details.shelf_life_days = Math.round(d); }
+    else notes.push("range:shelf_life_days");
+  }
+
+  var nin = r.nutrition && typeof r.nutrition === "object" ? r.nutrition : {};
+  PRODUCT_NUTRIENTS.concat(PRODUCT_NUTRIENT_OPTIONAL).forEach(function (k) {
+    if (nin[k] === undefined || nin[k] === null) return;
+    var v = Number(nin[k]);
+    if (!isFinite(v) || v < 0 || v > PRODUCT_NUTRIENT_MAX[k]) { notes.push("range:" + k); return; }
+    if (markSuggested("nutrition." + k)) nutrition[k] = Math.round(v * 100) / 100;
+  });
+  // A per-100 g table must add up: fat + carbs + protein + salt cannot exceed 100 g,
+  // sugars cannot exceed carbs, saturates cannot exceed fat.
+  var sum = (nutrition.fat_g || 0) + (nutrition.carbs_g || 0) + (nutrition.protein_g || 0) + (nutrition.salt_g || 0);
+  if (sum > 101) codes.push("nutrition_sum");
+  if (nutrition.sugars_g !== undefined && nutrition.carbs_g !== undefined && nutrition.sugars_g > nutrition.carbs_g + 0.01) codes.push("nutrition_sugars");
+  if (nutrition.saturated_fat_g !== undefined && nutrition.fat_g !== undefined && nutrition.saturated_fat_g > nutrition.fat_g + 0.01) codes.push("nutrition_sat");
+
+  details.suggested = keptSuggested;
+  return { ok: codes.length === 0, errors: codes, warnings: notes, sheet: sheet };
+}
+
+/* New values win; fields the new snapshot did not mention are kept. A field
+   confirmed in the new snapshot stops being "suggested". */
+function mergeProductSheet(oldRow, patch) {
+  var o = oldRow || {};
+  var od = Object.assign({}, o.details || {}), on = Object.assign({}, o.nutrition || {});
+  var oldSug = (od.suggested || []).slice();
+  var nd = patch.details || {}, nn = patch.nutrition || {};
+  var details = Object.assign({}, od, nd), nutrition = Object.assign({}, on, nn);
+  delete details.suggested;
+  var newSug = nd.suggested || [];
+  var touched = Object.keys(nd).filter(function (k) { return k !== "suggested"; }).concat(Object.keys(nn).map(function (k) { return "nutrition." + k; }));
+  // old suggestions survive only for fields this snapshot did not touch
+  var sug = oldSug.filter(function (k) { return touched.indexOf(k) === -1; }).concat(newSug);
+  details.suggested = sug.filter(function (k, i) { return sug.indexOf(k) === i; });
+  return { name: patch.name || o.name, ai_category: patch.ai_category || o.ai_category, details: details, nutrition: nutrition };
+}
+
+/* What is still missing from a sheet (a row of farmer_products + a document count). */
+function productCompleteness(row, docCount) {
+  var r = row || {}, d = r.details || {}, n = r.nutrition || {}, sug = d.suggested || [];
+  var missing = [];
+  function has(k) {
+    if (k === "name") return !!r.name && PRODUCT_PLACEHOLDER_NAMES.indexOf(r.name) === -1;
+    if (k === "ai_category") return !!r.ai_category;
+    if (k === "allergens") return Array.isArray(d.allergens); // [] = "none", still an answer
+    if (k === "ingredients" || k === "pack_sizes") return Array.isArray(d[k]) && d[k].length > 0;
+    if (k === "shelf_life_days") return typeof d.shelf_life_days === "number";
+    return typeof d[k] === "string" && d[k] !== "";
+  }
+  PRODUCT_REQUIRED.forEach(function (k) { if (!has(k) || sug.indexOf(k) !== -1) missing.push(k); });
+  PRODUCT_NUTRIENTS.forEach(function (k) {
+    if (typeof n[k] !== "number" || sug.indexOf("nutrition." + k) !== -1) missing.push("nutrition." + k);
+  });
+  if (!docCount) missing.push("documents");
+  return { complete: missing.length === 0, missing: missing };
+}
+
 /* ---------- Attachments (ROADMAP item 32 pass B) ----------
    Pure rules for a file a producer attaches: which types, how big, and the
    storage path. The database enforces the same limits (bucket + table checks),
@@ -353,6 +473,7 @@ if (typeof module !== "undefined" && module.exports) {
     scoreBuyer: scoreBuyer, rankMatches: rankMatches,
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
+    guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     checkProductFile: checkProductFile, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }
