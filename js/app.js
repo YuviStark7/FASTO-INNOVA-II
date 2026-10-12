@@ -42,6 +42,7 @@ let state = {
   productFeed: [],      // a buyer's view: launched products
   feedDocs: {},         // product id -> documents of a launched product (loaded when its sheet is opened)
   openFeedProductId: null,
+  contactProductId: null,   // the launched product whose Contact box is open
   productFilter: { kind: "", status: "open", category: "" },
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
@@ -483,7 +484,7 @@ async function loadFarmerData(uid) {
     const b = byId[o.buyer_id] || {};
     return { id: o.id, buyerId: o.buyer_id, chatId: o.chat_id, name: b.name || o.buyer_id, type: b.type || "", zone: b.zone || "",
       message_it: o.message_it || "", message_en: o.message_en || "", flagged: o.flagged, status: o.status,
-      initiatedBy: o.initiated_by === "buyer" ? "buyer" : "farmer", offerId: o.offer_id || null,
+      initiatedBy: o.initiated_by === "buyer" ? "buyer" : "farmer", offerId: o.offer_id || null, productId: o.product_id || null, summary: o.farmer_summary || null,
       ts: new Date(o.created_at).getTime(), extra: [], messages: [] };
   });
   try {
@@ -2547,7 +2548,7 @@ function renderThread() {
     </button>
     <div class="thread-body" id="threadBody">
       <div class="day-divider">${esc(T("date.today"))}</div>
-      ${c.initiatedBy === "buyer" ? `<div class="bubble meta">${esc(T("clients.fromOffer"))}</div>` : `<div class="bubble meta">${esc(T("clients.draftedBy"))}</div>`}
+      ${c.initiatedBy === "buyer" ? `<div class="bubble meta">${esc(c.productId ? T("clients.fromProduct", { name: productNameFor(c.productId) }) : T("clients.fromOffer"))}</div>` : `<div class="bubble meta">${esc(T("clients.draftedBy"))}</div>`}
       ${c.flagged ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.flagged"))}</div>` : ""}
       ${c.profileEdited ? `<div class="bubble meta" style="color:var(--warn)">${esc(T("clients.profileEdited"))}</div>` : ""}
       ${c.initiatedBy === "buyer" ? "" : `<div class="bubble out">${esc(c.message_it)}</div>
@@ -2585,12 +2586,24 @@ async function sendClientNote(id) {
     if (c.posting) return; c.posting = true;
     const ok = await postThreadMessage(c, text);
     c.posting = false;
-    if (ok) { input.value = ""; renderThread(); }
+    if (ok) { input.value = ""; renderThread(); nameProducerToBuyer(c); }
     return;
   }
   c.extra = c.extra || []; c.extra.push({ text, ts: Date.now() });
   input.value = "";
   renderThread();
+}
+function productNameFor(id) { const p = state.products.find(x => x.id === id); return p ? p.name : T("clients.yourProduct"); }
+/* The agreed rule: a buyer who starts a conversation does not see who the
+   producer is until the producer answers. On the first reply the producer's
+   display name (nickname, else first name; never surname, phone, address or
+   VAT) is added to the summary the buyer sees beside the thread. */
+function nameProducerToBuyer(c) {
+  if (!c || c.initiatedBy !== "buyer" || isLocalId(c.id)) return;
+  if (c.summary && c.summary.producer_name) return;
+  const name = accountDisplayName(); if (!name) return;
+  c.summary = Object.assign({}, c.summary || {}, { producer_name: String(name).slice(0, 40) });
+  bgSave(DataStore.updateOutreach(c.id, { farmer_summary: c.summary }), "save.sentMark");
 }
 // A buyer-started thread has no AI draft, so its preview is the latest message.
 function clientPreview(c) {
@@ -4137,7 +4150,7 @@ async function loadBuyerInbox() {
   const { data, error } = await DataStore.listBuyerOutreach(biz.id);
   if (error) throw error;
   state.inbox = await Promise.all((data || []).map(async o => {
-    const t = { id: o.id, ts: new Date(o.created_at).getTime(), summary: o.farmer_summary || null, offerId: o.offer_id || null, messages: [] };
+    const t = { id: o.id, ts: new Date(o.created_at).getTime(), summary: o.farmer_summary || null, offerId: o.offer_id || null, productId: o.product_id || null, messages: [] };
     try {
       const res = await DataStore.listOutreachMessages(o.id);
       if (res && !res.error && res.data) t.messages = mapThreadMessages(res.data);
@@ -4148,7 +4161,10 @@ async function loadBuyerInbox() {
 }
 function lastActivity(t) { const m = t.messages[t.messages.length - 1]; return m ? m.ts : t.ts; }
 function inboxTitle(t) {
-  return t.summary && t.summary.village ? T("buyer.convoFrom", { village: t.summary.village }) : T("buyer.convoUnknown");
+  const s = t.summary;
+  let base = s && s.village ? T("buyer.convoFrom", { village: s.village }) : T("buyer.convoUnknown");
+  if (s && s.product && s.products && s.products[0] && s.products[0].name) base = T("buyer.convoProduct", { name: s.products[0].name });
+  return s && s.producer_name ? T("buyer.convoNamed", { producer: s.producer_name, about: base }) : base;
 }
 function renderBuyerBadge() {
   const b = $("buyerInboxBadge"); if (!b) return;
@@ -4162,6 +4178,7 @@ function farmerSummaryHTML(s) {
   if (!s) return `<div class="buyer-note"><p>${esc(T("buyer.sumNone"))}</p></div>`;
   const prods = (s.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
   return `<div class="buyer-note"><dl class="buyer-facts">
+    ${s.producer_name ? `<dt>${esc(T("buyer.sumProducer"))}</dt><dd>${esc(s.producer_name)}</dd>` : ""}
     ${s.product ? "" : `<dt>${esc(T("buyer.sumVillage"))}</dt><dd>${esc(s.village || "—")}${s.distance_km != null ? " · " + esc(T("buyer.km", { n: s.distance_km })) : ""}</dd>`}
     <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
     ${s.product ? `<dt>${esc(productFieldLabel("pack_sizes"))}</dt><dd>${esc((s.product.pack_sizes || []).join(", ") || "—")}</dd>
@@ -4396,6 +4413,50 @@ function buildOfferSummary(o) {
   return { village: o.village || null, distance_km: o.distance_km != null ? Number(o.distance_km) : null, organic: o.organic || null,
     months: o.months || [], products: o.products || [] };
 }
+/* ---------- Buyer contacts the producer from a launched product (ROADMAP item 33) ----------
+   Same shape as contacting an offer: a buyer-started conversation row (database
+   rule: approved owner of the business, product launched, addressed to its
+   owner), then the buyer's own first message, typed by the buyer. The producer
+   is not named to the buyer until they reply. */
+function buildProductSummary(p) {
+  const d = p.details || {};
+  return { village: null, distance_km: null, organic: null, months: [],
+    products: [{ name: String(p.name || "").slice(0, 60), category: p.ai_category || null, kg_per_week: 0 }],
+    product: { pack_sizes: (d.pack_sizes || []).slice(0, 10).map(x => String(x).slice(0, 60)), shelf_life_days: d.shelf_life_days || null, min_order: d.min_order || null } };
+}
+function productContactHTML(p) {
+  const thread = (state.inbox || []).find(t => t.productId === p.id);
+  if (thread) return `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px;margin-right:8px" onclick="openInboxFromOffer('${esc(thread.id)}')">${esc(T("offer.openThread"))}</button>`;
+  if (state.contactProductId === p.id) return `<div class="inbox-reply" style="margin-top:10px"><input type="text" class="input-glass" id="productMsgInput" maxlength="2000" aria-label="${escAttr(T("pcontact.msgLabel"))}" placeholder="${escAttr(T("pcontact.msgLabel"))}">
+    <button type="button" class="btn btn-primary btn-sm" onclick="contactProduct('${esc(p.id)}')">${esc(T("buyer.replySend"))}</button></div>`;
+  return `<button type="button" class="btn btn-primary btn-sm" style="margin-top:10px;margin-right:8px" aria-label="${escAttr(T("pcontact.contactFor", { name: p.name }))}" onclick="openProductContact('${esc(p.id)}')">${esc(T("pcontact.contact"))}</button>`;
+}
+function openProductContact(id) { state.contactProductId = id; renderBuyerProducts(); const i = $("productMsgInput"); if (i && i.focus) i.focus(); }
+async function contactProduct(productId) {
+  const p = (state.productFeed || []).find(x => x.id === productId), biz = myBusiness(); if (!p || !biz) return;
+  const input = $("productMsgInput");
+  const text = input ? input.value : "";
+  if (!buildMessageRow("x", state.farmerId, text, "buyer")) { toast(T("offer.msgEmpty")); return; }
+  if (contactBusy) return; contactBusy = true;
+  const key = "prod:" + productId;
+  try {
+    const id = pendingInquiries[key] || newUuid();
+    if (!pendingInquiries[key]) {
+      const { error } = await DataStore.createInquiry({ id, farmer_id: p.owner_id, chat_id: null, buyer_id: biz.id, status: "sent", initiated_by: "buyer",
+        product_id: p.id, flagged: false, farmer_summary: buildProductSummary(p) });
+      if (error) throw error;
+      pendingInquiries[key] = id;        // a failed first message must retry on THIS row
+    }
+    const { error: mErr } = await DataStore.sendOutreachMessage(buildMessageRow(id, state.farmerId, text, "buyer"));
+    if (mErr) throw mErr;
+    delete pendingInquiries[key];
+    state.contactProductId = null;
+    await loadBuyerInbox();
+    toast(T("pcontact.sent"));
+    switchScreen("buyerInbox"); openInboxThread(id);
+  } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); }
+  contactBusy = false;
+}
 /* ---------- Buyer: launched products (ROADMAP item 32 pass G) ----------
    An approved buyer sees the products farmers have launched: the full sheet and
    the documents, but never the producer's name, phone, address or VAT (the sheet
@@ -4428,6 +4489,7 @@ function buyerProductCardHTML(p) {
       `<div style="margin-top:10px">${docs || esc(T("buyer.noDocs"))}</div>`;
   }
   return `<div class="buyer-note offer-card"><b>${esc(p.name)}</b>${p.ai_category ? ` <span class="chip">${esc(p.ai_category)}</span>` : ""}${summary}${more}` +
+    productContactHTML(p) +
     `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T(open ? "buyer.hideSheetFor" : "buyer.showSheetFor", { name: p.name }))}" onclick="toggleFeedProduct('${esc(p.id)}')">${esc(T(open ? "buyer.hideSheet" : "buyer.showSheet"))}</button></div>`;
 }
 function renderBuyerProducts() {

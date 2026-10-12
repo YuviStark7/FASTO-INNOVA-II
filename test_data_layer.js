@@ -208,6 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
   launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
@@ -2417,6 +2418,65 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the buyer inbox shows pack sizes and minimum order for a product thread", html.includes("150 g") && html.includes("10 cases") && !html.includes("Village"));
 
     a.DB.buyers = savedBuyers; a.DB.channels = savedChannels; st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.clients = savedClients;
+  }
+
+  /* ---- ROADMAP item 33: buyer contacts the producer from a launched product ---- */
+  {
+    const a = app, st = a.state;
+    const saved = { claims: st.claims, farmerId: st.farmerId, feed: st.productFeed, inbox: st.inbox, open: st.openThreadId, clients: st.clients, products: st.products };
+    const biz = a.DB.buyers[0];
+    st.claims = [{ status: "approved", buyer_id: biz.id }]; st.farmerId = "ub"; st.inbox = []; st.openThreadId = null;
+    st.productFeed = [{ id: "pr1", owner_id: "uf", name: "Brie", ai_category: "soft cheese", status: "active", kind: "packaged",
+      details: { pack_sizes: ["150 g"], shelf_life_days: 60, min_order: "10 cases", ingredients: ["milk"], allergens: [] }, nutrition: {} }];
+    for (const id of ["productMsgInput", "buyerList", "buyerThreadPane", "buyerSidePanel", "buyerProductsBody"]) els[id] = els[id] || fakeEl(id);
+
+    check("the product card offers Contact, naming the product", a.productContactHTML(st.productFeed[0]).includes('aria-label="Contact the producer of Brie"'));
+    a.openProductContact("pr1");
+    check("pressing Contact opens a message box for that product", a.productContactHTML(st.productFeed[0]).includes('id="productMsgInput"'));
+    const sum = a.buildProductSummary(st.productFeed[0]);
+    check("the summary a buyer thread carries is the product, with no place, name or contact",
+      sum.village === null && sum.products[0].name === "Brie" && sum.product.min_order === "10 cases" && !JSON.stringify(sum).match(/uf|phone|address|vat/i));
+
+    els.productMsgInput.value = "   "; sb.reset();
+    await a.contactProduct("pr1");
+    check("an empty first message sends nothing", sb.chains.length === 0);
+
+    els.productMsgInput.value = "Buongiorno, mi interessa";
+    sb.reset(); sb.router = ch => ch.table === "outreach_messages" ? { data: null, error: { message: "boom" } } : { data: [], error: null };
+    await a.contactProduct("pr1");
+    const ins = sb.chains.find(c => c.table === "outreach" && c.ops[0].op === "insert"), row = ins.ops[0].args[0];
+    check("the inquiry row is buyer-started, about the product, addressed to its owner, from the buyer's own business, without a chat link",
+      row.initiated_by === "buyer" && row.product_id === "pr1" && row.farmer_id === "uf" && row.buyer_id === biz.id && row.status === "sent" && row.chat_id === null && row.offer_id === undefined && /^[0-9a-f-]{36}$/.test(row.id), JSON.stringify(row));
+    check("a failed first message keeps the row id so a retry makes no second inquiry", a.pendingInquiries["prod:pr1"] === row.id);
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await a.contactProduct("pr1");
+    check("the retry sends only the buyer's message, on the same row",
+      !sb.chains.some(c => c.table === "outreach" && c.ops[0].op === "insert") &&
+      sb.chains.some(c => c.table === "outreach_messages" && c.ops[0].op === "insert" && c.ops[0].args[0].outreach_id === row.id && c.ops[0].args[0].sender_role === "buyer" && c.ops[0].args[0].body === "Buongiorno, mi interessa"));
+
+    // existing conversation -> Open conversation, not a second Contact
+    st.inbox = [{ id: "t9", productId: "pr1", messages: [], summary: sum }];
+    check("once a conversation exists the card offers to open it", a.productContactHTML(st.productFeed[0]).includes("openInboxFromOffer('t9')") && !a.productContactHTML(st.productFeed[0]).includes("openProductContact"));
+    check("the buyer's thread is titled by the product, and carries no producer name yet", a.inboxTitle(st.inbox[0]) === "About Brie" && !a.farmerSummaryHTML(sum).includes("Producer"));
+
+    // the producer is named only once they reply
+    const named = { initiated_by: "buyer", c: null };
+    st.farmerProfile = { nickname: "Anna", first_name: "Anna" };
+    const cl = { id: "o1", initiatedBy: "buyer", summary: sum, productId: "pr1" };
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    a.nameProducerToBuyer(cl);
+    const upd = sb.chains.find(c => c.table === "outreach" && c.ops[0].op === "update");
+    check("on the first reply the producer's display name (only) is added to what the buyer sees",
+      cl.summary.producer_name === "Anna" && upd && upd.ops[0].args[0].farmer_summary.producer_name === "Anna" && upd.ops[0].args[0].farmer_summary.products[0].name === "Brie" && !JSON.stringify(upd.ops[0].args[0]).match(/phone|address|vat/i));
+    sb.reset(); a.nameProducerToBuyer(cl);
+    check("it is done once, not on every message", sb.chains.length === 0);
+    sb.reset(); a.nameProducerToBuyer({ id: "o2", initiatedBy: "farmer", summary: {} });
+    check("a conversation the producer started is not touched", sb.chains.length === 0);
+    const after = Object.assign({}, st.inbox[0], { summary: cl.summary });
+    check("after the reply the buyer sees the producer's name in the title and the summary", a.inboxTitle(after).startsWith("Anna ·") && a.farmerSummaryHTML(cl.summary).includes("Producer") && a.farmerSummaryHTML(cl.summary).includes("Anna"));
+    check("a farmer sees which product a buyer asked about", a.productNameFor("pr-unknown") === "your product");
+
+    st.claims = saved.claims; st.farmerId = saved.farmerId; st.productFeed = saved.feed; st.inbox = saved.inbox; st.openThreadId = saved.open; st.clients = saved.clients; st.products = saved.products;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */
