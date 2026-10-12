@@ -1,0 +1,84 @@
+/* Glass folder cards: styles for js/folder-card.js (see the note at its top).
+   Ported from the React "Glass Folder Cards" component; smoked-glass tone only,
+   the font is the app's own, and the entrance animation, key and menu are left out. */
+.gf-root{
+  --gf-px:0; --gf-py:0;
+  --gf-ease:cubic-bezier(.2,.8,.2,1); --gf-spring:cubic-bezier(.34,1.36,.5,1);
+  --gf-hinge:0deg; --gf-lift:42px; --gf-spread:0px; --gf-fan:0deg; --gf-stack:15px;
+  --gf-ink:#f5f5f7; --gf-ink-soft:rgba(245,245,247,.72);
+  position:relative; display:inline-block; flex:none; vertical-align:top; isolation:isolate;
+  font-family:inherit; -webkit-tap-highlight-color:transparent;
+}
+.gf-root:hover,.gf-root:focus-within{ --gf-hinge:-11deg; --gf-lift:-34px; --gf-spread:8px; --gf-fan:1.4deg; --gf-stack:10px; }
+.gf-root[data-open]{ --gf-hinge:-24deg; --gf-lift:-96px; --gf-spread:40px; --gf-fan:5deg; --gf-stack:30px; }
+.gf-stage{ position:absolute; left:0; top:0; width:340px; height:272px; transform-origin:0 0; }
+.gf-tilt{ position:absolute; inset:0; }
+.gf-shadow{ position:absolute; left:18px; right:18px; bottom:-6px; height:60px; border-radius:40px; background:rgba(0,0,0,.62); filter:blur(22px); }
+.gf-back{ position:absolute; inset:0; overflow:hidden; background:linear-gradient(180deg,#2a2a2e 0%,#121214 100%); }
+.gf-back-sheen{ position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 22%),radial-gradient(120% 80% at 80% 0%,rgba(255,255,255,.16),rgba(255,255,255,0) 60%); }
+.gf-rim{ position:absolute; left:0; top:0; max-width:none; overflow:visible; pointer-events:none; fill:none; }
+.gf-back-rim{ width:340px; height:272px; }
+.gf-back-rim path{ stroke:rgba(255,255,255,.16); stroke-width:1; }
+
+/* the files: after the glass in the tab order, beneath it on screen */
+.gf-files{ position:absolute; inset:0; z-index:5; pointer-events:none; clip-path:inset(-400px -400px 10px -400px); }
+.gf-sheet-slot{ display:contents; }
+.gf-sheet{
+  all:unset; box-sizing:border-box; position:absolute; left:34px; top:96px; width:272px; height:184px;
+  border-radius:16px; overflow:hidden; cursor:pointer; pointer-events:auto;
+  background:linear-gradient(180deg,#2c2c30 0%,#1c1c1f 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 0 0 .5px rgba(255,255,255,.08),0 12px 28px -8px rgba(0,0,0,.7);
+  transform-origin:50% 100%;
+  transform:translate(calc(var(--gf-jx) + var(--gf-slot) * var(--gf-spread)),calc(var(--gf-lift) + var(--gf-depth) * var(--gf-stack) * -1)) rotate(calc(var(--gf-jr) + var(--gf-slot) * var(--gf-fan)));
+  transition:transform .75s var(--gf-spring) calc(var(--gf-depth) * 40ms),box-shadow .4s var(--gf-ease);
+}
+.gf-root[data-open] .gf-sheet:hover,.gf-root[data-open] .gf-sheet:focus-visible{
+  transform:translate(calc(var(--gf-jx) + var(--gf-slot) * var(--gf-spread)),calc(var(--gf-lift) + var(--gf-depth) * var(--gf-stack) * -1 - 18px)) rotate(calc(var(--gf-slot) * var(--gf-fan) * .6));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 22px 40px -12px rgba(0,0,0,.8); transition-delay:0s;
+}
+.gf-sheet:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.gf-sheet-art{ position:absolute; inset:0; background-size:cover; background-position:center; background-color:#1a1a1d; opacity:.95; }
+.gf-sheet--art::after{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,rgba(0,0,0,0) 40%); box-shadow:inset 0 0 0 1px rgba(255,255,255,.2); }
+.gf-sheet-head{ position:absolute; left:14px; right:14px; top:11px; z-index:1; display:flex; align-items:baseline; justify-content:space-between; gap:10px; white-space:nowrap; }
+.gf-sheet-name{ overflow:hidden; text-overflow:ellipsis; font-size:12.5px; font-weight:500; color:#fafafa; }
+.gf-sheet-meta{ flex:none; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.02em; color:rgba(250,250,250,.7); }
+.gf-lines{ position:absolute; left:14px; right:14px; top:40px; display:flex; flex-direction:column; gap:9px; }
+.gf-lines i{ display:block; height:5px; border-radius:3px; background:rgba(255,255,255,.08); }
+.gf-lines i:first-child{ height:9px; margin-bottom:4px; background:rgba(255,255,255,.16); }
+
+/* the frosted front, hinged on its bottom edge */
+.gf-front{
+  position:absolute; left:0; top:74px; width:340px; height:198px; z-index:10;
+  -webkit-backdrop-filter:blur(22px) saturate(1.5); backdrop-filter:blur(22px) saturate(1.5);
+  transform-origin:50% 100%; transform:perspective(760px) rotateX(var(--gf-hinge));
+  transition:transform .8s var(--gf-spring);
+}
+.gf-tint{ position:absolute; inset:0; background:linear-gradient(180deg,rgba(18,18,20,.18) 0%,rgba(14,14,16,.62) 46%,rgba(8,8,10,.94) 100%); }
+.gf-spec{ position:absolute; inset:0; pointer-events:none; mix-blend-mode:screen; opacity:.16;
+  background:radial-gradient(260px 200px at 50% 30%,rgba(255,255,255,.5),rgba(255,255,255,0) 70%); }
+.gf-front-rim{ width:340px; height:198px; opacity:.55; }
+.gf-front-rim path{ stroke-width:2.4; transition:stroke-width .3s var(--gf-ease); }
+.gf-hit{ all:unset; position:absolute; inset:0; z-index:1; cursor:pointer; }
+.gf-hit:focus-visible ~ .gf-label .gf-title{ text-decoration:underline; text-decoration-thickness:1.5px; text-underline-offset:4px; }
+.gf-front:has(.gf-hit:focus-visible) .gf-front-rim path{ stroke-width:5; }
+.gf-label{ position:absolute; z-index:2; left:28px; bottom:32px; display:flex; flex-direction:column; gap:4px; max-width:284px; pointer-events:none; color:var(--gf-ink); }
+.gf-title{ font-size:18px; font-weight:500; line-height:1.15; letter-spacing:-.012em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gf-meta{ font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:12px; letter-spacing:.03em; color:var(--gf-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+@media (prefers-reduced-motion:reduce){
+  .gf-root *,.gf-root *::before,.gf-root *::after{ transition-duration:0s !important; transition-delay:0s !important; animation:none !important; }
+}
+
+/* My products: a folder per product, the text and buttons underneath */
+.prod-folder-card{ background:none; padding:0; align-items:center; }
+.prod-folder-card > h3{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.prod-folder-card .chips, .prod-folder-card p, .prod-folder-card .prod-actions{ width:100%; max-width:300px; }
+.prod-folder-card p{ text-align:left; }
+#productsScreen .prod-grid{ padding:24px 30px 12px; row-gap:22px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); justify-items:center; }
+@media (max-width:600px){ #productsScreen .prod-grid{ padding:24px 8px 12px; } }
+@media (prefers-reduced-transparency:reduce){
+  .gf-front{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+  .gf-tint{ background:#0e0e10; }
+}

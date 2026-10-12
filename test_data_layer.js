@@ -187,7 +187,7 @@ function loadApp(root) {
      that declares them, so evaluating these files separately would leave
      app.js unable to see DataStore or DB. */
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
-  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/app.js"];
+  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
 ;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, toggleRailMenu, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
@@ -208,6 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
   launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
@@ -2221,7 +2222,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     sb.router = ch => ch.table === "farmer_products" ? { data: rows, error: null } : ch.table === "product_documents" ? { data: [{ product_id: "a" }, { product_id: "a" }, { product_id: "b" }], error: null } : { data: [], error: null };
     await a.loadProducts();
     check("the list is read by owner and document counts are tallied per product",
-      st.products.length === 4 && st.productDocCounts.a === 2 && st.productDocCounts.b === 1 && sb.chains.some(c => c.table === "product_documents" && c.ops.some(o => o.op === "select" && o.args[0] === "product_id")));
+      st.products.length === 4 && st.productDocCounts.a === 2 && st.productDocCounts.b === 1 && sb.chains.some(c => c.table === "product_documents" && c.ops.some(o => o.op === "select" && /file_name/.test(String(o.args[0])))));
     const card = a.productCardHTML(rows[0]);
     check("a card names the product and its chat, shows documents, and its buttons name the product",
       card.includes("Brie") && card.includes("From chat: Brie chat") && card.includes("2 documents") && card.includes('aria-label="Edit Brie in the chat that created it"') && card.includes('aria-label="Archive Brie"'));
@@ -2477,6 +2478,43 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("a farmer sees which product a buyer asked about", a.productNameFor("pr-unknown") === "your product");
 
     st.claims = saved.claims; st.farmerId = saved.farmerId; st.productFeed = saved.feed; st.inbox = saved.inbox; st.openThreadId = saved.open; st.clients = saved.clients; st.products = saved.products;
+  }
+
+  /* ---- My products as glass folders (Yuvi's request, 2026-10-12) ---- */
+  {
+    const a = app, st = a.state;
+    const f = (n) => ({ id: "d" + n, name: "doc" + n + ".pdf", meta: "PDF", path: "u/p/" + n, onclick: "openMyDoc('p','d" + n + "')", openLabel: "Open document doc" + n });
+    const h = a.folderCardHTML({ id: "p1", label: "Cheese <b>", meta: "Draft", seed: "Cheese", openLabel: "Open folder", closeLabel: "Close folder", filesLabel: "Docs", files: [f(1), f(2), f(3), f(4), f(5), f(6)] });
+    check("the folder names the product (escaped), is closed by default, and its files are out of reach until opened",
+      h.includes("Cheese &lt;b&gt;") && !h.includes("Cheese <b>") && h.includes('aria-expanded="false"') && /class="gf-files"[^>]*\binert\b/.test(h));
+    check("only the newest four files are drawn, each a real button that opens that document",
+      (h.match(/<button type="button" class="gf-sheet[ "]/g) || []).length === 4 && h.includes("openMyDoc('p','d6')") && !h.includes("doc1.pdf") && (h.match(/<button type="button" class="gf-sheet/g) || []).length === 4);
+    check("the folder's open/close control has a name that says what it does", h.includes('aria-label="Open folder"') && h.includes('data-close-label="Close folder"'));
+    check("an empty folder has no sheets", !a.folderCardHTML({ id: "p2", label: "x", openLabel: "o", closeLabel: "c" }).includes("gf-sheet-slot"));
+    check("the same name always gets the same picture, and different names can differ", a.gfArtStyle("Honey") === a.gfArtStyle("Honey") && a.gfArtStyle("Honey") !== a.gfArtStyle("Olive oil 0.5 L"));
+    check("a file's kind and size read as 'PDF · 1.2 MB' / 'PNG · 293 KB'", a.docMeta({ mime_type: "application/pdf", size_bytes: 1258291 }) === "PDF · 1.2 MB" && a.docMeta({ mime_type: "image/png", size_bytes: 300000 }) === "PNG · 293 KB" && a.docMeta({ mime_type: "image/jpeg", size_bytes: 0 }) === "JPG");
+
+    // toggling, with tiny fake elements
+    const mkRoot = () => { const attrs = {}, files = { attrs: {}, toggleAttribute(k, on) { on ? this.attrs[k] = "" : delete this.attrs[k]; } }, btn = { attrs: { "data-open-label": "Open", "data-close-label": "Close" }, setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; } };
+      return { attrs, hasAttribute: k => k in attrs, toggleAttribute(k, on) { on ? attrs[k] = "" : delete attrs[k]; }, querySelector: s => s === ".gf-hit" ? btn : files, querySelectorAll: () => [], btn, files, closest() { return this; } }; };
+    const r = mkRoot();
+    a.toggleFolder({ closest: () => r });
+    check("opening a folder marks it open, updates the control's name and lets the files be focused", "data-open" in r.attrs && r.btn.attrs["aria-expanded"] === "true" && r.btn.attrs["aria-label"] === "Close" && !("inert" in r.files.attrs));
+    a.toggleFolder({ closest: () => r });
+    check("closing it puts everything back", !("data-open" in r.attrs) && r.btn.attrs["aria-expanded"] === "false" && r.btn.attrs["aria-label"] === "Open" && "inert" in r.files.attrs);
+
+    // the product card now carries the folder with the real documents
+    const savedProducts = st.products, savedDocs = st.productDocs, savedCounts = st.productDocCounts;
+    st.farmerId = "u1";
+    const prod = { id: "pf", name: "Brie", status: "draft", kind: "packaged", ai_category: "soft cheese", source_chat_id: null, details: {}, nutrition: {}, updated_at: "2026-10-12T10:00:00Z" };
+    st.productDocs = { pf: [{ id: "dx", file_name: "label.pdf", mime_type: "application/pdf", size_bytes: 52000, storage_path: "u1/products/x" }] }; st.productDocCounts = { pf: 1 };
+    const card = a.productCardHTML(prod);
+    check("a product card shows its folder, its documents as files, and keeps its buttons",
+      card.includes('class="gf-root"') && card.includes("label.pdf") && card.includes("PDF · 51 KB") && card.includes("openMyDoc('pf','dx')") && card.includes('aria-label="Open the folder of Brie, 1 documents"') && card.includes('aria-label="Archive Brie"'));
+    sb.reset(); let opened = null; box.open = (u) => { opened = u; };
+    await a.openMyDoc("pf", "dx");
+    check("a document opens through a short-lived link on the private bucket", opened === "https://signed.example/u1/products/x" && sb.storageCalls.some(c => c.fn === "signed" && c.bucket === "farmer-files"));
+    st.products = savedProducts; st.productDocs = savedDocs; st.productDocCounts = savedCounts;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */

@@ -113,8 +113,8 @@ const DataStore = {
   // A second chat that works on an existing product (the product keeps its original chat in source_chat_id).
   linkProductToChat(productId, chatId) { return sb.from("product_chat_links").insert({ product_id: productId, chat_id: chatId }); },
   linkedProductForChat(chatId) { return sb.from("product_chat_links").select("product_id, farmer_products(*)").eq("chat_id", chatId).limit(1); },
-  // One small row per document, only to count them per product on the My products page.
-  listMyProductDocCounts(uid) { return sb.from("product_documents").select("product_id").eq("owner_id", uid); },
+  // The farmer's documents (names only, never file contents), to draw the files in each product folder.
+  listMyProductDocs(uid) { return sb.from("product_documents").select("id, product_id, file_name, mime_type, size_bytes, storage_path").eq("owner_id", uid).order("created_at", { ascending: true }); },
   // The draft product a chat created (a chat makes at most one).
   productForChat(chatId) { return sb.from("farmer_products").select("*").eq("source_chat_id", chatId).order("created_at", { ascending: true }).limit(1); },
   // Files live in the private "farmer-files" bucket; RLS limits each user to their own folder.

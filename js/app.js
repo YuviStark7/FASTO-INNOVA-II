@@ -39,6 +39,7 @@ let state = {
   offers: [],           // a farmer's own published/unpublished offers (item 29)
   products: [],         // the farmer's own product sheets (farmer_products), newest change first
   productDocCounts: {}, // product id -> number of attached documents
+  productDocs: {},      // product id -> the documents themselves (names, types, paths): the files in its folder
   productFeed: [],      // a buyer's view: launched products
   feedDocs: {},         // product id -> documents of a launched product (loaded when its sheet is opened)
   openFeedProductId: null,
@@ -1177,12 +1178,12 @@ function discardScan(id) {
 async function loadProducts() {
   if (!state.farmerId) return;
   try {
-    const [pr, dr] = await Promise.all([DataStore.listMyProducts(state.farmerId), DataStore.listMyProductDocCounts(state.farmerId)]);
+    const [pr, dr] = await Promise.all([DataStore.listMyProducts(state.farmerId), DataStore.listMyProductDocs(state.farmerId)]);
     if (pr.error) throw pr.error;
     state.products = pr.data || [];
-    const counts = {};
-    ((dr && dr.data) || []).forEach(d => { counts[d.product_id] = (counts[d.product_id] || 0) + 1; });
-    state.productDocCounts = counts;
+    const counts = {}, docs = {};
+    ((dr && dr.data) || []).forEach(d => { counts[d.product_id] = (counts[d.product_id] || 0) + 1; (docs[d.product_id] = docs[d.product_id] || []).push(d); });
+    state.productDocCounts = counts; state.productDocs = docs;
   } catch (e) { noteSaveFailure("save.product", e); }
   if (state.screen === "products") renderProducts();
 }
@@ -1204,7 +1205,13 @@ function productCardHTML(p) {
     ? `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.launchFor", { name }))}" onclick="launchProduct('${esc(p.id)}')">${esc(T("products.launch"))}</button>` : "";
   const withdraw = p.status === "active"
     ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.withdrawFor", { name }))}" onclick="withdrawProduct('${esc(p.id)}')">${esc(T("products.withdraw"))}</button>` : "";
-  return `<article class="prod-card"><h3>${esc(name)}</h3><div class="chips">` +
+  const docs = state.productDocs[p.id] || [];
+  const folder = folderCardHTML({ id: p.id, label: name, seed: name, width: 300,
+    meta: productStatusLabel(p.status) + (p.ai_category ? " · " + p.ai_category : ""),
+    openLabel: T("products.folderOpen", { name, n: state.productDocCounts[p.id] || 0 }), closeLabel: T("products.folderClose", { name }), filesLabel: T("products.folderFiles", { name }),
+    files: docs.filter(d => d.id).map(d => ({ id: d.id, name: d.file_name, meta: docMeta(d), path: d.storage_path, image: /^image\//.test(d.mime_type || ""),
+      openLabel: T("products.openDoc", { name: d.file_name }), onclick: "openMyDoc('" + p.id + "','" + d.id + "')" })) });
+  return `<article class="prod-card prod-folder-card"><h3>${esc(name)}</h3>${folder}<div class="chips">` +
     `<span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
     `<span class="chip">${esc(p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"))}</span>` +
     (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
@@ -1212,6 +1219,30 @@ function productCardHTML(p) {
     `<p>${esc(p.source_chat_id && src ? T("products.fromChat", { title: src.title }) : T("products.noChat"))} · ${esc(relDate(p.updated_at))}</p>` +
     (p.status === "active" ? `<p>${esc(T("products.visible"))}</p>` : "") +
     `<div class="prod-actions">${primary}${launch}${withdraw}${arch}</div></article>`;
+}
+// "PDF · 1.2 MB": a short kind and a size, for the sheet in a folder.
+function docMeta(d) {
+  const kind = d.mime_type === "application/pdf" ? "PDF" : String(d.mime_type || "").replace("image/", "").toUpperCase().replace("JPEG", "JPG");
+  const n = Number(d.size_bytes) || 0;
+  return kind + (n ? " · " + (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : "");
+}
+// Opening a folder loads the previews of its pictures (the bucket is private: short-lived links).
+window.onFolderOpened = function (root) {
+  root.querySelectorAll(".gf-sheet[data-image]:not([data-loaded])").forEach(el => {
+    el.setAttribute("data-loaded", "1");
+    DataStore.signedFileUrl(el.getAttribute("data-path")).then(r => {
+      const art = el.querySelector(".gf-sheet-art");
+      if (r && r.data && r.data.signedUrl && art) art.style.backgroundImage = 'url("' + r.data.signedUrl + '")';
+    }).catch(() => {});
+  });
+};
+async function openMyDoc(productId, docId) {
+  const d = (state.productDocs[productId] || []).find(x => x.id === docId); if (!d) return;
+  try {
+    const r = await DataStore.signedFileUrl(d.storage_path);
+    if (r.error || !r.data || !r.data.signedUrl) throw (r.error || new Error("no link"));
+    window.open(r.data.signedUrl, "_blank", "noopener");
+  } catch (e) { toast(T("buyer.docFailed")); }
 }
 function productSearchFields(p) {
   const d = p.details || {};
