@@ -39,6 +39,9 @@ let state = {
   offers: [],           // a farmer's own published/unpublished offers (item 29)
   products: [],         // the farmer's own product sheets (farmer_products), newest change first
   productDocCounts: {}, // product id -> number of attached documents
+  productFeed: [],      // a buyer's view: launched products
+  feedDocs: {},         // product id -> documents of a launched product (loaded when its sheet is opened)
+  openFeedProductId: null,
   productFilter: { kind: "", status: "open", category: "" },
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
@@ -1188,13 +1191,19 @@ function productCardHTML(p) {
   const arch = p.status === "archived"
     ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.restoreFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', false)">${esc(T("products.restore"))}</button>`
     : `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.archiveFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', true)">${esc(T("products.archive"))}</button>`;
+  const complete = pc.complete;
+  const launch = p.status === "draft" && complete
+    ? `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.launchFor", { name }))}" onclick="launchProduct('${esc(p.id)}')">${esc(T("products.launch"))}</button>` : "";
+  const withdraw = p.status === "active"
+    ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.withdrawFor", { name }))}" onclick="withdrawProduct('${esc(p.id)}')">${esc(T("products.withdraw"))}</button>` : "";
   return `<article class="prod-card"><h3>${esc(name)}</h3><div class="chips">` +
     `<span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
     `<span class="chip">${esc(p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"))}</span>` +
     (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
     `<p>${esc(pc.complete ? T("products.complete") : T("products.missing", { n: pc.missing.length }))} · ${esc(T("products.docs", { n: state.productDocCounts[p.id] || 0 }))}</p>` +
     `<p>${esc(p.source_chat_id && src ? T("products.fromChat", { title: src.title }) : T("products.noChat"))} · ${esc(relDate(p.updated_at))}</p>` +
-    `<div class="prod-actions">${primary}${arch}</div></article>`;
+    (p.status === "active" ? `<p>${esc(T("products.visible"))}</p>` : "") +
+    `<div class="prod-actions">${primary}${launch}${withdraw}${arch}</div></article>`;
 }
 function productSearchFields(p) {
   const d = p.details || {};
@@ -1236,14 +1245,27 @@ async function openProductChat(id) {
   selectChat(chat.id);
   switchScreen("assistant");
 }
-async function setProductArchived(id, archive) {
-  const p = state.products.find(x => x.id === id); if (!p) return;
-  const r = await DataStore.updateProduct(id, { status: archive ? "archived" : "draft" });
-  if (r.error) { saveFailedWithOwnMessage("save.product", r.error, T("save.couldnt", { what: T("save.product") })); return; }
-  Object.assign(p, r.data || { status: archive ? "archived" : "draft" });
-  toast(T(archive ? "products.archived" : "products.restored", { name: p.name }));
+async function setProductStatus(id, status, doneKey) {
+  const p = state.products.find(x => x.id === id); if (!p) return false;
+  const r = await DataStore.updateProduct(id, { status });
+  if (r.error) { saveFailedWithOwnMessage("save.product", r.error, T("save.couldnt", { what: T("save.product") })); return false; }
+  Object.assign(p, r.data || { status });
+  toast(T(doneKey, { name: p.name }));
   renderProducts();
+  return true;
 }
+function setProductArchived(id, archive) { return setProductStatus(id, archive ? "archived" : "draft", archive ? "products.archived" : "products.restored"); }
+/* Launch = make the product visible to approved buyers (status "active"). Only
+   a complete sheet can be launched (the database refuses otherwise), and it asks
+   first, saying exactly what buyers will see. */
+async function launchProduct(id) {
+  const p = state.products.find(x => x.id === id); if (!p) return false;
+  if (!productCompleteness(p, state.productDocCounts[p.id] || 0).complete) { toast(T("products.notComplete")); return false; }
+  const ok = await showDialog({ titleKey: "products.launchTitle", bodyKey: "products.launchBody", vars: { name: p.name }, okKey: "products.launchOk", cancelKey: "dlg.cancel" });
+  if (!ok) return false;
+  return setProductStatus(id, "active", "products.launched");
+}
+function withdrawProduct(id) { return setProductStatus(id, "draft", "products.withdrawn"); }
 
 /* ---------- Pick an existing product in a new chat (ROADMAP item 32 pass F) ----------
    A brand-new, empty conversation offers the farmer's existing products as cards.
@@ -4309,6 +4331,70 @@ function buildOfferSummary(o) {
   return { village: o.village || null, distance_km: o.distance_km != null ? Number(o.distance_km) : null, organic: o.organic || null,
     months: o.months || [], products: o.products || [] };
 }
+/* ---------- Buyer: launched products (ROADMAP item 32 pass G) ----------
+   An approved buyer sees the products farmers have launched: the full sheet and
+   the documents, but never the producer's name, phone, address or VAT (the sheet
+   holds none, and nothing here asks for the producer). Everything is the
+   producer's own statement; the page says so. */
+async function loadProductFeed() {
+  state.productFeed = [];
+  if (claimState(state.claims) !== "approved") return;
+  const { data, error } = await DataStore.listLaunchedProducts();
+  if (error) throw error;
+  state.productFeed = data || [];
+}
+function buyerProductCardHTML(p) {
+  const d = p.details || {}, n = p.nutrition || {};
+  const open = state.openFeedProductId === p.id;
+  const list = a => Array.isArray(a) ? a.join(", ") : "";
+  const dl = (rows) => `<dl class="buyer-facts" style="margin-top:8px">${rows.filter(r => r[1] !== "" && r[1] != null).map(r => `<dt>${esc(r[0])}</dt><dd>${esc(r[1])}</dd>`).join("")}</dl>`;
+  const summary = dl([[productFieldLabel("pack_sizes"), list(d.pack_sizes)],
+    [productFieldLabel("shelf_life_days"), typeof d.shelf_life_days === "number" ? T("prod.days", { n: d.shelf_life_days }) : ""],
+    [productFieldLabel("min_order"), d.min_order || ""]]);
+  let more = "";
+  if (open) {
+    const nutr = PRODUCT_NUTRIENTS.concat(["fibre_g"]).filter(k => typeof n[k] === "number").map(k => [productFieldLabel("nutrition." + k), n[k]]);
+    const docs = (state.feedDocs[p.id] || []).map(doc =>
+      `<button type="button" class="btn btn-ghost btn-sm" aria-label="${escAttr(T("buyer.openDoc", { name: doc.file_name }))}" onclick="openFeedDoc('${esc(doc.id)}','${esc(p.id)}')">${esc(doc.file_name)}</button>`).join(" ");
+    more = dl([[productFieldLabel("ingredients"), list(d.ingredients)],
+      [productFieldLabel("allergens"), Array.isArray(d.allergens) ? (d.allergens.length ? list(d.allergens) : T("prod.noAllergens")) : ""],
+      [productFieldLabel("storage"), d.storage || ""], [productFieldLabel("certifications"), list(d.certifications)], [productFieldLabel("price_range"), d.price_range || ""]]) +
+      (nutr.length ? `<h4 style="margin:10px 0 4px">${esc(T("prod.per100"))}</h4>${dl(nutr)}` : "") +
+      `<div style="margin-top:10px">${docs || esc(T("buyer.noDocs"))}</div>`;
+  }
+  return `<div class="buyer-note offer-card"><b>${esc(p.name)}</b>${p.ai_category ? ` <span class="chip">${esc(p.ai_category)}</span>` : ""}${summary}${more}` +
+    `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T(open ? "buyer.hideSheetFor" : "buyer.showSheetFor", { name: p.name }))}" onclick="toggleFeedProduct('${esc(p.id)}')">${esc(T(open ? "buyer.hideSheet" : "buyer.showSheet"))}</button></div>`;
+}
+function renderBuyerProducts() {
+  const el = $("buyerProductsBody"); if (!el) return;
+  const gate = buyerGateHTML();
+  if (gate) { el.innerHTML = gate; return; }
+  const feed = state.productFeed || [];
+  el.innerHTML = (feed.length ? `<div class="offers-list">${feed.map(buyerProductCardHTML).join("")}</div>`
+    : `<div class="empty-state">${esc(T("buyer.productsEmpty"))}</div>`) + `<p class="buyer-lead">${esc(T("buyer.productsFoot"))}</p>`;
+}
+async function toggleFeedProduct(id) {
+  state.openFeedProductId = state.openFeedProductId === id ? null : id;
+  renderBuyerProducts();
+  if (state.openFeedProductId === id && !state.feedDocs[id]) {
+    try {
+      const r = await DataStore.listProductDocuments(id);
+      if (r.error) throw r.error;
+      state.feedDocs[id] = r.data || [];
+    } catch (e) { toast(T("boot.loadFailed")); return; }
+    renderBuyerProducts();
+  }
+}
+// The bucket is private: a document opens through a short-lived signed link.
+async function openFeedDoc(docId, productId) {
+  const doc = (state.feedDocs[productId] || []).find(x => x.id === docId); if (!doc) return;
+  try {
+    const r = await DataStore.signedFileUrl(doc.storage_path);
+    if (r.error || !r.data || !r.data.signedUrl) throw (r.error || new Error("no link"));
+    window.open(r.data.signedUrl, "_blank", "noopener");
+  } catch (e) { toast(T("buyer.docFailed")); }
+}
+
 function renderBuyerOffers() {
   const el = $("buyerOffersBody"); if (!el) return;
   const gate = buyerGateHTML();
@@ -4519,7 +4605,7 @@ function renderBuyerBusiness() {
   el.innerHTML = `<div class="biz-window biz-left glass-45">${bizProfileHTML(biz)}</div><div class="biz-window biz-right glass-45">${bizStatsHTML()}</div>`;
   updateBizSaveBar();
 }
-function renderBuyerScreens() { renderBuyerInbox(); renderBuyerOffers(); renderBuyerBusiness(); }
+function renderBuyerScreens() { renderBuyerInbox(); renderBuyerOffers(); renderBuyerProducts(); renderBuyerBusiness(); }
 
 /* Opening the admin app (private admin page only): the Admin screen and nothing else. */
 async function enterAdminApp() {
@@ -4549,6 +4635,7 @@ async function enterBuyerApp() {
     await loadBuyerData(state.farmerId);
     await loadBuyerInbox();
     await loadOfferFeed();
+    try { await loadProductFeed(); } catch (e) { console.warn("couldn't load launched products", e); }
     try { await loadBizViews(); } catch (e) { console.warn("couldn't load business views", e); }
   } catch (e) {
     console.error("Failed to load the buyer account", e);

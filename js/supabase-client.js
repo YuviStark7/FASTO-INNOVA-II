@@ -108,6 +108,8 @@ const DataStore = {
   updateProduct(id, patch) { return sb.from("farmer_products").update(patch).eq("id", id).select().single(); },
   listProductDocuments(productId) { return sb.from("product_documents").select("*").eq("product_id", productId).order("created_at", { ascending: true }); },
   addProductDocument(row) { return sb.from("product_documents").insert(row).select().single(); },
+  // What an APPROVED buyer sees: only launched (active) products. RLS enforces it; the filter is just clarity.
+  listLaunchedProducts() { return sb.from("farmer_products").select("*").eq("status", "active").order("updated_at", { ascending: false }); },
   // A second chat that works on an existing product (the product keeps its original chat in source_chat_id).
   linkProductToChat(productId, chatId) { return sb.from("product_chat_links").insert({ product_id: productId, chat_id: chatId }); },
   linkedProductForChat(chatId) { return sb.from("product_chat_links").select("product_id, farmer_products(*)").eq("chat_id", chatId).limit(1); },

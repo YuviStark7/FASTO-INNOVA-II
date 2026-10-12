@@ -208,6 +208,7 @@ function loadApp(root) {
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
   guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
@@ -2286,6 +2287,68 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("after a reload the chat finds the product it was working on", reloaded.product && reloaded.product.id === "a" && reloaded.productLinked === true);
 
     st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.screen = savedScreen; st.products = savedProducts; st.productDocCounts = savedCounts;
+  }
+
+  /* ---- ROADMAP item 32 pass G: launch and the buyer view ---- */
+  {
+    const a = app, st = a.state;
+    const saved = { products: st.products, counts: st.productDocCounts, claims: st.claims, feed: st.productFeed, screen: st.screen };
+    st.farmerId = "u1";
+    const complete = { id: "p1", name: "Brie", status: "draft", kind: "packaged", ai_category: "soft cheese", source_chat_id: null,
+      details: { ingredients: ["milk"], allergens: ["milk"], shelf_life_days: 60, storage: "fridge", pack_sizes: ["150 g"], min_order: "10", suggested: [] },
+      nutrition: { energy_kcal: 330, fat_g: 26, saturated_fat_g: 17, carbs_g: 1, sugars_g: 1, protein_g: 22, salt_g: 1.8 }, updated_at: "2026-10-12T10:00:00Z" };
+    st.products = [complete, Object.assign({}, complete, { id: "p2", name: "Jam", ai_category: "jam", details: {}, nutrition: {} }), Object.assign({}, complete, { id: "p3", name: "Live", status: "active" })];
+    st.productDocCounts = { p1: 1, p2: 1, p3: 1 };
+
+    const h1 = a.productCardHTML(st.products[0]), h2 = a.productCardHTML(st.products[1]), h3 = a.productCardHTML(st.products[2]);
+    check("only a complete draft offers Launch", h1.includes('aria-label="Launch Brie to buyers"') && !h2.includes("Launch") );
+    check("an active product says it is visible and offers Withdraw, not Launch", h3.includes("Visible to approved buyers") && h3.includes('aria-label="Withdraw Live from buyers"') && !h3.includes(">Launch<"));
+
+    // an incomplete product cannot be launched, and nothing is sent
+    sb.reset();
+    check("launching an incomplete product is refused without asking the database", (await a.launchProduct("p2")) === false && !sb.chains.some(c => c.table === "farmer_products"));
+
+    // launch asks first; no means nothing is sent
+    for (const id of ["dialogSheet", "dialogTitle", "dialogBody", "dialogOk", "dialogCancel"]) els[id] = els[id] || fakeEl(id);
+    sb.reset(); sb.router = ch => ({ data: Object.assign({}, complete, ch.ops[0].op === "update" ? ch.ops[0].args[0] : {}), error: null });
+    let pr = a.launchProduct("p1"); a.settleDialog(false);
+    check("declining the question launches nothing", (await pr) === false && !sb.chains.some(c => c.table === "farmer_products") && st.products[0].status === "draft");
+    pr = a.launchProduct("p1"); a.settleDialog(true);
+    const ok = await pr;
+    const up = sb.chains.find(c => c.table === "farmer_products" && c.ops[0].op === "update");
+    check("confirming launches: only the status changes", ok === true && up && JSON.stringify(up.ops[0].args[0]) === JSON.stringify({ status: "active" }) && st.products[0].status === "active");
+    check("withdrawing returns it to draft", (await a.withdrawProduct("p1")) === true && st.products[0].status === "draft");
+    // the database refusing (trigger) is reported, status unchanged
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "product_incomplete: documents" } });
+    pr = a.launchProduct("p1"); a.settleDialog(true);
+    check("if the database refuses the launch the status does not change", (await pr) === false && st.products[0].status === "draft");
+
+    // buyer side
+    st.claims = [{ status: "approved", buyer_id: "b1", user_id: "ub" }];
+    sb.reset(); sb.router = ch => ({ data: [Object.assign({}, complete, { status: "active" })], error: null });
+    await a.loadProductFeed();
+    const q = sb.chains.find(c => c.table === "farmer_products");
+    check("an approved buyer reads launched products only", st.productFeed.length === 1 && q.ops.some(o => o.op === "eq" && o.args[0] === "status" && o.args[1] === "active"));
+    st.claims = [{ status: "pending" }]; sb.reset();
+    await a.loadProductFeed();
+    check("a buyer who is not approved reads nothing", st.productFeed.length === 0 && sb.chains.length === 0);
+    st.claims = [{ status: "approved" }]; st.productFeed = [Object.assign({}, complete, { status: "active" })]; st.openFeedProductId = null;
+    const closed = a.buyerProductCardHTML(st.productFeed[0]);
+    check("the buyer card shows the summary only until the sheet is opened",
+      closed.includes("Brie") && closed.includes("150 g") && !closed.includes("Ingredients") && closed.includes('aria-label="Show the full sheet of Brie"'));
+    sb.reset(); sb.router = () => ({ data: [{ id: "d1", file_name: "label.pdf", storage_path: "u1/products/x", mime_type: "application/pdf" }], error: null });
+    await a.toggleFeedProduct("p1");
+    const open = a.buyerProductCardHTML(st.productFeed[0]);
+    check("opening shows ingredients, allergens, the nutrition table and the documents, and never a producer identity",
+      open.includes("milk") && open.includes("Nutrition per 100 g") && open.includes("1.8") && open.includes('aria-label="Open document label.pdf"') && !/phone|address|VAT|u1\b/.test(open.replace("u1/products/x", "")));
+    check("a product name from the database is escaped for the buyer", a.buyerProductCardHTML(Object.assign({}, st.productFeed[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
+    // documents open through a short-lived link
+    let opened = null; box.open = (url) => { opened = url; };
+    sb.reset();
+    await a.openFeedDoc("d1", "p1");
+    check("a document opens through a signed link on the private bucket", opened === "https://signed.example/u1/products/x" && sb.storageCalls.some(c => c.fn === "signed" && c.bucket === "farmer-files"), String(opened));
+
+    st.products = saved.products; st.productDocCounts = saved.counts; st.claims = saved.claims; st.productFeed = saved.feed; st.screen = saved.screen; st.openFeedProductId = null;
   }
 
   /* ---- ROADMAP item 26 pass B: farmer thread reads and writes messages ---- */
