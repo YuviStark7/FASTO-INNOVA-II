@@ -1682,35 +1682,31 @@ async function loadProducts() {
 function productStatusLabel(st) {
   return st === "active" ? T("products.statusActive") : st === "archived" ? T("products.statusArchived") : T("products.statusDraft");
 }
+/* A product is one folder and nothing else (Yuvi, 2026-10-15): a status pill above it, the
+   name and the kind of product on its front, and icon buttons that show their word on hover.
+   The details that used to sit underneath (completeness, source chat, "visible to buyers")
+   are gone from the card; the pill and the buttons already say what matters. */
 function productCardHTML(p) {
   const pc = productCompleteness(p, state.productDocCounts[p.id] || 0);
   const src = p.source_chat_id ? state.chats.find(c => c.id === p.source_chat_id) : null;
-  const name = p.name;
-  const primary = p.source_chat_id && src
-    ? `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.openChatFor", { name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.openChat"))}</button>`
-    : `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.editNewFor", { name }))}" onclick="openProductChat('${esc(p.id)}')">${esc(T("products.editNew"))}</button>`;
-  const arch = p.status === "archived"
-    ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.restoreFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', false)">${esc(T("products.restore"))}</button>`
-    : `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.archiveFor", { name }))}" onclick="setProductArchived('${esc(p.id)}', true)">${esc(T("products.archive"))}</button>`;
-  const complete = pc.complete;
-  const launch = p.status === "draft" && complete
-    ? `<button type="button" class="btn btn-primary" aria-label="${escAttr(T("products.launchFor", { name }))}" onclick="launchProduct('${esc(p.id)}')">${esc(T("products.launch"))}</button>` : "";
-  const withdraw = p.status === "active"
-    ? `<button type="button" class="btn btn-ghost" aria-label="${escAttr(T("products.withdrawFor", { name }))}" onclick="withdrawProduct('${esc(p.id)}')">${esc(T("products.withdraw"))}</button>` : "";
+  const name = p.name, id = esc(p.id);
+  const act = (icon, key, ariaKey, call) => ({ icon, label: T(key), aria: T(ariaKey, { name }), onclick: call });
+  const actions = [
+    p.source_chat_id && src ? act("square-pen", "products.openChat", "products.openChatFor", "openProductChat('" + id + "')")
+      : act("square-pen", "products.openChat", "products.editNewFor", "openProductChat('" + id + "')")
+  ];
+  if (p.status === "draft" && pc.complete) actions.push(act("rocket", "products.launch", "products.launchFor", "launchProduct('" + id + "')"));
+  if (p.status === "active") actions.push(act("eye-off", "products.withdraw", "products.withdrawFor", "withdrawProduct('" + id + "')"));
+  actions.push(p.status === "archived" ? act("archive-restore", "products.restore", "products.restoreFor", "setProductArchived('" + id + "', false)")
+    : act("archive", "products.archive", "products.archiveFor", "setProductArchived('" + id + "', true)"));
   const docs = state.productDocs[p.id] || [];
   const folder = folderCardHTML({ id: p.id, label: name, seed: name, width: 300,
-    meta: productStatusLabel(p.status) + (p.ai_category ? " · " + p.ai_category : ""),
+    meta: p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"),
+    badge: { text: productStatusLabel(p.status), tone: p.status }, actions,
     openLabel: T("products.folderOpen", { name, n: state.productDocCounts[p.id] || 0 }), closeLabel: T("products.folderClose", { name }), filesLabel: T("products.folderFiles", { name }),
     files: docs.filter(d => d.id).map(d => ({ id: d.id, name: d.file_name, meta: docMeta(d), path: d.storage_path, image: /^image\//.test(d.mime_type || ""),
       openLabel: T("products.openDoc", { name: d.file_name }), onclick: "openMyDoc('" + p.id + "','" + d.id + "')" })) });
-  return `<article class="prod-card prod-folder-card"><h3>${esc(name)}</h3>${folder}<div class="chips">` +
-    `<span class="chip st-${esc(p.status)}">${esc(productStatusLabel(p.status))}</span>` +
-    `<span class="chip">${esc(p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"))}</span>` +
-    (p.ai_category ? `<span class="chip">${esc(p.ai_category)}</span>` : "") + `</div>` +
-    `<p>${esc(pc.complete ? T("products.complete") : T("products.missing", { n: pc.missing.length }))} · ${esc(T("products.docs", { n: state.productDocCounts[p.id] || 0 }))}</p>` +
-    `<p>${esc(p.source_chat_id && src ? T("products.fromChat", { title: src.title }) : T("products.noChat"))} · ${esc(relDate(p.updated_at))}</p>` +
-    (p.status === "active" ? `<p>${esc(T("products.visible"))}</p>` : "") +
-    `<div class="prod-actions">${primary}${launch}${withdraw}${arch}</div></article>`;
+  return `<article class="prod-card prod-folder-card"><h3>${esc(name)}</h3>${folder}</article>`;
 }
 // "PDF · 1.2 MB": a short kind and a size, for the sheet in a folder.
 function docMeta(d) {

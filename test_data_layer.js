@@ -2232,9 +2232,13 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the list is read by owner and document counts are tallied per product",
       st.products.length === 4 && st.productDocCounts.a === 2 && st.productDocCounts.b === 1 && sb.chains.some(c => c.table === "product_documents" && c.ops.some(o => o.op === "select" && /file_name/.test(String(o.args[0])))));
     const card = a.productCardHTML(rows[0]);
-    check("a card names the product and its chat, shows documents, and its buttons name the product",
-      card.includes("Brie") && card.includes("From chat: Brie chat") && card.includes("2 documents") && card.includes('aria-label="Edit Brie in the chat that created it"') && card.includes('aria-label="Archive Brie"'));
-    check("a product whose chat was deleted offers a new chat instead", (() => { const h = a.productCardHTML(rows[1]); return h.includes("The chat it came from was deleted") && h.includes("Edit in a new chat"); })());
+    check("a card is just a folder: the name in the title, a status pill, the kind of product, and icon buttons that name the product",
+      card.includes("Brie") && card.includes('class="gf-badge gf-badge--') && card.includes("Finished product") && card.includes('aria-label="Edit Brie in the chat that created it"') && card.includes('aria-label="Archive Brie"') && card.includes("gf-act"));
+    check("the lines under the folder are gone: no chips, no completeness, no source chat, no 'visible' note",
+      !/class="chips"|<p>|prod-actions|From chat|documents<|Visible to approved/.test(card));
+    check("a product whose chat was deleted offers a new chat instead", (() => { const h = a.productCardHTML(rows[1]); return h.includes('aria-label="Edit ' + rows[1].name + ' in a new chat"') && !h.includes("The chat it came from was deleted"); })());
+    check("the front of a folder is solid: no frosted blur and no see-through layer left in the styles",
+      !/backdrop-filter/.test(require("fs").readFileSync(path + "/css/folder.css", "utf8").replace(/@media \(prefers-reduced-transparency[\s\S]*$/, "")) && !card.includes("gf-spec"));
     check("an archived product offers Restore", a.productCardHTML(rows[2]).includes('aria-label="Restore Old"'));
     check("a card escapes the product name", a.productCardHTML(Object.assign({}, rows[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
 
@@ -2313,7 +2317,8 @@ console.log("== Test 2: saveProducts and saveMatches ==");
 
     const h1 = a.productCardHTML(st.products[0]), h2 = a.productCardHTML(st.products[1]), h3 = a.productCardHTML(st.products[2]);
     check("only a complete draft offers Launch", h1.includes('aria-label="Launch Brie to buyers"') && !h2.includes("Launch") );
-    check("an active product says it is visible and offers Withdraw, not Launch", h3.includes("Visible to approved buyers") && h3.includes('aria-label="Withdraw Live from buyers"') && !h3.includes(">Launch<"));
+    check("an active product wears an ACTIVE pill and offers Withdraw (an eye-off icon), not Launch", h3.includes("gf-badge--active") && h3.includes(">Active<") && h3.includes('aria-label="Withdraw Live from buyers"') && h3.includes("lucide-eye-off") && !h3.includes("Launch"));
+    check("a draft wears a DRAFT pill; a complete draft offers a rocket Launch", h1.includes("gf-badge--draft") && h1.includes("lucide-rocket"));
 
     // an incomplete product cannot be launched, and nothing is sent
     sb.reset();

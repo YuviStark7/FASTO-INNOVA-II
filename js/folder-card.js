@@ -7,6 +7,10 @@
    frosted-glass front panel that leans toward you on hover or focus and falls
    forward when the folder is opened. The files are real buttons.
 
+   2026-10-15 (Yuvi): the front panel is solid, not see-through; the card shows a
+   status pill, the name in capitals, the kind of product, and icon buttons on the
+   front instead of text lines and buttons underneath.
+
    Differences from the original, on purpose: no React; the back panel is a CSS
    gradient chosen from the product's name (the original paints generated
    noise art into a canvas); no "+" key or "..." menu (the product card keeps
@@ -38,6 +42,8 @@ function gfArtStyle(seedText) {
 }
 
 /* o: { id, label, meta, width, seed, openLabel, closeLabel, filesLabel,
+        badge: { text, tone },                       a small status pill above the folder's top-left
+        actions: [{ icon, label, aria, onclick }],   icon buttons on the front; the label slides out on hover
         files: [{ id, name, meta, path, image (bool), onclick }] } */
 function folderCardHTML(o) {
   const width = o.width || 300, k = width / GF_W, uid = String(o.id).replace(/[^a-z0-9]/gi, "");
@@ -55,17 +61,22 @@ function folderCardHTML(o) {
         '<span class="gf-lines" aria-hidden="true"><i style="width:86%"></i><i style="width:92%"></i><i style="width:64%"></i><i style="width:88%"></i><i style="width:42%"></i></span>') +
       '<span class="gf-sheet-head"><span class="gf-sheet-name">' + gfEsc(f.name) + "</span>" + (f.meta ? '<span class="gf-sheet-meta">' + gfEsc(f.meta) + "</span>" : "") + "</span></button></div>";
   }).join("");
-  return '<div class="gf-root" data-tone="dark" data-place="bottom-left" style="width:' + width + "px;height:" + ((GF_H + GF_HEADROOM) * k).toFixed(1) + 'px">' +
+  const badge = o.badge ? '<span class="gf-badge gf-badge--' + gfEsc(o.badge.tone || "draft") + '" style="top:' + (GF_HEADROOM * k - 30).toFixed(1) + 'px">' + gfEsc(o.badge.text) + "</span>" : "";
+  const icon = n => (typeof lucide === "function" ? lucide(n, 17) : "");
+  const actions = (o.actions || []).map(a => '<button type="button" class="gf-act" aria-label="' + gfEsc(a.aria || a.label) + '" onclick="' + gfEsc(a.onclick || "") + '">' +
+    icon(a.icon) + '<span class="gf-act-label" aria-hidden="true">' + gfEsc(a.label) + "</span></button>").join("");
+  return '<div class="gf-root" data-tone="dark" data-place="bottom-left" style="width:' + width + "px;height:" + ((GF_H + GF_HEADROOM) * k).toFixed(1) + 'px">' + badge +
     '<div class="gf-stage" style="transform:translateY(' + (GF_HEADROOM * k).toFixed(1) + "px) scale(" + k.toFixed(4) + ')"><div class="gf-tilt">' +
     '<div class="gf-shadow" aria-hidden="true"></div>' +
     '<div class="gf-back" style="clip-path:path(\'' + GF_BACK_PATH + "');" + gfEsc(gfArtStyle(o.seed || o.label)) + '" aria-hidden="true"><div class="gf-back-sheen"></div></div>' +
     '<svg class="gf-rim gf-back-rim" viewBox="0 0 ' + GF_W + " " + GF_H + '" aria-hidden="true"><path d="' + GF_BACK_PATH + '"/></svg>' +
-    '<div class="gf-front" style="clip-path:path(\'' + GF_FRONT_PATH + '\')"><div class="gf-tint" aria-hidden="true"></div><div class="gf-spec" aria-hidden="true"></div>' +
+    '<div class="gf-front" style="clip-path:path(\'' + GF_FRONT_PATH + '\')"><div class="gf-tint" aria-hidden="true"></div>' +
     '<svg class="gf-rim gf-front-rim" viewBox="0 0 ' + GF_W + " " + GF_FRONT_H + '" aria-hidden="true"><defs><linearGradient id="gf-rim-' + uid + '" x1="0" y1="0" x2="0" y2="1">' +
     '<stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.35" stop-color="#fff" stop-opacity="0.35"/><stop offset="1" stop-color="#fff" stop-opacity="0.12"/></linearGradient></defs>' +
     '<path d="' + GF_FRONT_PATH + '" stroke="url(#gf-rim-' + uid + ')"/></svg>' +
     '<button type="button" class="gf-hit" aria-expanded="false" data-open-label="' + gfEsc(o.openLabel) + '" data-close-label="' + gfEsc(o.closeLabel) + '" aria-label="' + gfEsc(o.openLabel) + '" onclick="toggleFolder(this)"></button>' +
-    '<div class="gf-label"><span class="gf-title">' + gfEsc(o.label) + '</span><span class="gf-meta">' + gfEsc(o.meta || "") + "</span></div></div>" +
+    '<div class="gf-label"><span class="gf-title">' + gfEsc(o.label) + '</span><span class="gf-meta">' + gfEsc(o.meta || "") + "</span></div>" +
+    (actions ? '<div class="gf-actions">' + actions + "</div>" : "") + "</div>" +
     '<div class="gf-files" role="list" aria-label="' + gfEsc(o.filesLabel || "") + '" inert>' + sheets + "</div>" +
     "</div></div></div>";
 }
