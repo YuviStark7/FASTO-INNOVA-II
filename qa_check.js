@@ -309,7 +309,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
     ['the toast is a live region', /id="toast"[^>]*role="status"/.test(html)],
     ['an app-wide focus ring', /:focus-visible\{[^}]*outline:/.test(css.replace(/\s*\n\s*/g, ""))],
     ['a focus ring on the fields that set outline:none', /\.field input:focus-visible/.test(css)],
-    ['a focus ring on the search box and message bar', /\.search-wrap:focus-within/.test(css) && /\.prompt-bar:focus-within/.test(css)],
+    ['a focus ring on the search box and message bar', /\.search-wrap:focus-within/.test(css) && /\.composer:focus-within/.test(css)],
     // The CSS boot lock is pointer-events only, which a keyboard ignores.
     ['a keyboard boot lock covering the nav', /BOOT_LOCK_SEL\s*=\s*"\.nav-item\[data-screen\]/.test(js) && /setBootLock\(true\)/.test(js) && /setBootLock\(false\)/.test(js)]
   ];
@@ -353,8 +353,9 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   const bubbleTint = rgba(cssVar(decl(".assist-transcript .bubble.in", "background")));
   const chipTint = rgba(cssVar(decl(".sugg-chip", "background")));
   const chipHover = rgba(cssVar(decl(".sugg-chip:hover", "background")));
-  const barClass = classOn("prompt-bar");
-  const barTint = barClass ? glassOf(barClass) : null;
+  // The chat is a near-black panel of its own (2026-10-15 redesign); bubbles and the message box are measured on top of it.
+  const chatPanel = rgba(cssVar(decl(".assist-chat", "background")));
+  const barTint = rgba(cssVar(decl(".composer", "background")));
   const navOpacity = parseFloat(decl(".nav-item", "opacity"));
   const warnText = hex(decl(".sync-warn", "color")), pillBlue = hex(decl(".pill-blue", "color"));
   const missing = [!ink70 && "--ink-70", !ink50 && "--ink-50", !topbar && "#topbar background",
@@ -362,7 +363,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
                    !pillActive && "--pill-active", !railTint && ".chat-history-rail background",
                    !bubbleTint && ".assist-transcript .bubble.in background", !chipTint && ".sugg-chip background",
                    !chipHover && ".sugg-chip:hover background",
-                   !barTint && ".prompt-bar glass class in index.html"].filter(Boolean);
+                   !chatPanel && ".assist-chat background", !barTint && ".composer background"].filter(Boolean);
   report("contrast check couldn't read these values out of the CSS", missing);
 
   if (!missing.length) {
@@ -390,19 +391,19 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
          above. The chips and the message bar are pinned to the bottom, where
          SCRIM_BOTTOM already applies. Reverting any of these four tints to
          white glass fails this check rather than merely looking fine. */
-      ["the incoming bubbles on the Fasto-AI screen", W, over(bubbleTint.rgb, bubbleTint.a, SCRIM_ASSIST)],
+      ["the incoming bubbles on the Fasto-AI screen", W, over(bubbleTint.rgb, bubbleTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_ASSIST))],
       ["the conversation rail", over(ink70.rgb, ink70.a, over(railTint.rgb, railTint.a, SCRIM_ASSIST)),
         over(railTint.rgb, railTint.a, SCRIM_ASSIST)],
       ["the open conversation in the rail", W,
         over(pillActive.rgb, pillActive.a, over(railTint.rgb, railTint.a, SCRIM_ASSIST))],
-      ["the example chips", over(ink70.rgb, ink70.a, over(chipTint.rgb, chipTint.a, SCRIM_BOTTOM)),
-        over(chipTint.rgb, chipTint.a, SCRIM_BOTTOM)],
-      ["the message bar placeholder", over(ink50.rgb, ink50.a, over(barTint.rgb, barTint.a, SCRIM_BOTTOM)),
-        over(barTint.rgb, barTint.a, SCRIM_BOTTOM)],
+      ["the example chips", over(ink70.rgb, ink70.a, over(chipTint.rgb, chipTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))),
+        over(chipTint.rgb, chipTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))],
+      ["the message bar placeholder", over(ink50.rgb, ink50.a, over(barTint.rgb, barTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))),
+        over(barTint.rgb, barTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))],
       /* Hover is measured too: it is the one state the farmer is looking
          straight at, and putting white back on hover would undo this item on
          exactly the chip being read. */
-      ["a hovered example chip", W, over(chipHover.rgb, chipHover.a, SCRIM_BOTTOM)]
+      ["a hovered example chip", W, over(chipHover.rgb, chipHover.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))]
     ];
     const failed = cases.filter(([, f, b]) => ratio(f, b) < 4.5)
       .map(([label, f, b]) => label + " " + ratio(f, b).toFixed(2) + ":1");
@@ -417,11 +418,10 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
      override lives in app.css, which loads after base.css, it beats the
      fallback unless it is repeated inside the media query. #topbar learned
      this first; the conversation rail is the second one to do it. */
-  const tinted = ["#topbar", ".chat-history-rail"];
+  const tinted = ["#topbar", ".chat-history-rail", ".assist-chat"];
   report("glass surfaces whose own tint has no prefers-reduced-transparency fallback",
     tinted.filter(sel => !new RegExp("prefers-reduced-transparency[^{]*\\{\\s*" + sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{").test(flat)));
-  report("Fasto-AI surfaces missing a glass class in the markup",
-    ["chat-history-rail", "prompt-bar"].filter(c => !new RegExp('class="' + c + '\\s+glass-').test(html)));
+  // The rail, the chat panel and the message box now carry their own tint and blur in app.css, so no glass class is needed in the markup.
 }
 
 /* ============================================================

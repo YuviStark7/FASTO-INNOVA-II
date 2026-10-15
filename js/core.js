@@ -387,6 +387,12 @@ function guardianValidateProductSheet(raw) {
     if (!markSuggested(k)) { notes.push("dropped:" + k); return; }
     details[k] = t;
   });
+  // Documents worth uploading for THIS product (e.g. "DOP certificate"). Only shown as optional roadmap
+  // items; never facts about the product, so no suggested/confirmed bookkeeping.
+  if (Array.isArray(r.suggested_documents)) {
+    details.suggested_documents = r.suggested_documents.map(function (x) { return cleanSheetText(x, 60); }).filter(Boolean)
+      .filter(function (x, i, a) { return a.indexOf(x) === i; }).slice(0, 5);
+  }
   if (r.shelf_life_days !== undefined) {
     var d = Number(r.shelf_life_days);
     if (isFinite(d) && d > 0 && d <= 3650) { if (markSuggested("shelf_life_days")) details.shelf_life_days = Math.round(d); }
@@ -446,6 +452,54 @@ function productCompleteness(row, docCount) {
   });
   if (!docCount) missing.push("documents");
   return { complete: missing.length === 0, missing: missing };
+}
+
+/* ---------- Product roadmap (the checklist in the product side panel) ----------
+   Derived from the SAME rules as productCompleteness, so the checklist, the
+   launch rule and the progress bar can never disagree. Each required step is
+   done when none of its fields is still missing; pct counts required steps only.
+   Optional steps (documents the AI thinks this product needs, e.g. a DOP
+   certificate) are ticked by the producer, stored in details.docs_done, and
+   never count towards the percentage or the launch rule. */
+var ROADMAP_STEPS = [
+  { key: "basic", fields: ["name", "ai_category", "pack_sizes", "min_order"] },
+  { key: "ingredients", fields: ["ingredients"] },
+  { key: "allergens", fields: ["allergens"] },
+  { key: "shelf", fields: ["shelf_life_days", "storage"] },
+  { key: "nutrition", fields: PRODUCT_NUTRIENTS.map(function (k) { return "nutrition." + k; }) },
+  { key: "documents", fields: ["documents"] }
+];
+function productRoadmap(row, docCount) {
+  var pc = productCompleteness(row, docCount), d = (row && row.details) || {};
+  var steps = ROADMAP_STEPS.map(function (st) {
+    var left = st.fields.filter(function (f) { return pc.missing.indexOf(f) !== -1; });
+    return { key: st.key, done: left.length === 0, missing: left };
+  });
+  var done = steps.filter(function (x) { return x.done; }).length;
+  var got = Array.isArray(d.docs_done) ? d.docs_done : [];
+  var optional = (Array.isArray(d.suggested_documents) ? d.suggested_documents : []).map(function (t) { return { text: t, done: got.indexOf(t) !== -1 }; });
+  return { steps: steps, optional: optional, done: done, total: steps.length, pct: Math.round(done * 100 / steps.length), complete: pc.complete };
+}
+
+/* ---------- Chat sidebar grouping (pinned / projects / recents) ----------
+   chats: [{id, pinnedAt, projectId, ts}], projects: [{id, name, pinnedAt}].
+   Pinned = pinned chats (wherever they live) and pinned projects. Projects =
+   the unpinned projects, each with its chats (a pinned chat also stays inside its
+   project; a pinned project is listed under Pinned only).
+   Recents = chats in no project and not pinned, newest first. Pure. */
+function groupChatRail(chats, projects) {
+  var byNew = function (a, b) { return (b.ts || 0) - (a.ts || 0); };
+  var byPin = function (a, b) { return (b.pinnedAt || 0) - (a.pinnedAt || 0); };
+  var ids = {}; (projects || []).forEach(function (p) { ids[p.id] = true; });
+  var inProject = function (c) { return !!c.projectId && ids[c.projectId]; };
+  return {
+    pinnedChats: (chats || []).filter(function (c) { return c.pinnedAt; }).sort(byPin),
+    pinnedProjects: (projects || []).filter(function (p) { return p.pinnedAt; }).sort(byPin),
+    projects: (projects || []).filter(function (p) { return !p.pinnedAt; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); }).map(function (p) {
+      return { project: p, chats: (chats || []).filter(function (c) { return c.projectId === p.id; }).sort(byNew) };
+    }),
+    recents: (chats || []).filter(function (c) { return !c.pinnedAt && !inProject(c); }).sort(byNew)
+  };
 }
 
 /* ---------- "My products" list filters (ROADMAP item 32 pass E) ----------
@@ -544,12 +598,42 @@ function rankPackaged(product, db) {
    storage path. The database enforces the same limits (bucket + table checks),
    this is the friendly first line. Path must be <user id>/products/<name>. */
 var PRODUCT_FILE_MAX = 5 * 1024 * 1024;
-var PRODUCT_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+var PRODUCT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+var PRODUCT_DOC_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv"];
+var PRODUCT_FILE_TYPES = PRODUCT_IMAGE_TYPES.concat(PRODUCT_DOC_TYPES);
 function checkProductFile(f) {
   if (!f || !f.size) return { ok: false, key: "attach.errEmpty" };
-  if (PRODUCT_FILE_TYPES.indexOf(f.type) === -1) return { ok: false, key: "attach.errType" };
+  if (!productFileType(f)) return { ok: false, key: "attach.errType" };
   if (f.size > PRODUCT_FILE_MAX) return { ok: false, key: "attach.errSize" };
   return { ok: true };
+}
+/* A browser sometimes reports no type for Word/Excel files (it depends on the
+   computer), so fall back to the extension. Returns a type from the list or "". */
+var PRODUCT_EXT_TYPES = { pdf: "application/pdf", doc: "application/msword", docx: PRODUCT_DOC_TYPES[2], xls: "application/vnd.ms-excel",
+  xlsx: PRODUCT_DOC_TYPES[4], csv: "text/csv", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+function productFileType(f) {
+  if (!f) return "";
+  if (PRODUCT_FILE_TYPES.indexOf(f.type) !== -1) return f.type;
+  var m = /\.([a-z0-9]+)$/i.exec(String(f.name || ""));
+  return m && PRODUCT_EXT_TYPES[m[1].toLowerCase()] || "";
+}
+/* Which of the two attach buttons a file belongs to: "image" or "doc". */
+function productFileGroup(type) { return PRODUCT_IMAGE_TYPES.indexOf(type) !== -1 ? "image" : "doc"; }
+// "2.7 MB", "340 KB", "12 B": the size shown beside a file.
+function formatBytes(n) {
+  n = Number(n) || 0;
+  if (n >= 1048576) return (Math.round(n / 104857.6) / 10) + " MB";
+  if (n >= 1024) return Math.round(n / 1024) + " KB";
+  return n + " B";
+}
+// A short label for the kind of file: PDF, WORD, EXCEL, CSV or IMAGE.
+function productFileLabel(type) {
+  if (type === "application/pdf") return "PDF";
+  if (type === "text/csv") return "CSV";
+  if (type === "application/msword" || type === PRODUCT_DOC_TYPES[2]) return "WORD";
+  if (type === "application/vnd.ms-excel" || type === PRODUCT_DOC_TYPES[4]) return "EXCEL";
+  return PRODUCT_IMAGE_TYPES.indexOf(type) !== -1 ? "IMAGE" : "FILE";
 }
 function productFilePath(uid, name, stamp, rand) {
   var safe = String(name || "file").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "").slice(-80);
@@ -566,8 +650,9 @@ if (typeof module !== "undefined" && module.exports) {
     guardianScanText: guardianScanText, guardianValidateProfile: guardianValidateProfile,
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
+    productRoadmap: productRoadmap, groupChatRail: groupChatRail,
     filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
-    checkProductFile: checkProductFile, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
+    formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }
