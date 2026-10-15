@@ -858,7 +858,10 @@
    bordered wrapper, so the ring goes on the wrapper: an outline hugging the
    text alone reads as a text cursor, not as "this control has focus". Their own
    outline:none above is left to stand, which is why they are not in the list. */
-.search-wrap:focus-within, .composer:focus-within{ outline:2px solid #fff; outline-offset:2px; }
+.search-wrap:focus-within{ outline:2px solid #fff; outline-offset:2px; }
+/* The message box shows focus with a soft rose ring (the travelling edge brightens as well); the textarea inside draws none of its own. */
+.composer:focus-within{ outline:2px solid rgba(240,169,164,.8); outline-offset:3px; }
+.composer textarea:focus-visible{ outline:none; box-shadow:none; }
 
 /* ================= mobile ================= */
 @media (max-width: 900px){
@@ -1002,7 +1005,7 @@
 .assist-chat{ flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; border-radius:var(--radius-lg); padding:12px 18px 16px;
   background:rgba(10,6,4,.84); -webkit-backdrop-filter:blur(26px); backdrop-filter:blur(26px); position:relative; }
 @media (prefers-reduced-transparency: reduce){ .assist-chat{ background:#150d0a; } }
-.assist-chat.dragging, .product-panel.dragging{ outline:2px dashed rgba(255,255,255,.6); outline-offset:-6px; }
+.product-panel.dragging{ outline:2px dashed rgba(255,255,255,.6); outline-offset:-6px; }
 .assist-chat-head{ display:flex; align-items:center; gap:10px; min-height:34px; padding-bottom:8px; }
 .assist-chat-title{ flex:1; min-width:0; font-size:13px; font-weight:500; color:var(--ink-70); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .panel-toggle{ display:inline-flex; align-items:center; gap:7px; border:1px solid var(--hairline); background:rgba(255,255,255,.06); color:#fff; font:inherit; font-size:12.5px; padding:6px 11px; border-radius:999px; cursor:pointer; }
@@ -1023,19 +1026,54 @@
 .msg-file:hover{ filter:brightness(1.2); }
 .msg-file:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
 
-/* The message box: text on top, the two attach buttons bottom left, Send bottom right. */
-.composer{ margin-top:auto; border-radius:22px; padding:12px 14px 10px; display:flex; flex-direction:column; gap:6px;
-  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.16); }
-.composer textarea{ width:100%; background:transparent; border:none; outline:none; resize:none; color:#fff; font:inherit; font-size:16px; line-height:1.45; padding:4px 2px; max-height:160px; min-height:30px; }
+/* The message box, after the "liquid multimodal input" by Wensity (21st.dev), redrawn in plain CSS
+   in our brick red: a soft radial surface with fine grain, and a thin edge of light that travels
+   round the box (a conic gradient whose angle is animated through @property; browsers without
+   @property show it still). The edge brightens on hover and focus. Text on top, the two attach
+   buttons bottom left, Send bottom right. */
+@property --composer-angle{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
+.composer{ position:relative; isolation:isolate; overflow:hidden; margin-top:auto; border-radius:28px; padding:12px 14px 10px; display:flex; flex-direction:column; gap:6px;
+  background-color:rgba(8,5,4,.6);
+  background-image:radial-gradient(ellipse 90% 70% at 50% -10%, rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 72%);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  transition:border-color .15s ease, box-shadow .15s ease; }
+.composer:hover{ border-color:rgba(255,255,255,.14); }
+.composer:focus-within{ border-color:rgba(255,255,255,.18); }
+/* grain, then a little shade at the top and bottom */
+.composer::before{ content:""; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.055; mix-blend-mode:overlay; background-size:240px 240px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.65 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+.composer::after{ content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:linear-gradient(to bottom, rgba(0,0,0,.12) 0%, transparent 28%, transparent 72%, rgba(0,0,0,.22) 100%); }
+.composer > *{ position:relative; z-index:2; }
+/* the travelling edge: a 1px ring cut out of a conic gradient */
+.composer > .composer-stroke{ position:absolute; inset:0; z-index:3; border-radius:28px; padding:1px; pointer-events:none; opacity:.55; transition:opacity .5s ease;
+  background:conic-gradient(from var(--composer-angle, 0deg), transparent 65%, rgba(150,37,36,.75) 80%, #f0a9a4 95%, transparent 100%);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
+  animation:composer-spin 4s linear infinite; }
+.composer:hover > .composer-stroke, .composer:focus-within > .composer-stroke{ opacity:1; }
+@keyframes composer-spin{ to{ --composer-angle:360deg; } }
+@media (prefers-reduced-motion: reduce){ .composer > .composer-stroke{ animation:none; } }
+.composer textarea{ width:100%; background:transparent; border:none; outline:none; resize:none; color:#fff; font:inherit; font-size:16px; line-height:1.45; padding:4px 2px; max-height:160px; min-height:56px; }
 .composer textarea::placeholder{ color:var(--ink-50); text-transform:uppercase; letter-spacing:.04em; font-size:14px; }
 .composer-bar{ display:flex; align-items:center; justify-content:space-between; }
-.composer-tools{ display:flex; gap:2px; }
-.composer-tool{ width:36px; height:36px; border:none; border-radius:10px; background:none; color:var(--ink-70); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.composer-tools{ display:flex; gap:4px; }
+.composer-tool{ width:34px; height:34px; border:none; border-radius:50%; background:none; color:var(--ink-70); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s ease, color .15s ease; }
 .composer-tool:hover{ background:rgba(255,255,255,.12); color:#fff; }
-.composer-send{ width:38px; height:38px; border:none; border-radius:50%; background:#fff; color:#150d0a; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.composer-send:hover{ background:#e9e2e0; }
-.composer-send:disabled{ opacity:.45; cursor:default; }
+.composer-send{ width:34px; height:34px; border:none; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  box-shadow:0 2px 8px -2px rgba(150,37,36,.6); transition:background .15s ease, box-shadow .15s ease, transform .15s ease; }
+.composer-send:hover:not(:disabled){ background:#b02d2c; box-shadow:0 4px 12px -2px rgba(150,37,36,.8); }
+.composer-send:active:not(:disabled){ transform:scale(.92); }
+/* grey until there is something to send */
+.composer-send:disabled{ background:rgba(255,255,255,.12); color:rgba(255,255,255,.35); box-shadow:none; cursor:default; }
 .composer-tool:focus-visible, .composer-send:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+/* Dragging a file over the chat: a red glow round the box and a "drop here" card over it. */
+.composer-drop{ position:absolute; inset:0; z-index:4; display:none; align-items:center; justify-content:center; border-radius:28px; pointer-events:none;
+  background:rgba(10,6,4,.7); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); }
+.composer-drop > span{ display:inline-flex; align-items:center; gap:8px; padding:9px 20px; border-radius:999px; background:#1c1210; border:1px solid rgba(150,37,36,.6); color:#ffb3ae; font-size:13.5px; font-weight:700; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+.assist-chat.dragging .composer{ border-color:rgba(176,45,44,.7); box-shadow:0 0 0 1px rgba(176,45,44,.5), 0 0 28px 2px rgba(150,37,36,.45); }
+.assist-chat.dragging .composer-drop{ display:flex; }
+.assist-chat.dragging{ outline:none; }
 /* Files waiting for Send. */
 .composer-tray{ display:flex; flex-wrap:wrap; gap:8px; padding:2px 0 4px; }
 .composer-tray[hidden]{ display:none; }

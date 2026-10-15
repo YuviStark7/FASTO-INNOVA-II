@@ -161,7 +161,14 @@ const TOOL_PRODUCT = {
 
 /* ---------- small UI helpers ---------- */
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600); }
-function setTyping(on) { const t = $("typingInd"); if (t) t.style.display = on ? "block" : "none"; const b = $("sendBtn"); if (b) b.disabled = on; }
+function setTyping(on) { state.typing = !!on; const t = $("typingInd"); if (t) t.style.display = on ? "block" : "none"; updateSendState(); }
+// Send is grey and disabled while the assistant is answering or while there is nothing to send (no text, no staged file).
+function updateSendState() {
+  const b = $("sendBtn"); if (!b) return;
+  const i = $("userInput"), chat = activeChat();
+  const empty = !(i && String(i.value || "").trim()) && !(chat && (chat.staged || []).length);
+  b.disabled = !!state.typing || empty;
+}
 function showErr(msg) { const b = $("errBanner"); if (!b) return; b.textContent = msg; b.style.display = "block"; }
 function clearErr() { const b = $("errBanner"); if (b) b.style.display = "none"; }
 function isLocalId(id) { return String(id).startsWith("local"); } // true when a DB write failed and we fell back to a client-only id
@@ -1081,6 +1088,7 @@ function renderAttachStrip() {
   const flying = chat ? (chat.uploads || []).filter(u => u.stage) : [];
   el.hidden = saved.length + flying.length === 0;
   el.innerHTML = saved.map(attachChipHTML).join("") + flying.map(uploadChipHTML).join("");
+  updateSendState();
 }
 // The files that travel with a sent message, drawn above its bubble.
 function msgFilesHTML(chat, m) {
@@ -1240,6 +1248,7 @@ async function openProductDoc(id) {
 
 /* ---------- The message box ---------- */
 function autosizeComposer() {
+  updateSendState();
   const i = $("userInput"); if (!i || !i.style) return;
   i.style.height = "auto";
   i.style.height = Math.min(i.scrollHeight || 0, 160) + "px";
@@ -5758,10 +5767,12 @@ function boot() {
   const dropTarget = (el, stage) => {
     if (!el) return;
     const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf("Files") !== -1;
+    let depth = 0;   // dragenter/dragleave also fire for every child, so count them instead of trusting one event
+    el.addEventListener("dragenter", e => { if (hasFiles(e)) { e.preventDefault(); depth++; el.classList.add("dragging"); } });
     el.addEventListener("dragover", e => { if (hasFiles(e)) { e.preventDefault(); el.classList.add("dragging"); } });
-    el.addEventListener("dragleave", e => { if (e.target === el) el.classList.remove("dragging"); });
+    el.addEventListener("dragleave", e => { if (hasFiles(e) && --depth <= 0) { depth = 0; el.classList.remove("dragging"); } });
     el.addEventListener("drop", e => {
-      el.classList.remove("dragging");
+      depth = 0; el.classList.remove("dragging");
       if (!hasFiles(e)) return;
       e.preventDefault();
       const f = Array.from(e.dataTransfer.files || []); if (f.length) onAttachFiles(f, { stage });

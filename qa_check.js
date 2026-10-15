@@ -353,14 +353,14 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   const bubbleTint = rgba(cssVar(decl(".assist-transcript .bubble.in", "background")));
   // The chat is a near-black panel of its own (2026-10-15 redesign); bubbles and the message box are measured on top of it.
   const chatPanel = rgba(cssVar(decl(".assist-chat", "background")));
-  const barTint = rgba(cssVar(decl(".composer", "background")));
+  const barTint = rgba(cssVar(decl(".composer", "background-color")));
   const navOpacity = parseFloat(decl(".nav-item", "opacity"));
   const warnText = hex(decl(".sync-warn", "color")), pillBlue = hex(decl(".pill-blue", "color"));
   const missing = [!ink70 && "--ink-70", !ink50 && "--ink-50", !topbar && "#topbar background",
                    !navOpacity && ".nav-item opacity", !warnText && ".sync-warn color", !pillBlue && ".pill-blue color",
                    !pillActive && "--pill-active", !railTint && ".chat-history-rail background",
                    !bubbleTint && ".assist-transcript .bubble.in background",
-                   !chatPanel && ".assist-chat background", !barTint && ".composer background"].filter(Boolean);
+                   !chatPanel && ".assist-chat background", !barTint && ".composer background-color"].filter(Boolean);
   report("contrast check couldn't read these values out of the CSS", missing);
 
   if (!missing.length) {

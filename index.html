@@ -16,9 +16,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/base.css?v=2026-10-15b">
-<link rel="stylesheet" href="css/app.css?v=2026-10-15b">
-<link rel="stylesheet" href="css/folder.css?v=2026-10-15b">
+<link rel="stylesheet" href="css/base.css?v=2026-10-15c">
+<link rel="stylesheet" href="css/app.css?v=2026-10-15c">
+<link rel="stylesheet" href="css/folder.css?v=2026-10-15c">
 </head>
 <body>
 
@@ -300,6 +300,8 @@
              The pickers are hidden inputs; the visible, keyboard-reachable
              controls are the two buttons. -->
         <div class="composer" id="composer">
+          <div class="composer-stroke" aria-hidden="true"></div>
+          <div class="composer-drop" aria-hidden="true"><span><span data-icon="paperclip" data-size="16"></span><span data-i18n="assist.dropHere">Drop files here</span></span></div>
           <div class="composer-tray" id="attachStrip" role="group" data-i18n-aria="attach.stripLabel" aria-label="Attached files" hidden></div>
           <textarea id="userInput" rows="1" maxlength="4000" placeholder="Ask Fasto or drop a file" data-i18n-ph="assist.askPh" data-i18n-aria="a11y.messageBox" aria-label="Your message to Fasto" autocomplete="off"></textarea>
           <div class="composer-bar">
@@ -307,7 +309,7 @@
               <button type="button" class="composer-tool" id="attachBtn" title="Attach a document (PDF, Word, Excel or CSV, up to 5 MB)" data-i18n-title="assist.attachDocTitle" data-i18n-aria="assist.attachDocTitle" aria-label="Attach a document (PDF, Word, Excel or CSV, up to 5 MB)"><span data-icon="paperclip"></span></button>
               <button type="button" class="composer-tool" id="imageBtn" title="Attach a photo (JPEG, PNG or WebP, up to 5 MB)" data-i18n-title="assist.attachImgTitle" data-i18n-aria="assist.attachImgTitle" aria-label="Attach a photo (JPEG, PNG or WebP, up to 5 MB)"><span data-icon="image"></span></button>
             </div>
-            <button type="button" class="composer-send" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle" data-i18n-aria="clients.sendTitle" aria-label="Send"><span data-icon="send" data-size="17"></span></button>
+            <button type="button" class="composer-send" id="sendBtn" title="Send" data-i18n-title="clients.sendTitle" data-i18n-aria="clients.sendTitle" aria-label="Send"><span data-icon="arrow-up" data-size="17"></span></button>
           </div>
         </div>
         <input type="file" id="attachInput" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,.pdf,.doc,.docx,.xls,.xlsx,.csv" multiple hidden tabindex="-1">
@@ -585,13 +587,13 @@
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase-client.js?v=2026-10-15b"></script>
+<script src="js/supabase-client.js?v=2026-10-15c"></script>
 <!-- Before app.js: app.js calls T() while it builds its screens. -->
-<script src="js/i18n.js?v=2026-10-15b"></script>
-<script src="js/data.js?v=2026-10-15b"></script>
-<script src="js/core.js?v=2026-10-15b"></script>
-<script src="js/folder-card.js?v=2026-10-15b"></script>
-<script src="js/icons.js?v=2026-10-15b"></script>
-<script src="js/app.js?v=2026-10-15b"></script>
+<script src="js/i18n.js?v=2026-10-15c"></script>
+<script src="js/data.js?v=2026-10-15c"></script>
+<script src="js/core.js?v=2026-10-15c"></script>
+<script src="js/folder-card.js?v=2026-10-15c"></script>
+<script src="js/icons.js?v=2026-10-15c"></script>
+<script src="js/app.js?v=2026-10-15c"></script>
 </body>
 </html>

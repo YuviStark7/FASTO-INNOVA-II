@@ -207,7 +207,7 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
-  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, updateSendState, setTyping, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
@@ -3634,6 +3634,20 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       sc("bar_caffetteria", donut).reasons[0].v === "cafe" && sc("gelateria", donut).reasons[0].v === "cafe" && sc("distributore_automatico", donut).reasons[0].v === "vending" &&
       ["pm.type.cafe", "pm.type.vending", "buyers.type.bar_caffetteria", "buyers.type.gelateria", "buyers.type.distributore_automatico"].every(k => a.STRINGS.en[k] && a.STRINGS.it[k]));
     check("the demo example chips are gone from the screen and from the dictionary", !a.STRINGS.en["assist.chip1"] && !a.STRINGS.it["assist.chip3"] && !/sample chip/.test(a.STRINGS.en["assist.greetOffline"]));
+
+    // the Send button: grey until there is something to send
+    els.sendBtn = fakeEl("sendBtn"); els.userInput = fakeEl("userInput");
+    c = mk("c29"); c.staged = [];
+    els.userInput.value = ""; a.updateSendState();
+    check("Send is disabled while the box is empty and nothing is attached", els.sendBtn.disabled === true);
+    els.userInput.value = "  "; a.updateSendState();
+    check("...and spaces alone do not count", els.sendBtn.disabled === true);
+    els.userInput.value = "hello"; a.updateSendState();
+    check("typing enables it", els.sendBtn.disabled === false);
+    els.userInput.value = ""; c.staged = ["d1"]; a.updateSendState();
+    check("a file waiting in the tray enables it even with no words", els.sendBtn.disabled === false);
+    els.userInput.value = "hello"; a.setTyping(true);
+    check("it stays disabled while the assistant is answering, then comes back", els.sendBtn.disabled === true && (a.setTyping(false), els.sendBtn.disabled === false));
 
     box.fetch = savedFetch; st.offline = savedOffline; st.apiKey = savedKey; st.products = savedProducts; st.productDocCounts = savedCounts;
     st.chats.length = 0; savedChats.forEach(x => st.chats.push(x)); st.activeChatId = savedActive;
