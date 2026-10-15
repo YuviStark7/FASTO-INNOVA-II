@@ -50,7 +50,20 @@ const DataStore = {
   deleteChat(chatId) { return sb.from("chats").delete().eq("id", chatId); },
 
   listMessages(chatId) { return sb.from("messages").select("*").eq("chat_id", chatId).order("created_at", { ascending: true }); },
-  addMessage(chatId, role, text) { return sb.from("messages").insert({ chat_id: chatId, role, text }); },
+  // docIds: the product documents attached with this message (shown in its bubble)
+  addMessage(chatId, role, text, docIds) {
+    const row = { chat_id: chatId, role, text };
+    if (docIds && docIds.length) row.doc_ids = docIds;
+    return sb.from("messages").insert(row);
+  },
+
+  /* ---------- chat projects (the sidebar's folders) ----------
+     A farmer's own groups of chats. RLS: own rows only; only name and pinned_at
+     can be edited. Deleting a project keeps its chats (project_id is cleared). */
+  listMyProjects(uid) { return sb.from("chat_projects").select("*").eq("owner_id", uid).order("created_at", { ascending: true }); },
+  createProject(uid, name) { return sb.from("chat_projects").insert({ owner_id: uid, name }).select().single(); },
+  updateProject(id, patch) { return sb.from("chat_projects").update(patch).eq("id", id); },
+  deleteProject(id) { return sb.from("chat_projects").delete().eq("id", id); },
 
   listProducts(chatId) { return sb.from("products").select("*").eq("chat_id", chatId); },
   async saveProducts(chatId, products) {
@@ -118,7 +131,8 @@ const DataStore = {
   // The draft product a chat created (a chat makes at most one).
   productForChat(chatId) { return sb.from("farmer_products").select("*").eq("source_chat_id", chatId).order("created_at", { ascending: true }).limit(1); },
   // Files live in the private "farmer-files" bucket; RLS limits each user to their own folder.
-  uploadProductFile(path, file) { return sb.storage.from("farmer-files").upload(path, file, { contentType: file.type, upsert: false }); },
+  // contentType is passed because a browser may report none for a Word or Excel file.
+  uploadProductFile(path, file, contentType) { return sb.storage.from("farmer-files").upload(path, file, { contentType: contentType || file.type, upsert: false }); },
   removeProductFile(path) { return sb.storage.from("farmer-files").remove([path]); },
   signedFileUrl(path) { return sb.storage.from("farmer-files").createSignedUrl(path, 3600); },
   removeProductDocument(id) { return sb.from("product_documents").delete().eq("id", id); },

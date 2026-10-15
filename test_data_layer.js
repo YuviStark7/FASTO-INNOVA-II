@@ -187,9 +187,9 @@ function loadApp(root) {
      that declares them, so evaluating these files separately would leave
      app.js unable to see DataStore or DB. */
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
-  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/app.js"];
+  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/icons.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, toggleRailMenu, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, openRailMenu, closeRailMenu, railMenuKey, moveChatToProject, newProjectFor, createProject, renameProject, togglePinProject, deleteProject, toggleProjectOpen, toggleRailMore, groupChatRail, chatRowHTML, mapProject, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -207,7 +207,7 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
-  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productSheetHTML, productHasContent, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
@@ -2003,7 +2003,14 @@ console.log("== Test 2: saveProducts and saveMatches ==");
   {
     const a = app;
     const good = { name: "Label.PDF", type: "application/pdf", size: 1000 };
-    check("an image or PDF under 5 MB is accepted", a.checkProductFile(good).ok && a.checkProductFile({ name: "a.png", type: "image/png", size: 5 * 1024 * 1024 }).ok);
+    check("an image, PDF, Word, Excel or CSV file under 5 MB is accepted", a.checkProductFile(good).ok && a.checkProductFile({ name: "a.png", type: "image/png", size: 5 * 1024 * 1024 }).ok &&
+      a.checkProductFile({ name: "a.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 5 }).ok &&
+      a.checkProductFile({ name: "a.xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", size: 5 }).ok && a.checkProductFile({ name: "a.csv", type: "text/csv", size: 5 }).ok);
+    check("a Word or Excel file whose browser reports no type is recognised by its extension; a script is not",
+      a.productFileType({ name: "Specs.DOCX", type: "" }).indexOf("wordprocessingml") > -1 && a.productFileType({ name: "t.xls", type: "" }) === "application/vnd.ms-excel" && a.productFileType({ name: "run.exe", type: "" }) === "" &&
+      a.checkProductFile({ name: "run.exe", type: "", size: 5 }).key === "attach.errType");
+    check("files are grouped for the two buttons and labelled for the list",
+      a.productFileGroup("image/webp") === "image" && a.productFileGroup("application/pdf") === "doc" && a.productFileLabel("application/vnd.ms-excel") === "EXCEL" && a.productFileLabel("image/png") === "IMAGE" && a.formatBytes(2831155) === "2.7 MB" && a.formatBytes(2048) === "2 KB");
     check("wrong type, too big and empty files are refused with their own message",
       a.checkProductFile({ type: "text/html", size: 5 }).key === "attach.errType" &&
       a.checkProductFile({ type: "image/png", size: 5 * 1024 * 1024 + 1 }).key === "attach.errSize" &&
@@ -2129,8 +2136,9 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       JSON.stringify(sb.chains.map(c => c.table + ":" + c.ops[0].op)));
     check("Brain 1 is told what is still missing, and the chat is titled by the product",
       out.startsWith("Saved.") && out.includes("documents") && c3.title === "Cheese slices", out + " / " + c3.title);
-    check("the card shows suggestions as suggestions and lists what is still needed",
-      (() => { c3.product.details.suggested = ["shelf_life_days"]; const h = a.productSheetHTML(c3); return h.includes("Cheese slices") && h.includes("suggested, please confirm") && h.includes("Still needed"); })());
+    check("the product panel shows suggestions as suggestions (Details) and lists what is still needed (Roadmap)",
+      (() => { c3.product.details.suggested = ["shelf_life_days"]; c3.panelTab = "details"; const h = a.productPanelHTML(c3); c3.panelTab = "roadmap"; const r = a.productPanelHTML(c3);
+        return h.includes("Cheese slices") && h.includes("suggested, please confirm") && r.includes("Still needed"); })());
     sb.reset(); sb.router = () => ({ data: [], error: null });
     const bad = await a.onProductSheet({ name: "x", nutrition: { fat_g: 60, carbs_g: 30, protein_g: 20 } }, c3);
     check("a rejected snapshot writes nothing and Brain 1 is told why", bad.startsWith("Rejected") && !sb.chains.some(c => c.table === "farmer_products"));
@@ -3217,16 +3225,86 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("pinned chats first, newest pin first, others keep order", sp.map(c => c.id).join("") === "cbad");
     check("chat title is trimmed, collapsed and capped at 60", a.cleanChatTitle("  a   b \n c ") === "a b c" && a.cleanChatTitle("x".repeat(90)).length === 60 && a.cleanChatTitle(null) === "");
     els.chatRailList = els.chatRailList || fakeEl("chatRailList");
-    a.state.chats = [{ id: "L1", title: "Tomatoes", pinnedAt: null, messages: [] }, { id: "L2", title: "Olives", pinnedAt: 7, messages: [] }];
-    a.state.search = "";
-    a.toggleRailMenu("L1");
-    check("opening a 3-dot menu shows Rename and Pin, one menu at a time", els.chatRailList.innerHTML.includes("Pin to top") && els.chatRailList.innerHTML.includes("Rename") && (els.chatRailList.innerHTML.match(/class="chat-rail-menu"/g) || []).length === 1);
+    els.railMenu = fakeEl("railMenu"); els.railMenu.hidden = true; els.railMenu.querySelectorAll = () => [];
+    els.dialogInput = els.dialogInput || fakeEl("dialogInput");
+    a.state.chats = [{ id: "L1", title: "Tomatoes", pinnedAt: null, messages: [], ts: 5 }, { id: "L2", title: "Olives", pinnedAt: 7, messages: [], ts: 4 }];
+    a.state.projects = []; a.state.search = "";
+    a.renderChatRail();
+    const html0 = els.chatRailList.innerHTML;
+    check("the sidebar has Pinned, Projects and Recents, with the pinned chat under Pinned and the other under Recents",
+      html0.includes("Pinned") && html0.includes("Projects") && html0.includes("Recents") && html0.indexOf("Olives") < html0.indexOf("Recents") && html0.indexOf("Tomatoes") > html0.indexOf("Recents") && html0.includes("No projects yet"));
+    const ctx = (x, y) => ({ type: "contextmenu", clientX: x, clientY: y, preventDefault() {}, stopPropagation() {} });
+    a.openRailMenu(ctx(40, 60), "chat", "L1");
+    const m1 = els.railMenu.innerHTML;
+    check("a right-click opens one menu at the pointer: Rename, Pin, Move to project, New project, Delete",
+      els.railMenu.hidden === false && els.railMenu.style.left === "40px" && els.railMenu.style.top === "60px" && a.state.railMenu.id === "L1" &&
+      m1.includes("Rename") && m1.includes("Pin to top") && m1.includes("Move to project") && m1.includes("New project…") && m1.includes("Delete") && !m1.includes("Remove from project"));
     a.togglePinChat("L1");
-    check("pinning sets pinnedAt, closes the menu and sorts it first", a.state.chats[0].pinnedAt > 0 && a.state.railMenuId === null && els.chatRailList.innerHTML.indexOf("Tomatoes") < els.chatRailList.innerHTML.indexOf("Olives"));
+    check("pinning sets pinnedAt, closes the menu and moves it under Pinned",
+      a.state.chats[0].pinnedAt > 0 && a.state.railMenu === null && els.railMenu.hidden === true && els.chatRailList.innerHTML.indexOf("Tomatoes") < els.chatRailList.innerHTML.indexOf("Recents"));
     a.togglePinChat("L1");
     check("pressing Pin again unpins", a.state.chats[0].pinnedAt === null);
-    // pass B: delete
-    check("the 3-dot menu offers Delete", (a.toggleRailMenu("L1"), els.chatRailList.innerHTML.includes("Delete")));
+    check("Escape closes the menu", (a.openRailMenu(ctx(1, 1), "chat", "L2"), a.railMenuKey({ key: "Escape", preventDefault() {} })) === true && a.state.railMenu === null && els.railMenu.hidden === true);
+
+    // projects
+    globalThis.__realDS = Object.assign({}, a.DataStore);   // Test 12 puts the real queries back
+    const pcalls = [];
+    a.state.farmerId = "u1";
+    a.DataStore.createProject = async (uid, name) => { pcalls.push(["create", uid, name]); return { data: { id: "P1", name, pinned_at: null }, error: null }; };
+    a.DataStore.updateChat = async (id, patch) => { pcalls.push(["chat", id, patch]); return { error: null }; };
+    a.DataStore.updateProject = async (id, patch) => { pcalls.push(["proj", id, patch]); return { error: null }; };
+    a.DataStore.deleteProject = async id => { pcalls.push(["del", id]); return { error: null }; };
+    const typeName = name => setTimeout(() => { els.dialogInput.value = name; a.settleDialog(true); }, 0);
+    typeName("  Butter   bars "); const proj = await a.newProjectFor("L1");
+    check("New project asks for a name, saves it for this farmer, then puts the chat in it",
+      proj && proj.name === "Butter bars" && pcalls[0][0] === "create" && pcalls[0][1] === "u1" && pcalls[0][2] === "Butter bars" &&
+      a.state.chats[0].projectId === "P1" && pcalls.some(c => c[0] === "chat" && c[1] === "L1" && c[2].project_id === "P1"));
+    check("the chat now sits inside its project in the sidebar and no longer in Recents",
+      els.chatRailList.innerHTML.includes("Butter bars") && els.chatRailList.innerHTML.indexOf("Tomatoes") < els.chatRailList.innerHTML.indexOf("Recents") && els.chatRailList.innerHTML.includes('aria-expanded="true"'));
+    pcalls.length = 0;
+    typeName("butter BARS"); const dup = await a.newProjectFor(null);
+    check("a project name that already exists (any case) is refused without a database call", dup === null && pcalls.length === 0);
+    a.DataStore.createProject = async () => ({ data: null, error: { message: "no" } });
+    typeName("Honey"); const failed = await a.newProjectFor(null);
+    check("a project the database refuses is not added", failed === null && a.state.projects.length === 1);
+    a.openRailMenu(ctx(5, 5), "chat", "L1");
+    check("a chat in a project shows Move-to entries (current marked) and Remove from project",
+      els.railMenu.innerHTML.includes("Butter bars") && els.railMenu.innerHTML.includes('aria-current="true"') && els.railMenu.innerHTML.includes("Remove from project"));
+    a.moveChatToProject("L1", null);
+    check("Remove from project returns the chat to Recents and saves project_id null",
+      a.state.chats[0].projectId === null && pcalls.some(c => c[0] === "chat" && c[2].project_id === null));
+    a.moveChatToProject("L1", "nope");
+    check("moving into a project that does not exist changes nothing", a.state.chats[0].projectId === null);
+    a.moveChatToProject("L1", "P1"); pcalls.length = 0;
+    a.togglePinProject("P1");
+    check("pinning a project saves pinned_at and lists it under Pinned, not Projects",
+      pcalls[0][0] === "proj" && typeof pcalls[0][2].pinned_at === "string" && els.chatRailList.innerHTML.indexOf("Butter bars") < els.chatRailList.innerHTML.indexOf("Projects"));
+    a.togglePinProject("P1");
+    a.toggleProjectOpen("P1");
+    check("a project folds shut and open again; a closed one hides its chats", !els.chatRailList.innerHTML.includes("Tomatoes") && (a.toggleProjectOpen("P1"), els.chatRailList.innerHTML.includes("Tomatoes")));
+    const dlgYes = ok => setTimeout(() => a.settleDialog(ok), 0);
+    pcalls.length = 0; dlgYes(false);
+    check("cancelling Delete project deletes nothing", (await a.deleteProject("P1")) === false && pcalls.length === 0 && a.state.projects.length === 1);
+    dlgYes(true);
+    check("deleting a project keeps its chats and sends them back to Recents",
+      (await a.deleteProject("P1")) === true && a.state.projects.length === 0 && a.state.chats.length === 2 && a.state.chats[0].projectId === null && pcalls[0][0] === "del");
+    // grouping rules (pure)
+    const g = a.groupChatRail([{ id: "a", ts: 1, pinnedAt: 3, projectId: "P" }, { id: "b", ts: 5, projectId: "P" }, { id: "c", ts: 9 }, { id: "d", ts: 7, projectId: "gone" }],
+      [{ id: "P", name: "Zed", pinnedAt: null }, { id: "Q", name: "Alpha", pinnedAt: 4 }]);
+    check("grouping: pinned chats and projects, unpinned projects with their chats, recents = no project and not pinned (an orphan counts as recent)",
+      g.pinnedChats.map(c => c.id).join() === "a" && g.pinnedProjects.map(p => p.id).join() === "Q" && g.projects.length === 1 && g.projects[0].chats.map(c => c.id).join() === "b,a" && g.recents.map(c => c.id).join() === "c,d");
+    // long sections show a few rows and a "Show more"
+    a.state.chats = Array.from({ length: 9 }, (_, i) => ({ id: "R" + i, title: "Chat " + i, messages: [], ts: i }));
+    a.state.railMore = {}; a.renderChatRail();
+    check("Recents shows six rows and Show more, which reveals the rest and then Show less",
+      (els.chatRailList.innerHTML.match(/class="chat-rail-item/g) || []).length === 6 && els.chatRailList.innerHTML.includes("Show more") &&
+      (a.toggleRailMore("recents"), (els.chatRailList.innerHTML.match(/class="chat-rail-item/g) || []).length === 9 && els.chatRailList.innerHTML.includes("Show less")));
+    a.state.railMore = {};
+    a.state.chats = [{ id: "L1", title: "Tomatoes", pinnedAt: null, messages: [], ts: 5 }, { id: "L2", title: "Olives", pinnedAt: 7, messages: [], ts: 4 }];
+    a.renderChatRail();
+    a.openRailMenu(ctx(1, 1), "chat", "L1");
+    check("the menu offers Delete", els.railMenu.innerHTML.includes("Delete"));
+    a.closeRailMenu(false);
     let delCalls = [], delErr = null;
     a.DataStore.deleteChat = async id => { delCalls.push(id); return { error: delErr }; };
     const clickDlg = ok => setTimeout(() => a.settleDialog(ok), 0);
@@ -3245,6 +3323,188 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     clickDlg(true); const r4 = await a.deleteChat(a.state.chats[0].id);
     check("a saved delete removes the chat, calls the database once more and opens another", r4 === true && delCalls.length === 2 && a.state.chats.length === 1 && a.state.activeChatId === a.state.chats[0].id);
     a.state.chats = []; a.renderChatRail && 0;
+  }
+
+
+  /* ---- Fasto-AI redesign (2026-10-15): product panel, composer, projects ---- */
+  console.log("\n== Test 12: the redesigned Fasto-AI screen ==");
+  {
+    const a = app, st = a.state;
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId;
+    st.farmerId = "u1";
+    Object.assign(a.DataStore, globalThis.__realDS);
+
+    // --- data layer shapes
+    sb.reset();
+    a.DataStore.addMessage("c1", "user", "hi", ["d1"]); const m1 = sb.last();
+    a.DataStore.addMessage("c1", "user", "hi"); const m2 = sb.last();
+    check("a message saved with files carries their ids (doc_ids); one without does not",
+      m1.table === "messages" && m1.ops[0].args[0].doc_ids.join() === "d1" && m2.ops[0].args[0].doc_ids === undefined);
+    sb.reset();
+    a.DataStore.listMyProjects("u1"); const q1 = sb.last();
+    a.DataStore.createProject("u1", "Butter"); const q2 = sb.last();
+    a.DataStore.updateProject("P", { name: "x" }); const q3 = sb.last();
+    a.DataStore.deleteProject("P"); const q4 = sb.last();
+    check("projects are read by owner, created for the owner, renamed and deleted by id",
+      q1.table === "chat_projects" && q1.ops.some(o => o.op === "eq" && o.args[0] === "owner_id" && o.args[1] === "u1") &&
+      q2.ops[0].op === "insert" && q2.ops[0].args[0].owner_id === "u1" && q2.ops[0].args[0].name === "Butter" &&
+      q3.ops[0].op === "update" && q4.ops[0].op === "delete" && q4.ops.some(o => o.op === "eq" && o.args[1] === "P"));
+    sb.reset(); sb.storageCalls.length = 0;
+    await a.DataStore.uploadProductFile("u1/products/x", { type: "" }, "application/vnd.ms-excel");
+    check("an upload names its content type itself when the browser gave none", sb.storageCalls[0].args[2].contentType === "application/vnd.ms-excel");
+
+    // --- sign-in maps project and attachment ids
+    sb.reset();
+    sb.router = chain => {
+      const t = chain.table;
+      if (t === "farmers") return { data: { id: "u1", farmer_name: "Marco" }, error: null };
+      if (t === "chats") return { data: [{ id: "c1", title: "Butter", phase: "interview", pct: 0, project_id: "P1", created_at: "2026-10-15T09:00:00Z" }], error: null };
+      if (t === "chat_projects") return { data: [{ id: "P1", name: "Butter bars", pinned_at: null }], error: null };
+      if (t === "messages") return { data: [{ role: "user", text: "see", created_at: "2026-10-15T09:00:00Z", doc_ids: ["d1"] }, { role: "ai", text: "ok", created_at: "2026-10-15T09:00:01Z", doc_ids: null }], error: null };
+      return { data: [], error: null };
+    };
+    st.chats = []; st.clients = [];
+    await a.loadFarmerData("u1");
+    check("sign-in loads the projects and puts each chat in its project",
+      st.projects.length === 1 && st.projects[0].name === "Butter bars" && st.chats[0].projectId === "P1");
+    check("sign-in restores which files went with which message", st.chats[0].messages[0].docIds.join() === "d1" && st.chats[0].messages[1].docIds.length === 0);
+    sb.router = chain => chain.table === "chat_projects" ? { data: null, error: { message: "no table" } } : { data: [], error: null };
+    st.chats = []; await a.loadFarmerData("u1");
+    check("projects that fail to load leave an empty sidebar section, never a failed sign-in", st.projects.length === 0);
+
+    // --- Guardian: optional document names
+    const gv = a.guardianValidateProductSheet({ name: "Brie", suggested_documents: ["DOP certificate", " DOP certificate ", "<b>Lab</b> analysis", "", 5, "a", "b", "c", "d", "e"] });
+    check("suggested documents are cleaned, de-duplicated and capped at five, and are not 'suggested values'",
+      gv.ok && gv.sheet.details.suggested_documents.length === 5 && gv.sheet.details.suggested_documents[0] === "DOP certificate" && gv.sheet.details.suggested_documents[1].indexOf("<") === -1 && gv.sheet.details.suggested.length === 0);
+    check("the model is told to open the panel early and offered the suggested_documents field",
+      a.SYSTEM_PRODUCT.indexOf("product profile panel") > -1 && !!a.TOOL_PRODUCT.input_schema.properties.suggested_documents);
+
+    // --- roadmap
+    const empty = a.productRoadmap({ name: "New product", details: {} }, 0);
+    check("an empty product is 0% with six steps to do", empty.pct === 0 && empty.total === 6 && empty.done === 0 && !empty.complete);
+    const part = a.productRoadmap({ name: "Brie", ai_category: "soft cheese", details: { pack_sizes: ["200 g"], min_order: "10", ingredients: ["milk"], allergens: [] , suggested: [] } }, 0);
+    check("basic details, ingredients and allergens tick off as they are given (3 of 6 = 50%), the rest stay open with what is missing",
+      part.pct === 50 && part.steps.filter(x => x.done).map(x => x.key).join() === "basic,ingredients,allergens" && part.steps.find(x => x.key === "shelf").missing.join() === "shelf_life_days,storage");
+    const fullRow = { name: "Brie", ai_category: "soft cheese", details: { ingredients: ["milk"], allergens: ["milk"], shelf_life_days: 30, storage: "fridge", pack_sizes: ["200 g"], min_order: "10", suggested: [] },
+      nutrition: { energy_kcal: 300, fat_g: 20, saturated_fat_g: 10, carbs_g: 1, sugars_g: 1, protein_g: 20, salt_g: 1.5 } };
+    check("a complete sheet with a document is 100% and agrees with productCompleteness; without a document it is 83%",
+      a.productRoadmap(fullRow, 1).pct === 100 && a.productRoadmap(fullRow, 1).complete === a.productCompleteness(fullRow, 1).complete && a.productRoadmap(fullRow, 0).pct === 83);
+    const sugRow = Object.assign({}, fullRow, { details: Object.assign({}, fullRow.details, { shelf_life_days: 30, suggested: ["shelf_life_days"] }) });
+    check("a value that is only a suggestion does not tick its step", a.productRoadmap(sugRow, 1).steps.find(x => x.key === "shelf").done === false);
+    const opt = a.productRoadmap({ name: "Brie", details: { suggested_documents: ["DOP certificate", "Lab"], docs_done: ["Lab"] } }, 0);
+    check("optional document items are ticked by the producer and never change the percentage",
+      opt.optional.length === 2 && opt.optional[1].done && !opt.optional[0].done && opt.pct === 0);
+
+    // --- the panel
+    els.productPanel = fakeEl("productPanel"); els.productPanelBtn = fakeEl("productPanelBtn"); els.assistChatTitle = fakeEl("assistChatTitle");
+    const pc = { id: "c9", title: "Brie", messages: [], docs: [{ id: "d1", file_name: "Label <1>.png", mime_type: "image/png", size_bytes: 2831155, thumbUrl: "https://t/x" }, { id: "d2", file_name: "Specs.xlsx", mime_type: "application/vnd.ms-excel", size_bytes: 2048 }],
+      docsState: "done", product: Object.assign({}, fullRow, { details: Object.assign({}, fullRow.details, { allergens: [] }) }) };
+    st.chats = [pc]; st.activeChatId = "c9";
+    a.renderProductPanel();
+    const h1 = els.productPanel.innerHTML;
+    check("the first time a chat has a product the panel opens by itself, on the Roadmap",
+      pc.panelOpen === true && els.productPanel.has("open") && h1.includes('role="tablist"') && h1.includes('id="ppTab-roadmap" aria-selected="true"') && h1.includes('role="progressbar"') && h1.includes('aria-valuenow="100"') && els.productPanelBtn.hidden === false);
+    check("the four tabs are Roadmap, Details, Nutrition and Documents (with a file count)",
+      ["Roadmap", "Details", "Nutrition", "Documents"].every(t => h1.includes(">" + t)) && h1.includes('<span class="pp-count">2</span>'));
+    check("the checklist is a disclosure: open by default, folds on press", h1.includes('aria-expanded="true" aria-controls="ppChecklist"') && (a.toggleRoadmapList(), els.productPanel.innerHTML.includes('id="ppChecklist" hidden')));
+    a.toggleRoadmapList();
+    a.setPanelTab("details");
+    const h2 = els.productPanel.innerHTML;
+    check("Details lists the facts, shows 'None' for no allergens and the picture strip, and escapes names",
+      h2.includes("ingredients") && h2.includes("milk") && h2.includes("shelf life") && h2.includes("30 days") && h2.includes('class="pp-images"') && h2.includes("https://t/x") && h2.indexOf("<1>") === -1);
+    a.setPanelTab("nutrition");
+    check("Nutrition shows the table per 100 g, one row per value", els.productPanel.innerHTML.includes("Nutrition per 100 g") && (els.productPanel.innerHTML.match(/class="prod-row/g) || []).length === 7 && els.productPanel.innerHTML.includes("300"));
+    pc.product.nutrition = { energy_kcal: 300 }; a.renderProductPanel();
+    check("...and a dash for each value still missing", (els.productPanel.innerHTML.match(/<dd>—<\/dd>/g) || []).length === 6);
+    a.setPanelTab("documents");
+    const h4 = els.productPanel.innerHTML;
+    check("Documents offers a drop area with Browse and lists the saved files with type and size, each removable",
+      h4.includes("Drop files to upload") && h4.includes("Browse") && h4.includes("IMAGE · 2.7 MB") && h4.includes("EXCEL · 2 KB") && (h4.match(/aria-label="Remove /g) || []).length === 2 && h4.includes("Label &lt;1&gt;.png"));
+    pc.uploads = [{ key: "u1", name: "contract.pdf", size: 3000, mime: "application/pdf", status: "failed", stage: false, file: {} }, { key: "u2", name: "big.zip", size: 10, mime: "application/pdf", status: "uploading", stage: false }];
+    a.renderProductPanel();
+    const h5 = els.productPanel.innerHTML;
+    check("a failed upload shows a retry button and a remove button; one in flight shows a moving bar",
+      h5.includes("Try contract.pdf again") && h5.includes("Upload failed") && h5.includes('pp-prog busy'));
+    a.dismissUpload("u1");
+    check("dismissing a failed upload takes it off the list", !els.productPanel.innerHTML.includes("contract.pdf"));
+    pc.uploads = [];
+    // keyboard: arrows move between tabs
+    a.panelTabKey({ key: "ArrowRight", preventDefault() {} });
+    check("the arrow keys move between the tabs (wrapping)", pc.panelTab === "roadmap");
+    a.panelTabKey({ key: "ArrowLeft", preventDefault() {} });
+    check("...and back", pc.panelTab === "documents");
+    check("Close shuts the panel and remembers the farmer's choice", a.closeProductPanel(false) === true && pc.panelOpen === false && !els.productPanel.has("open") && els.productPanelBtn.getAttribute("aria-expanded") === "false");
+    a.renderTranscript();
+    check("redrawing the chat does not reopen a panel the farmer closed", pc.panelOpen === false);
+    a.toggleProductPanel();
+    check("the Product profile button brings it back", pc.panelOpen === true && els.productPanel.has("open"));
+    st.chats = [{ id: "c10", title: "Tomatoes", messages: [], docsState: "done", docs: [] }]; st.activeChatId = "c10";
+    a.renderProductPanel();
+    check("a chat with no product has no panel and no button", !els.productPanel.has("open") && els.productPanelBtn.hidden === true);
+
+    // optional document tick saves into the product's details
+    st.chats = [pc]; st.activeChatId = "c9"; pc.product = Object.assign({ id: "p7" }, pc.product, { details: Object.assign({}, pc.product.details, { suggested_documents: ["DOP certificate"] }) });
+    sb.reset(); sb.router = chain => ({ data: Object.assign({}, pc.product, chain.ops[0].op === "update" ? chain.ops[0].args[0] : {}), error: null });
+    await a.toggleDocDone(0);
+    const up = sb.chains.find(c => c.table === "farmer_products" && c.ops[0].op === "update");
+    check("ticking an optional document saves it in the product's details and keeps the rest", up && up.ops[0].args[0].details.docs_done.join() === "DOP certificate" && up.ops[0].args[0].details.suggested_documents.length === 1 && a.productRoadmap(pc.product, 1).optional[0].done);
+
+    // --- transcript: files travel with their bubble; the sheet is no longer in the chat
+    els.assistTranscript = fakeEl("assistTranscript");
+    pc.messages = [{ role: "user", text: "can you read this", docIds: ["d1", "d2", "gone"] }, { role: "user", text: "", docIds: ["d1"] }, { role: "ai", text: "Sure" }];
+    a.renderTranscript();
+    const tr = els.assistTranscript.innerHTML;
+    check("a sent message's files sit above its bubble in one group: the picture as a preview, other files by name, unknown ids skipped",
+      tr.includes('class="msg-group out"') && tr.indexOf('class="msg-files"') < tr.indexOf("can you read this") && tr.includes('src="https://t/x"') && tr.includes("Specs.xlsx") && (tr.match(/class="msg-file /g) || []).length === 3);
+    check("a message that is only files has no empty bubble", (tr.match(/class="bubble out"/g) || []).length === 1);
+    check("the product sheet is no longer drawn inside the chat", tr.indexOf("prod-sheet") === -1 && tr.indexOf("Cheese") === -1);
+
+    // --- composer: files wait in the tray, then travel with the message
+    st.chats = [{ id: "c11", title: "Butter", messages: [], docs: [], docsState: "done", apiMessages: [] }]; st.activeChatId = "c11";
+    const c11 = st.chats[0];
+    els.attachStrip = fakeEl("attachStrip"); els.userInput = fakeEl("userInput");
+    let n = 0;
+    sb.reset(); sb.router = ch => ch.table === "farmer_products" ? { data: { id: "p11", details: {}, nutrition: {} }, error: null } : ch.table === "product_documents" ? { data: { id: "n" + (++n), file_name: "butter.jpg", mime_type: "image/jpeg", storage_path: "u1/products/x" }, error: null } : { data: [], error: null };
+    await a.onAttachFiles([{ name: "butter.jpg", type: "image/jpeg", size: 100 }]);
+    check("a file chosen in the message box is saved and waits in the tray for the next message",
+      c11.staged.join() === "n1" && els.attachStrip.hidden === false && els.attachStrip.innerHTML.includes("butter.jpg"));
+    check("the first file also opens the product panel", c11.product && c11.product.id === "p11" && c11.panelOpen === true);
+    await a.onAttachFiles([{ name: "Specs.xlsx", type: "", size: 100 }], { stage: false });
+    check("a file added from the Documents tab is saved on the product but not staged",
+      c11.staged.length === 1 && c11.docs.length === 2 && sb.chains.filter(c => c.table === "product_documents").pop().ops[0].args[0].mime_type.indexOf("spreadsheetml") > -1);
+    c11.uploads = [{ key: "z", name: "slow.pdf", status: "uploading", stage: true }];
+    els.userInput.value = "here you go"; els.toast.textContent = "";
+    a.composerSend();
+    check("Send waits while a file is still uploading, and nothing is lost", els.toast.textContent.indexOf("Wait for the upload") === 0 && c11.messages.length === 0 && els.userInput.value === "here you go" && c11.staged.length === 1);
+    c11.uploads = []; st.offline = true;
+    const sentBefore = sb.chains.length;
+    a.composerSend();
+    const um = c11.messages.find(m => m.role === "user");
+    check("Send puts the text and the staged files on ONE message, empties the tray and the box",
+      um && um.text === "here you go" && um.docIds.join() === "n1" && c11.staged.length === 0 && els.userInput.value === "" && els.attachStrip.hidden === true);
+    const saved = sb.chains.slice(sentBefore).find(c => c.table === "messages" && c.ops[0].args[0].role === "user");
+    check("the files' ids are saved with that message", saved && saved.ops[0].args[0].doc_ids.join() === "n1");
+    check("a message with files but no words still goes, with a plain sentence", (() => {
+      c11.staged = ["n2"]; els.userInput.value = "  "; a.composerSend(); return c11.messages.filter(m => m.role === "user").pop().text === "Here are the files I attached." && c11.messages.filter(m => m.role === "user").pop().docIds.join() === "n2"; })());
+    c11.messages.length = 0; a.composerSend();
+    check("an empty box with nothing attached sends nothing", c11.messages.length === 0);
+    st.offline = false;
+
+    // --- a Word/Excel/CSV file is stored but never sent to the model
+    st.apiKey = "k"; els.toast.textContent = "";
+    await a.scanAttached(c11, { name: "Specs.xlsx", type: "", size: 5 }, { id: "d" });
+    check("Word, Excel and CSV files are stored but not read by the model", els.toast.textContent.indexOf("Reading") === -1 && !c11.scans);
+    st.apiKey = "";
+
+    // --- retry after a failed upload
+    c11.uploads = []; sb.reset(); sb.storageResult = { error: { message: "net" } };
+    await a.onAttachFiles([{ name: "again.pdf", type: "application/pdf", size: 10 }]);
+    check("a failed upload stays in the tray as a failed item with its file kept", c11.uploads.length === 1 && c11.uploads[0].status === "failed" && !!c11.uploads[0].file);
+    sb.reset(); sb.router = ch => ch.table === "product_documents" ? { data: { id: "n9", file_name: "again.pdf", mime_type: "application/pdf", storage_path: "x" }, error: null } : { data: [], error: null };
+    await a.retryUpload(c11.uploads[0].key);
+    check("Retry uploads it again and, on success, clears the failure and stages the file", c11.uploads.length === 0 && c11.staged.indexOf("n9") !== -1);
+
+    st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.projects = [];
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

@@ -58,7 +58,10 @@ let state = {
   activeClientId: null,
   showAllResearch: false,
   adminStage: "started",  // which funnel stage the Admin table is filtered to
-  railMenuId: null,       // which chat-rail 3-dot menu is open (item 21)
+  projects: [],           // the sidebar's folders: {id, name, pinnedAt}
+  railMenu: null,         // the open sidebar menu: {kind: "chat"|"project", id, x, y}
+  railClosed: {},         // projects the farmer has folded shut (session only)
+  railMore: {},           // "Show more" switches per sidebar section (session only)
   search: ""              // the top-bar query — see SEARCH below. It lives in state, not in the DOM
 };
 
@@ -122,7 +125,8 @@ const TOOL_RECS = {
    whether this is fresh produce (old flow) or a finished product (this flow). */
 const SYSTEM_PRODUCT = `
 
-FINISHED PRODUCTS: if the person makes a finished, packaged product (for example sliced cheese, jam, pasta, olive oil in bottles, biscuits) rather than selling fresh produce by the kilo, do NOT call submit_farmer_profile. Instead build a product sheet by interviewing them, still ONE question per message, under 65 words, mirroring their language. Start with what the product is, then ask in this order, skipping what you already know: ingredients; allergens (ask even if they think there are none; "none" is a valid answer); shelf life; how it must be stored; pack sizes; minimum order; the nutrition table per 100 g (energy kcal, fat, saturated fat, carbohydrates, sugars, protein, salt); certifications (optional); price range (optional). Tell them they can also attach a photo of the label or a document with the paperclip button, and that at least one document is needed to finish.
+FINISHED PRODUCTS: if the person makes a finished, packaged product (for example sliced cheese, jam, pasta, olive oil in bottles, biscuits) rather than selling fresh produce by the kilo, do NOT call submit_farmer_profile. Instead build a product sheet by interviewing them, still ONE question per message, under 65 words, mirroring their language. Start with what the product is, then ask in this order, skipping what you already know: ingredients; allergens (ask even if they think there are none; "none" is a valid answer); shelf life; how it must be stored; pack sizes; minimum order; the nutrition table per 100 g (energy kcal, fat, saturated fat, carbohydrates, sugars, protein, salt); certifications (optional); price range (optional). Tell them they can also attach a photo of the label (picture button) or a document such as a PDF, Word or Excel file (paperclip button) in the message box, and that at least one document is needed to finish.
+As soon as you know what the product is, call save_product_sheet with its name and ai_category, even before anything else is known: that opens the product profile panel beside the chat. In that same first call send suggested_documents: up to 5 short names of documents that suit THIS product (for example "DOP certificate" for a protected-origin cheese, "organic certificate" if it is organic, "lab analysis" for a product with health claims); skip it if none really fits. The panel shows the sheet and a checklist that follows what you save, so never repeat the whole sheet back in the chat: just ask the next question.
 At the END of every turn in which you learned something new, call save_product_sheet with the facts so far (only fields you actually know). You invent the category yourself, in lowercase and in the person's language (e.g. "sliced cheese"), as ai_category.
 If they do not know a value for shelf_life_days, storage, pack_sizes or a nutrition number, you MAY suggest a typical value, say clearly that it is only a suggestion to confirm, and list that field in suggested_fields (use "nutrition.salt_g" style for nutrition). NEVER suggest or invent ingredients, allergens, certifications, minimum order or prices: those must come from the person or from a document. When they confirm a suggestion, send it again WITHOUT listing it in suggested_fields.
 A sheet is finished when every field above except certifications and price range is confirmed and a document is attached. Then tell them the sheet is saved as a draft product and that the best local buyers now appear as cards below the conversation, each with a message already drafted that they can read and send. Never promise that anyone will buy, and never promise prices.`;
@@ -147,7 +151,8 @@ const TOOL_PRODUCT = {
         energy_kcal: { type: "number" }, fat_g: { type: "number" }, saturated_fat_g: { type: "number" },
         carbs_g: { type: "number" }, sugars_g: { type: "number" }, protein_g: { type: "number" },
         salt_g: { type: "number" }, fibre_g: { type: "number" } } },
-      suggested_fields: { type: "array", items: { type: "string" }, description: "Fields whose value is YOUR suggestion, not confirmed by the producer" }
+      suggested_fields: { type: "array", items: { type: "string" }, description: "Fields whose value is YOUR suggestion, not confirmed by the producer" },
+      suggested_documents: { type: "array", items: { type: "string" }, description: "Up to 5 short names of documents that suit this product, e.g. 'DOP certificate'. Optional checklist items only." }
     },
     required: ["name"]
   }
@@ -445,6 +450,11 @@ async function loadFarmerData(uid) {
   state.farmerProfile = farmer || {};
   loadProducts();   // not awaited: the My products page and the new-chat picker use it when ready
 
+  // The sidebar's projects. A failed read only means the folders are missing, never that sign-in stops.
+  try {
+    const pr = await DataStore.listMyProjects(uid);
+    state.projects = (pr && !pr.error && pr.data || []).map(mapProject);
+  } catch (e) { state.projects = []; console.warn("couldn't load projects", e); }
   state.chats = [];
   for (const row of (chatRows || [])) {
     const [{ data: msgs }, { data: prods }] = await Promise.all([
@@ -454,7 +464,7 @@ async function loadFarmerData(uid) {
     const hasProfile = !!(row.village || row.organic || (prods && prods.length));
     state.chats.push({
       id: row.id, title: row.title, phase: row.phase, pct: row.pct,
-      messages: (msgs || []).map(m => ({ role: m.role, text: m.text, ts: new Date(m.created_at).getTime() })),
+      messages: (msgs || []).map(m => ({ role: m.role, text: m.text, ts: new Date(m.created_at).getTime(), docIds: m.doc_ids || [] })),
       apiMessages: [], // Claude's own conversation context resets each session — only the visible transcript persists
       profile: hasProfile ? {
         farmer_name: row.farmer_name, village: row.village,
@@ -465,6 +475,7 @@ async function loadFarmerData(uid) {
       candidates: [], recs: null,
       offlineStep: (msgs || []).length, offlineReady: (msgs || []).length >= OFFLINE_SCRIPT_KEYS.length,
       pinnedAt: row.pinned_at ? new Date(row.pinned_at).getTime() : null,
+      projectId: row.project_id || null,
       ts: new Date(row.created_at).getTime()
     });
   }
@@ -599,6 +610,8 @@ async function postThreadMessage(c, text) {
     return true;
   } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); return false; }
 }
+
+function mapProject(r) { return { id: r.id, name: r.name, pinnedAt: r.pinned_at ? new Date(r.pinned_at).getTime() : null }; }
 
 /* ================= MULTI-CHAT (Fasto-AI screen) ================= */
 async function newChatObj() {
@@ -739,39 +752,88 @@ async function startNewChat() {
 }
 function selectChat(id) { state.activeChatId = id; clearErr(); updateHeaderIdentity(); renderChatRail(); renderTranscript(); }
 
-/* Each rail entry is a <button>, not a <div onclick>. The conversation history
-   was reachable by mouse only — there was no way to change conversation from
-   the keyboard at all. aria-current marks which one is open, since "active"
-   here is a background tint and nothing else. */
+/* ================= CHAT SIDEBAR (pinned / projects / recents) =================
+   The sidebar on the right of the Fasto-AI screen. Three sections:
+     Pinned   pinned chats and pinned projects
+     Projects the farmer's own folders; a project batches several chats
+     Recents  every chat that is in no project and not pinned
+   Right-click (or the ... button, or the Menu key) on a chat or a project opens
+   a menu: Rename, Pin, Move to project, Delete. The ... button exists because a
+   right-click cannot be done from a keyboard or a phone. Everything is a real
+   <button>; the grouping itself is the pure groupChatRail() in core.js. */
+const RAIL_LIMIT = { projects: 3, recents: 6 };   // rows shown before "Show more"
+function railIcon(name, size) { return typeof lucide === "function" ? lucide(name, size || 16) : ""; }
+function railMenuOpenFor(kind, id) { return !!(state.railMenu && state.railMenu.kind === kind && state.railMenu.id === id); }
+
+function chatRowHTML(c, variant) {
+  const on = c.id === state.activeChatId, id = esc(c.id);
+  const icon = variant === "pinned" ? railIcon("pin", 14) : variant === "in-project" ? railIcon("message-square", 14) : "";
+  return `<div class="chat-rail-row ${variant || ""}" data-chat-id="${id}" oncontextmenu="openRailMenu(event,'chat','${id}')">
+    <button type="button" class="chat-rail-item${on ? " active" : ""}" data-chat-id="${id}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openChat", { title: c.title }))}" onclick="selectChat('${id}')">${icon}<span class="rail-label">${esc(c.title)}</span></button>
+    <button type="button" class="chat-rail-more" data-menu-for="chat:${id}" aria-haspopup="menu" aria-expanded="${railMenuOpenFor("chat", c.id) ? "true" : "false"}" aria-label="${escAttr(T("a11y.chatMenu", { title: c.title }))}" onclick="openRailMenu(event,'chat','${id}')">${railIcon("ellipsis", 16)}</button>
+  </div>`;
+}
+function projectBlockHTML(g, searching) {
+  const p = g.project, id = esc(p.id), open = searching || !state.railClosed[p.id];
+  const kids = open ? `<div class="rail-children" role="group" aria-label="${escAttr(p.name)}">${g.chats.length
+    ? g.chats.map(c => chatRowHTML(c, "in-project")).join("")
+    : `<div class="rail-empty-hint">${esc(T("rail.emptyProject"))}</div>`}</div>` : "";
+  return `<div class="chat-rail-row project" oncontextmenu="openRailMenu(event,'project','${id}')">
+    <button type="button" class="chat-rail-item project-item" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T("a11y.openProject", { title: p.name }))}" onclick="toggleProjectOpen('${id}')">${railIcon(open ? "folder-open" : "folder", 16)}<span class="rail-label">${esc(p.name)}</span><span class="rail-count">${g.chats.length}</span></button>
+    <button type="button" class="chat-rail-more" data-menu-for="project:${id}" aria-haspopup="menu" aria-expanded="${railMenuOpenFor("project", p.id) ? "true" : "false"}" aria-label="${escAttr(T("a11y.projectMenu", { title: p.name }))}" onclick="openRailMenu(event,'project','${id}')">${railIcon("ellipsis", 16)}</button>
+  </div>${kids}`;
+}
+// "Show more" for a long section; `all` rows are shown when expanded or while searching.
+function railLimited(rows, key, searching) {
+  const open = searching || state.railMore[key];
+  const shown = open ? rows : rows.slice(0, RAIL_LIMIT[key]);
+  const toggle = !searching && rows.length > RAIL_LIMIT[key]
+    ? `<button type="button" class="rail-more-btn" aria-expanded="${open ? "true" : "false"}" onclick="toggleRailMore('${key}')">${esc(T(open ? "rail.showLess" : "rail.showMore"))}</button>` : "";
+  return { shown, toggle };
+}
+function toggleRailMore(key) { state.railMore[key] = !state.railMore[key]; renderChatRail(); }
+function toggleProjectOpen(id) { state.railClosed[id] = !state.railClosed[id]; renderChatRail(); }
+
+function renderAssistHead() {
+  const chat = activeChat();
+  const t = $("assistChatTitle"); if (t) t.textContent = chat ? chat.title : "";
+  const b = $("productPanelBtn");
+  if (b) {
+    b.hidden = !(chat && chat.product);
+    b.setAttribute("aria-expanded", chat && chat.product && chat.panelOpen ? "true" : "false");
+  }
+}
 function renderChatRail() {
   renderBell();
+  renderAssistHead();
   const el = $("chatRailList"); if (!el) return;
   const q = normalizeQuery(state.search);
-  const list = q ? filterChatRail(state.chats, q) : state.chats;
+  const chats = q ? filterChatRail(state.chats, q) : state.chats;
+  const projects = q ? state.projects.filter(p => matchesSearch([p.name], q) || chats.some(c => c.projectId === p.id)) : state.projects;
   /* The open conversation stays open even when the query excludes it — the
      rail is a way of changing conversation, not a way of losing one. */
-  if (q && !list.length) {
+  if (q && !chats.length && !projects.length) {
     el.innerHTML = `<div class="chat-rail-empty">${esc(T("search.noneChats", { q: state.search.trim() }))}</div>`;
     return;
   }
-  el.innerHTML = sortPinnedFirst(list).map(c => {
-    const on = c.id === state.activeChatId;
-    const open = state.railMenuId === c.id;
-    const pinned = !!c.pinnedAt;
-    return `
-    <div class="chat-rail-row">
-    <button type="button" class="chat-rail-item ${on ? "active" : ""}" data-chat-id="${esc(c.id)}"${on ? ' aria-current="true"' : ""} aria-label="${escAttr(T("a11y.openChat", { title: c.title }))}" onclick="selectChat('${c.id}')">
-      <img class="ic-svg sm" src="assets/icon-chat-item.svg" alt="">${pinned ? `<span class="pin-mark" title="${escAttr(T("rail.pinned"))}">&#128204;</span>` : ""}${esc(c.title)}
-    </button>
-    <button type="button" class="chat-rail-more" aria-haspopup="menu" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T("a11y.chatMenu", { title: c.title }))}" onclick="toggleRailMenu('${c.id}')">&#8943;</button>
-    ${open ? `<div class="chat-rail-menu" role="menu">
-      <button type="button" role="menuitem" onclick="renameChat('${c.id}')">${esc(T("rail.rename"))}</button>
-      <button type="button" role="menuitem" onclick="togglePinChat('${c.id}')">${esc(T(pinned ? "rail.unpin" : "rail.pin"))}</button>
-      <button type="button" role="menuitem" class="danger" onclick="deleteChat('${c.id}')">${esc(T("rail.delete"))}</button>
-    </div>` : ""}
-    </div>`;
-  }).join("");
+  const g = groupChatRail(chats, projects);
+  let html = "";
+  if (g.pinnedProjects.length || g.pinnedChats.length) {
+    html += `<div class="rail-section"><div class="rail-head"><span>${esc(T("rail.pinnedHead"))}</span></div>` +
+      g.pinnedProjects.map(p => projectBlockHTML({ project: p, chats: chats.filter(c => c.projectId === p.id) }, !!q)).join("") +
+      g.pinnedChats.map(c => chatRowHTML(c, "pinned")).join("") + `</div>`;
+  }
+  const pl = railLimited(g.projects, "projects", !!q);
+  html += `<div class="rail-section"><div class="rail-head"><span>${esc(T("rail.projectsHead"))}</span>
+    <button type="button" class="rail-head-btn" id="newProjectBtn" title="${escAttr(T("rail.newProject"))}" aria-label="${escAttr(T("rail.newProject"))}" onclick="newProjectFor(null)">${railIcon("folder-plus", 16)}</button></div>` +
+    (g.projects.length || g.pinnedProjects.length ? pl.shown.map(x => projectBlockHTML(x, !!q)).join("") + pl.toggle
+      : `<div class="rail-empty-hint">${esc(T("rail.noProjects"))}</div>`) + `</div>`;
+  const rl = railLimited(g.recents, "recents", !!q);
+  html += `<div class="rail-section"><div class="rail-head"><span>${esc(T("rail.recentsHead"))}</span></div>` +
+    rl.shown.map(c => chatRowHTML(c, "")).join("") + rl.toggle + `</div>`;
+  el.innerHTML = html;
 }
+
 /* ---------- Chat list management (item 21, pass A: rename + pin) ----------
    Pinned chats first, newest-pinned first; the rest keep their order. Pure. */
 function sortPinnedFirst(list) {
@@ -780,17 +842,94 @@ function sortPinnedFirst(list) {
 }
 // Trim, cap at 60 characters; empty means "no change".
 function cleanChatTitle(t) { return String(t == null ? "" : t).replace(/\s+/g, " ").trim().slice(0, 60); }
-function toggleRailMenu(id) { state.railMenuId = state.railMenuId === id ? null : id; renderChatRail(); }
-function closeRailMenu() { if (!state.railMenuId) return false; state.railMenuId = null; renderChatRail(); return true; }
+
+/* ---------- The menu ----------
+   One fixed-position element (#railMenu), not a child of the scrolling list, so
+   the list can never clip it. Opens at the pointer for a right-click and under
+   the ... button otherwise. */
+function railMenuHTML(m) {
+  const item = (icon, label, call, cls, extra) => `<button type="button" role="menuitem" class="${cls || ""}" onclick="${call}"${extra || ""}>${railIcon(icon, 15)}<span>${esc(label)}</span></button>`;
+  if (m.kind === "project") {
+    const p = state.projects.find(x => x.id === m.id); if (!p) return "";
+    const id = esc(p.id);
+    return item("pencil", T("rail.rename"), `renameProject('${id}')`) +
+      item("pin", T(p.pinnedAt ? "rail.unpin" : "rail.pin"), `togglePinProject('${id}')`) +
+      `<div class="menu-sep" role="separator"></div>` + item("trash-2", T("rail.deleteProject"), `deleteProject('${id}')`, "danger");
+  }
+  const c = state.chats.find(x => x.id === m.id); if (!c) return "";
+  const id = esc(c.id);
+  const moves = state.projects.map(p => item("folder", p.name, `moveChatToProject('${id}','${esc(p.id)}')`, c.projectId === p.id ? "current" : "",
+    c.projectId === p.id ? ' aria-current="true"' : "")).join("");
+  return item("pencil", T("rail.rename"), `renameChat('${id}')`) +
+    item("pin", T(c.pinnedAt ? "rail.unpin" : "rail.pin"), `togglePinChat('${id}')`) +
+    `<div class="menu-sep" role="separator"></div><div class="menu-label" role="presentation">${esc(T("rail.moveTo"))}</div>` + moves +
+    item("folder-plus", T("rail.newProjectDots"), `newProjectFor('${id}')`) +
+    (c.projectId ? item("folder-input", T("rail.removeFromProject"), `moveChatToProject('${id}',null)`) : "") +
+    `<div class="menu-sep" role="separator"></div>` + item("trash-2", T("rail.delete"), `deleteChat('${id}')`, "danger");
+}
+function openRailMenu(ev, kind, id) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const was = railMenuOpenFor(kind, id);
+  closeRailMenu(false);
+  if (was && ev && ev.type === "click") return;          // pressing the same ... again closes it
+  let x = ev && ev.clientX || 0, y = ev && ev.clientY || 0;
+  const t = ev && (ev.currentTarget || ev.target);
+  if ((ev && ev.type !== "contextmenu") || (!x && !y)) {
+    const r = t && t.getBoundingClientRect ? t.getBoundingClientRect() : null;
+    if (r) { x = r.left; y = r.bottom + 4; }
+  }
+  state.railMenu = { kind, id, x, y };
+  const m = $("railMenu"); if (!m) return;
+  const html = railMenuHTML(state.railMenu);
+  if (!html) { state.railMenu = null; return; }
+  m.innerHTML = html;
+  m.setAttribute("aria-label", T("rail.menuLabel"));
+  m.hidden = false;
+  const w = m.offsetWidth || 220, h = m.offsetHeight || 260;
+  const vw = (typeof window !== "undefined" && window.innerWidth) || 1200, vh = (typeof window !== "undefined" && window.innerHeight) || 800;
+  m.style.left = Math.max(8, Math.min(x, vw - w - 8)) + "px";
+  m.style.top = Math.max(8, Math.min(y, vh - h - 8)) + "px";
+  setRailMenuExpanded(kind, id, true);
+  const first = m.querySelector && m.querySelector('[role="menuitem"]'); if (first && first.focus) first.focus();
+}
+function setRailMenuExpanded(kind, id, on) {
+  if (!document.querySelector) return;
+  const b = document.querySelector('[data-menu-for="' + kind + ":" + String(id).replace(/"/g, '\\"') + '"]');
+  if (b && b.setAttribute) b.setAttribute("aria-expanded", on ? "true" : "false");
+}
+// Returns true when a menu was open. returnFocus puts the keyboard back on the ... button.
+function closeRailMenu(returnFocus) {
+  const cur = state.railMenu; if (!cur) return false;
+  state.railMenu = null;
+  const m = $("railMenu"); if (m) { m.hidden = true; m.innerHTML = ""; }
+  setRailMenuExpanded(cur.kind, cur.id, false);
+  if (returnFocus && document.querySelector) {
+    const b = document.querySelector('[data-menu-for="' + cur.kind + ":" + String(cur.id).replace(/"/g, '\\"') + '"]'); if (b && b.focus) b.focus();
+  }
+  return true;
+}
+function railMenuKey(e) {
+  const m = $("railMenu"); if (!m || m.hidden || !m.querySelectorAll) return false;
+  if (e.key === "Escape") { closeRailMenu(true); e.preventDefault(); return true; }
+  if (e.key === "Tab") { closeRailMenu(false); return false; }
+  const items = Array.from(m.querySelectorAll('[role="menuitem"]'));
+  const i = items.indexOf(document.activeElement);
+  const to = e.key === "ArrowDown" ? (i + 1) % items.length : e.key === "ArrowUp" ? (i - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+  if (to < 0) return false;
+  e.preventDefault(); if (items[to] && items[to].focus) items[to].focus();
+  return true;
+}
+
 function togglePinChat(id) {
-  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  const chat = state.chats.find(c => c.id === id); closeRailMenu(false);
   if (!chat) return renderChatRail();
   chat.pinnedAt = chat.pinnedAt ? null : Date.now();
   if (!isLocalId(chat.id)) bgSave(DataStore.updateChat(chat.id, { pinned_at: chat.pinnedAt ? new Date(chat.pinnedAt).toISOString() : null }), "save.profile");
   renderChatRail();
 }
 async function renameChat(id) {
-  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  const chat = state.chats.find(c => c.id === id); closeRailMenu(false);
   renderChatRail();
   if (!chat) return;
   const v = await showDialog({ titleKey: "rail.renameTitle", bodyKey: "rail.renameBody", okKey: "dlg.save", cancelKey: "dlg.cancel",
@@ -808,7 +947,7 @@ async function renameChat(id) {
    conversation they were part of. The local list only changes once the
    database has said yes. */
 async function deleteChat(id) {
-  const chat = state.chats.find(c => c.id === id); state.railMenuId = null;
+  const chat = state.chats.find(c => c.id === id); closeRailMenu(false);
   renderChatRail();
   if (!chat) return false;
   const ok = await showDialog({ titleKey: "rail.deleteTitle", bodyKey: "rail.deleteBody", vars: { title: chat.title },
@@ -829,6 +968,76 @@ async function deleteChat(id) {
   renderChatRail();
   return true;
 }
+
+/* ---------- Projects ----------
+   A project is only a folder for chats. Deleting one never deletes a chat: the
+   database clears project_id, and the chats go back to Recents. */
+async function createProject(name) {
+  const n = cleanChatTitle(name);
+  if (!n) return null;
+  if (state.projects.some(p => p.name.toLowerCase() === n.toLowerCase())) { toast(T("rail.projectExists", { name: n })); return null; }
+  let res = null;
+  try { res = await DataStore.createProject(state.farmerId, n); } catch (e) { res = { error: e }; }
+  if (!res || res.error || !res.data) { saveFailedWithOwnMessage("save.project", res && res.error, T("save.couldnt", { what: T("save.project") })); return null; }
+  saveOk();
+  const p = mapProject(res.data);
+  state.projects.push(p);
+  return p;
+}
+// Asks for a name, makes the project, and (when a chat is given) puts that chat in it.
+async function newProjectFor(chatId) {
+  closeRailMenu(false);
+  const v = await showDialog({ titleKey: "rail.newProjectTitle", bodyKey: "rail.newProjectBody", okKey: "dlg.save", cancelKey: "dlg.cancel",
+    input: { labelKey: "rail.projectLabel", value: "", inputmode: "text" } });
+  if (v == null) return null;
+  const p = await createProject(v);
+  if (p && chatId) moveChatToProject(chatId, p.id);
+  else renderChatRail();
+  return p;
+}
+function moveChatToProject(chatId, projectId) {
+  const chat = state.chats.find(c => c.id === chatId); closeRailMenu(false);
+  const p = projectId ? state.projects.find(x => x.id === projectId) : null;
+  if (!chat || (projectId && !p) || (chat.projectId || null) === (projectId || null)) return renderChatRail();
+  chat.projectId = projectId || null;
+  if (projectId) state.railClosed[projectId] = false;
+  if (!isLocalId(chat.id)) bgSave(DataStore.updateChat(chat.id, { project_id: chat.projectId }), "save.profile");
+  toast(p ? T("rail.moved", { name: p.name }) : T("rail.removed"));
+  renderChatRail();
+}
+async function renameProject(id) {
+  const p = state.projects.find(x => x.id === id); closeRailMenu(false);
+  if (!p) return;
+  const v = await showDialog({ titleKey: "rail.renameProjectTitle", bodyKey: "rail.renameProjectBody", okKey: "dlg.save", cancelKey: "dlg.cancel",
+    input: { labelKey: "rail.projectLabel", value: p.name, inputmode: "text" } });
+  const n = cleanChatTitle(v);
+  if (v == null || !n || n === p.name) return;
+  if (state.projects.some(x => x.id !== id && x.name.toLowerCase() === n.toLowerCase())) { toast(T("rail.projectExists", { name: n })); return; }
+  p.name = n;
+  bgSave(DataStore.updateProject(p.id, { name: n }), "save.project");
+  renderChatRail();
+}
+function togglePinProject(id) {
+  const p = state.projects.find(x => x.id === id); closeRailMenu(false);
+  if (!p) return renderChatRail();
+  p.pinnedAt = p.pinnedAt ? null : Date.now();
+  bgSave(DataStore.updateProject(p.id, { pinned_at: p.pinnedAt ? new Date(p.pinnedAt).toISOString() : null }), "save.project");
+  renderChatRail();
+}
+async function deleteProject(id) {
+  const p = state.projects.find(x => x.id === id); closeRailMenu(false);
+  if (!p) return false;
+  const ok = await showDialog({ titleKey: "rail.deleteProjectTitle", bodyKey: "rail.deleteProjectBody", vars: { title: p.name }, okKey: "rail.deleteProject", cancelKey: "dlg.cancel" });
+  if (!ok) return false;
+  let res = null;
+  try { res = await DataStore.deleteProject(id); } catch (e) { res = { error: e }; }
+  if (res && res.error) { saveFailed("save.project", res.error); return false; }
+  saveOk();
+  state.projects = state.projects.filter(x => x.id !== id);
+  state.chats.forEach(c => { if (c.projectId === id) c.projectId = null; });
+  renderChatRail();
+  return true;
+}
 // Briefly outline the rail entry, so reusing a chat doesn't look like the
 // button did nothing — especially when the reused chat was already the open one.
 function flashChatRailItem(id) {
@@ -840,23 +1049,45 @@ function flashChatRailItem(id) {
   clearTimeout(flashChatRailItem._t);
   flashChatRailItem._t = setTimeout(() => el.classList.remove("flash"), 1300);
 }
-/* ---------- Attachments in the Fasto-AI composer (ROADMAP item 32 pass B) ----------
-   A producer attaches a photo or PDF. The first file in a conversation creates
-   a DRAFT product linked to that chat (source_chat_id); each file is uploaded
-   to the private bucket under <user id>/products/ and recorded in
-   product_documents. Nothing is read by the AI yet (pass D), and nothing is
-   shared with buyers (pass G). */
+/* ---------- Attachments in the Fasto-AI composer (ROADMAP item 32 pass B, reworked) ----------
+   Two buttons in the message box: the paperclip takes documents (PDF, Word,
+   Excel, CSV), the picture button takes photos (JPEG, PNG, WebP). A file is
+   uploaded the moment it is chosen, to the private bucket under
+   <user id>/products/ and recorded in product_documents; the first file in a
+   conversation creates a DRAFT product linked to that chat (source_chat_id).
+   While it waits for the message to be sent it sits in the tray at the top of
+   the message box (chat.staged); pressing Send puts the files on THAT message's
+   bubble (messages.doc_ids) and empties the tray. Files added from the Documents
+   tab of the product panel are not staged: they belong to the product only.
+   Per chat:  docs (saved files)  uploads (in flight or failed, with the File kept
+   for a retry)  staged (ids of saved files waiting for Send). */
 function attachChipHTML(d) {
-  const thumb = d.thumbUrl ? `<img src="${escAttr(d.thumbUrl)}" alt="">` : "";
+  const thumb = d.thumbUrl ? `<img src="${escAttr(d.thumbUrl)}" alt="">` : `<span class="attach-ic">${railIcon(productFileGroup(d.mime_type) === "image" ? "image" : "file-text", 16)}</span>`;
   return `<span class="attach-chip">${thumb}<span class="attach-name">${esc(d.file_name)}</span>` +
-    `<button type="button" class="attach-x" aria-label="${escAttr(T("attach.remove", { name: d.file_name }))}" onclick="removeAttachment('${esc(d.id)}')">×</button></span>`;
+    `<button type="button" class="attach-x" aria-label="${escAttr(T("attach.remove", { name: d.file_name }))}" onclick="removeAttachment('${esc(d.id)}')">${railIcon("x", 13)}</button></span>`;
 }
+function uploadChipHTML(u) {
+  const failed = u.status === "failed", key = esc(u.key);
+  return `<span class="attach-chip ${failed ? "failed" : "busy"}"><span class="attach-ic${failed ? "" : " spin"}">${railIcon(failed ? "circle-alert" : "loader", 16)}</span><span class="attach-name">${esc(u.name)}</span>` +
+    (failed ? `<button type="button" class="attach-x" aria-label="${escAttr(T("attach.retry", { name: u.name }))}" onclick="retryUpload('${key}')">${railIcon("rotate-ccw", 13)}</button>` : "") +
+    `${failed ? `<button type="button" class="attach-x" aria-label="${escAttr(T("attach.remove", { name: u.name }))}" onclick="dismissUpload('${key}')">${railIcon("x", 13)}</button>` : ""}</span>`;
+}
+// The tray above the text box: files chosen for the NEXT message.
 function renderAttachStrip() {
   const el = $("attachStrip"); if (!el) return;
   const chat = activeChat();
-  const docs = chat && chat.docs ? chat.docs : [];
-  el.hidden = docs.length === 0;
-  el.innerHTML = docs.map(attachChipHTML).join("");
+  const saved = chat ? (chat.staged || []).map(id => (chat.docs || []).find(d => d.id === id)).filter(Boolean) : [];
+  const flying = chat ? (chat.uploads || []).filter(u => u.stage) : [];
+  el.hidden = saved.length + flying.length === 0;
+  el.innerHTML = saved.map(attachChipHTML).join("") + flying.map(uploadChipHTML).join("");
+}
+// The files that travel with a sent message, drawn above its bubble.
+function msgFilesHTML(chat, m) {
+  const docs = (m.docIds || []).map(id => (chat.docs || []).find(d => d.id === id)).filter(Boolean);
+  if (!docs.length) return "";
+  return `<div class="msg-files">` + docs.map(d => productFileGroup(d.mime_type) === "image"
+    ? `<button type="button" class="msg-file img" aria-label="${escAttr(T("attach.open", { name: d.file_name }))}" onclick="openProductDoc('${esc(d.id)}')">${d.thumbUrl ? `<img src="${escAttr(d.thumbUrl)}" alt="${escAttr(d.file_name)}">` : railIcon("image", 22)}</button>`
+    : `<button type="button" class="msg-file doc" onclick="openProductDoc('${esc(d.id)}')">${railIcon("file-text", 16)}<span>${esc(d.file_name)}</span></button>`).join("") + `</div>`;
 }
 // Loads (once per chat) the draft product this chat made and its files.
 async function loadChatDocs(chat) {
@@ -891,56 +1122,93 @@ async function loadThumb(chat, d) {
   if (String(d.mime_type).indexOf("image/") !== 0) return;
   try {
     const r = await DataStore.signedFileUrl(d.storage_path);
-    if (r && r.data && r.data.signedUrl) { d.thumbUrl = r.data.signedUrl; if (chat.id === state.activeChatId) renderAttachStrip(); }
+    if (r && r.data && r.data.signedUrl) {
+      d.thumbUrl = r.data.signedUrl;
+      if (chat.id === state.activeChatId) { renderAttachStrip(); renderTranscript(true); }
+    }
   } catch (e) { /* no preview is fine; the file name is still shown */ }
 }
 function refreshAttachStrip() {
   renderAttachStrip();
+  renderProductPanel();
   const chat = activeChat();
   if (chat && !chat.docsState) loadChatDocs(chat);
 }
 function pickAttachment() { const i = $("attachInput"); if (i) i.click(); }
-async function ensureChatProduct(chat) {
-  if (chat.product) return chat.product;
+function pickImage() { const i = $("imageInput"); if (i) i.click(); }
+function pickAnyFile() { const i = $("anyInput"); if (i) i.click(); }
+async function makeChatProduct(chat) {
   const r = await DataStore.createProduct({ kind: "packaged", status: "draft", name: T("attach.newProduct"), source_chat_id: chat.id });
   if (r.error) throw r.error;
   chat.product = r.data; chat.docs = chat.docs || [];
   rememberProduct(r.data);
   return chat.product;
 }
-async function attachOne(chat, file) {
-  const check = checkProductFile(file);
-  if (!check.ok) { toast(T(check.key)); return false; }
+// One draft product per chat, even when two files arrive at once.
+async function ensureChatProduct(chat) {
+  if (chat.product) return chat.product;
+  if (!chat.productMaking) chat.productMaking = makeChatProduct(chat).finally(() => { chat.productMaking = null; });
+  return chat.productMaking;
+}
+function refreshChatFiles(chat) { if (chat.id === state.activeChatId) { renderAttachStrip(); renderProductPanel(); } }
+async function attachOne(chat, file, u) {
+  const mime = productFileType(file);
   const path = productFilePath(state.farmerId, file.name, Date.now(), Math.random().toString(36).slice(2, 8));
-  let uploaded = false, uploadedOk = false, savedDoc = null;
+  let uploaded = false, savedDoc = null;
   try {
     const product = await ensureChatProduct(chat);
-    const up = await DataStore.uploadProductFile(path, file);
+    const up = await DataStore.uploadProductFile(path, file, mime);
     if (up.error) throw up.error;
     uploaded = true;
-    const rec = await DataStore.addProductDocument({ product_id: product.id, storage_path: path, file_name: file.name.slice(0, 200), mime_type: file.type, size_bytes: file.size });
+    const rec = await DataStore.addProductDocument({ product_id: product.id, storage_path: path, file_name: file.name.slice(0, 200), mime_type: mime, size_bytes: file.size });
     if (rec.error) throw rec.error;
     chat.docs.push(rec.data); loadThumb(chat, rec.data);
+    if (u.stage) { chat.staged = chat.staged || []; chat.staged.push(rec.data.id); }
     state.productDocCounts[product.id] = (state.productDocCounts[product.id] || 0) + 1;
+    chat.uploads = (chat.uploads || []).filter(x => x !== u);
     toast(T("attach.added", { name: file.name }));
-    uploadedOk = true; savedDoc = rec.data;
+    savedDoc = rec.data;
   } catch (e) {
     // Do not leave a file in storage that nothing points at.
     if (uploaded) { try { await DataStore.removeProductFile(path); } catch (e2) { /* nothing more to do */ } }
+    u.status = "failed"; u.error = (e && e.message) || "";
     saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") }));
+    refreshChatFiles(chat);
     return false;
   }
+  refreshChatFiles(chat);
   // The file is safely stored; reading it is a bonus and its failure never undoes the upload.
-  if (uploadedOk) await scanAttached(chat, file, savedDoc);
+  await scanAttached(chat, file, savedDoc);
   return true;
 }
-async function onAttachFiles(files) {
+/* opts.stage (default true): the file waits in the message box for the next
+   message. The Documents tab passes {stage: false}. */
+async function onAttachFiles(files, opts) {
   const chat = activeChat();
   if (!chat || isLocalId(chat.id) || !state.farmerId) { toast(T("attach.errNoChat")); return; }
-  if (state.attachBusy) return;
-  state.attachBusy = true;
-  try { for (const f of files) { if (!(await attachOne(chat, f))) break; } }
-  finally { state.attachBusy = false; if (chat.id === state.activeChatId) { renderAttachStrip(); renderTranscript(); } }
+  const stage = !opts || opts.stage !== false;
+  const entries = [];
+  for (const f of files) {
+    const check = checkProductFile(f);
+    if (!check.ok) { toast(T(check.key)); continue; }
+    const u = { key: "u" + Date.now() + Math.random().toString(36).slice(2, 6), name: f.name, size: f.size, mime: productFileType(f), status: "uploading", file: f, stage };
+    (chat.uploads = chat.uploads || []).push(u); entries.push(u);
+  }
+  if (!entries.length) return;
+  refreshChatFiles(chat);
+  for (const u of entries) await attachOne(chat, u.file, u);
+  if (chat.id === state.activeChatId) renderTranscript(true);
+}
+async function retryUpload(key) {
+  const chat = activeChat(); const u = chat && (chat.uploads || []).find(x => x.key === key);
+  if (!u || u.status !== "failed" || !u.file) return;
+  u.status = "uploading"; u.error = ""; refreshChatFiles(chat);
+  await attachOne(chat, u.file, u);
+}
+function dismissUpload(key) {
+  const chat = activeChat(); if (!chat) return;
+  chat.uploads = (chat.uploads || []).filter(x => x.key !== key);
+  refreshChatFiles(chat);
 }
 async function removeAttachment(id) {
   const chat = activeChat(); if (!chat || !chat.docs) return;
@@ -949,11 +1217,41 @@ async function removeAttachment(id) {
     const r = await DataStore.removeProductDocument(id);
     if (r.error) throw r.error;
     chat.docs = chat.docs.filter(x => x.id !== id);
+    chat.staged = (chat.staged || []).filter(x => x !== id);
     if (chat.product) state.productDocCounts[chat.product.id] = Math.max(0, (state.productDocCounts[chat.product.id] || 1) - 1);
     DataStore.removeProductFile(d.storage_path).catch(() => {}); // the record is the truth; a stray file is invisible and private
     toast(T("attach.removed", { name: d.file_name }));
+  } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") }));}
+  renderAttachStrip(); renderProductPanel(); renderTranscript(true);
+}
+// Opens a saved file through a short-lived private link.
+async function openProductDoc(id) {
+  const chat = activeChat(); const d = chat && (chat.docs || []).find(x => x.id === id); if (!d) return;
+  try {
+    const r = await DataStore.signedFileUrl(d.storage_path);
+    if (r.error || !r.data || !r.data.signedUrl) throw r.error || new Error("no link");
+    window.open(r.data.signedUrl, "_blank", "noopener");
   } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") })); }
+}
+
+/* ---------- The message box ---------- */
+function autosizeComposer() {
+  const i = $("userInput"); if (!i || !i.style) return;
+  i.style.height = "auto";
+  i.style.height = Math.min(i.scrollHeight || 0, 160) + "px";
+}
+// Send: the text and the files waiting in the tray go out together, as one message.
+function composerSend() {
+  const chat = activeChat(), input = $("userInput");
+  if (!chat || !input) return;
+  const text = input.value.trim();
+  if ((chat.uploads || []).some(u => u.stage && u.status === "uploading")) { toast(T("attach.waitUpload")); return; }
+  const ids = (chat.staged || []).filter(id => (chat.docs || []).some(d => d.id === id));
+  if (!text && !ids.length) return;
+  input.value = ""; autosizeComposer();
+  chat.staged = [];
   renderAttachStrip();
+  sendUserMessage(text || T("attach.sentFiles", { n: ids.length }), ids);
 }
 
 /* ---------- Product sheet (ROADMAP item 32 pass C) ---------- */
@@ -1043,16 +1341,42 @@ async function onProductSheet(raw, chat) {
   return "Saved. " + (pc.complete ? "The sheet is complete." : "Still missing: " + pc.missing.join(", ") + ".") +
     (dropped.length ? " Not stored because they cannot be suggested, ask the producer: " + dropped.join(", ") + "." : "");
 }
-function productSheetHTML(chat) {
-  const p = chat.product;
-  if (!productHasContent(p)) return "";
-  const d = p.details || {}, n = p.nutrition || {}, sug = d.suggested || [];
-  const pc = productCompleteness(p, (chat.docs || []).length);
+/* ---------- The product profile panel ----------
+   The sheet is no longer drawn inside the chat. The moment a product is being
+   made in a conversation (the AI saved its first details, a file was attached,
+   or an existing product was opened) a column opens on the right of the chat
+   with four tabs: Roadmap (a progress bar and a checklist that follows what the
+   producer tells the chat), Details, Nutrition and Documents. It is only a VIEW
+   of chat.product and chat.docs: nothing is typed into it, so the chat stays the
+   one place a value can change, apart from uploading documents and ticking the
+   optional document items. It is redrawn whenever the transcript is. */
+const PANEL_TABS = ["roadmap", "details", "nutrition", "documents"];
+function panelTabLabel(k) {
+  switch (k) {
+    case "roadmap": return T("prodpanel.tab.roadmap");
+    case "details": return T("prodpanel.tab.details");
+    case "nutrition": return T("prodpanel.tab.nutrition");
+    default: return T("prodpanel.tab.documents");
+  }
+}
+function roadmapStepLabel(k) {
+  switch (k) {
+    case "basic": return T("prodpanel.step.basic");
+    case "ingredients": return T("prodpanel.step.ingredients");
+    case "allergens": return T("prodpanel.step.allergens");
+    case "shelf": return T("prodpanel.step.shelf");
+    case "nutrition": return T("prodpanel.step.nutrition");
+    default: return T("prodpanel.step.documents");
+  }
+}
+// The detail rows of a product (shared by the Details tab).
+function productFactRows(p) {
+  const d = p.details || {}, sug = d.suggested || [];
   const tag = k => sug.indexOf(k) !== -1 ? ` <em class="prod-sug">${esc(T("prod.suggested"))}</em>` : "";
   const row = (k, val) => val === "" || val == null ? "" :
     `<div class="prod-row"><dt>${esc(productFieldLabel(k))}</dt><dd>${esc(val)}${tag(k)}</dd></div>`;
   const list = a => Array.isArray(a) ? a.join(", ") : "";
-  const rows = [
+  return [
     row("ai_category", p.ai_category || ""),
     row("ingredients", list(d.ingredients)),
     Array.isArray(d.allergens) ? row("allergens", d.allergens.length ? list(d.allergens) : T("prod.noAllergens")) : "",
@@ -1060,13 +1384,126 @@ function productSheetHTML(chat) {
     row("storage", d.storage || ""), row("pack_sizes", list(d.pack_sizes)), row("min_order", d.min_order || ""),
     row("certifications", list(d.certifications)), row("price_range", d.price_range || "")
   ].join("");
-  const nutr = PRODUCT_NUTRIENTS.concat(["fibre_g"]).filter(k => typeof n[k] === "number")
-    .map(k => `<div class="prod-row"><dt>${esc(productFieldLabel("nutrition." + k))}</dt><dd>${esc(n[k])}${tag("nutrition." + k)}</dd></div>`).join("");
-  const status = pc.complete ? T("prod.complete") : T("prod.stillNeeded", { list: humanList(pc.missing.map(productFieldLabel)) });
-  return `<section class="prod-sheet glass-45" aria-label="${escAttr(T("prod.sheetTitle"))}">` +
-    `<h3>${esc(p.name)} <span class="prod-badge">${esc(T("prod.draft"))}</span></h3><dl>${rows}</dl>` +
-    (nutr ? `<h4>${esc(T("prod.per100"))}</h4><dl>${nutr}</dl>` : "") +
-    `<p class="prod-status${pc.complete ? " ok" : ""}">${esc(status)}</p></section>`;
+}
+// The nutrition table: the seven required values always appear, "—" while one is still missing.
+function productNutritionRows(p) {
+  const n = p.nutrition || {}, sug = (p.details && p.details.suggested) || [];
+  const tag = k => sug.indexOf("nutrition." + k) !== -1 ? ` <em class="prod-sug">${esc(T("prod.suggested"))}</em>` : "";
+  return PRODUCT_NUTRIENTS.concat(typeof n.fibre_g === "number" ? ["fibre_g"] : []).map(k =>
+    `<div class="prod-row${typeof n[k] === "number" ? "" : " blank"}"><dt>${esc(productFieldLabel("nutrition." + k))}</dt><dd>${typeof n[k] === "number" ? esc(n[k]) + tag(k) : "—"}</dd></div>`).join("");
+}
+function roadmapPaneHTML(chat) {
+  const p = chat.product, rm = productRoadmap(p, (chat.docs || []).length);
+  const shut = !!chat.roadmapShut;
+  const steps = rm.steps.map(st => {
+    const hint = !st.done && st.missing.length ? `<span class="pp-step-hint">${esc(T("prod.stillNeeded", { list: humanList(st.missing.map(productFieldLabel)) }))}</span>` : "";
+    return `<li class="pp-step${st.done ? " done" : ""}"><span class="pp-box" aria-hidden="true">${st.done ? railIcon("check", 13) : ""}</span>` +
+      `<span class="pp-step-text"><span class="pp-step-name">${esc(roadmapStepLabel(st.key))}</span><span class="sr-only"> — ${esc(T(st.done ? "prodpanel.done" : "prodpanel.todo"))}</span>${hint}</span></li>`;
+  }).join("");
+  const optional = rm.optional.length ? `<h3 class="pp-sub">${esc(T("prodpanel.optional"))}</h3><ul class="pp-checklist">` +
+    rm.optional.map((o, i) => `<li class="pp-step${o.done ? " done" : ""}"><label class="pp-check"><input type="checkbox" id="ppOpt${i}" ${o.done ? "checked" : ""} onchange="toggleDocDone(${i})"><span class="pp-box" aria-hidden="true">${o.done ? railIcon("check", 13) : ""}</span><span class="pp-step-name">${esc(T("prodpanel.optUpload", { name: o.text }))}</span></label></li>`).join("") + `</ul>` : "";
+  return `<div class="pp-progress"><span>${esc(T("prodpanel.progress"))}</span><span>${rm.pct}%</span></div>
+    <div class="pp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${rm.pct}" aria-label="${escAttr(T("prodpanel.progress"))}"><span style="width:${rm.pct}%"></span></div>
+    <button type="button" class="pp-disclose" id="ppChecklistToggle" aria-expanded="${shut ? "false" : "true"}" aria-controls="ppChecklist" onclick="toggleRoadmapList()">${esc(T("prodpanel.checklist", { done: rm.done, total: rm.total }))}${railIcon(shut ? "chevron-right" : "chevron-down", 16)}</button>
+    <ul class="pp-checklist" id="ppChecklist"${shut ? " hidden" : ""}>${steps}</ul>${optional}
+    ${rm.complete ? `<p class="prod-status ok">${esc(T("prod.complete"))}</p>` : ""}`;
+}
+function detailsPaneHTML(chat) {
+  const p = chat.product, rows = productFactRows(p);
+  const imgs = (chat.docs || []).filter(d => productFileGroup(d.mime_type) === "image");
+  const strip = imgs.length ? `<div class="pp-images">${imgs.map(d => `<button type="button" class="pp-image" aria-label="${escAttr(T("attach.open", { name: d.file_name }))}" onclick="openProductDoc('${esc(d.id)}')">${d.thumbUrl ? `<img src="${escAttr(d.thumbUrl)}" alt="">` : railIcon("image", 22)}</button>`).join("")}</div>` : "";
+  return (rows ? `<dl class="pp-dl">${rows}</dl>` : `<p class="pp-empty">${esc(T("prodpanel.emptyDetails"))}</p>`) + strip;
+}
+function nutritionPaneHTML(chat) {
+  return `<h3 class="pp-sub">${esc(T("prod.per100"))}</h3><dl class="pp-dl">${productNutritionRows(chat.product)}</dl>`;
+}
+function fileRowHTML(o) {
+  // o: {kind: "saved"|"uploading"|"failed", name, meta, id|key}
+  const bar = o.kind === "failed" ? "" : `<div class="pp-prog ${o.kind === "uploading" ? "busy" : "done"}"><span></span></div>`;
+  const status = o.kind === "saved" ? `<span class="pp-ok" title="${escAttr(T("prodpanel.uploaded"))}">${railIcon("circle-check", 18)}<span class="sr-only">${esc(T("prodpanel.uploaded"))}</span></span>`
+    : o.kind === "failed" ? `<span class="pp-bad">${railIcon("circle-alert", 18)}</span><button type="button" class="pp-ico-btn" aria-label="${escAttr(T("attach.retry", { name: o.name }))}" onclick="retryUpload('${esc(o.key)}')">${railIcon("rotate-ccw", 16)}</button>`
+    : `<span class="pp-spin">${railIcon("loader", 18)}</span>`;
+  const rm = o.kind === "saved" ? `onclick="removeAttachment('${esc(o.id)}')"` : o.kind === "failed" ? `onclick="dismissUpload('${esc(o.key)}')"` : "disabled";
+  const name = o.kind === "saved" ? `<button type="button" class="pp-file-name link" onclick="openProductDoc('${esc(o.id)}')">${esc(o.name)}</button>` : `<div class="pp-file-name">${esc(o.name)}</div>`;
+  return `<li class="pp-file ${o.kind}"><span class="pp-file-ic">${railIcon("file-text", 18)}</span><div class="pp-file-main">${name}<div class="pp-file-meta">${esc(o.meta)}</div>${bar}</div>` +
+    `<div class="pp-file-actions">${status}<button type="button" class="pp-ico-btn" ${rm} aria-label="${escAttr(T("attach.remove", { name: o.name }))}">${railIcon("x", 16)}</button></div></li>`;
+}
+function documentsPaneHTML(chat) {
+  const up = (chat.uploads || []).map(u => fileRowHTML({ kind: u.status === "failed" ? "failed" : "uploading", name: u.name, key: u.key,
+    meta: productFileLabel(u.mime) + " · " + formatBytes(u.size) + (u.status === "failed" ? " · " + T("attach.failedShort") : "") }));
+  const saved = (chat.docs || []).map(d => fileRowHTML({ kind: "saved", name: d.file_name, id: d.id, meta: productFileLabel(d.mime_type) + " · " + formatBytes(d.size_bytes) }));
+  return `<div class="pp-drop" id="ppDrop"><span class="pp-drop-icon">${railIcon("cloud-upload", 26)}</span><strong>${esc(T("prodpanel.dropTitle"))}</strong><small>${esc(T("prodpanel.dropHint"))}</small>
+    <button type="button" class="pp-browse" id="ppBrowse" onclick="pickAnyFile()">${esc(T("prodpanel.browse"))}</button></div>
+    ${up.length + saved.length ? `<ul class="pp-files">${up.join("")}${saved.join("")}</ul>` : `<p class="pp-empty">${esc(T("prodpanel.emptyDocs"))}</p>`}`;
+}
+function productPanelHTML(chat) {
+  const p = chat.product, tab = PANEL_TABS.indexOf(chat.panelTab) !== -1 ? chat.panelTab : "roadmap";
+  const body = tab === "roadmap" ? roadmapPaneHTML(chat) : tab === "details" ? detailsPaneHTML(chat) : tab === "nutrition" ? nutritionPaneHTML(chat) : documentsPaneHTML(chat);
+  const n = (chat.docs || []).length;
+  const tabs = PANEL_TABS.map(k => `<button type="button" role="tab" class="pp-tab${k === tab ? " on" : ""}" id="ppTab-${k}" aria-selected="${k === tab ? "true" : "false"}" aria-controls="ppPane" tabindex="${k === tab ? "0" : "-1"}" onclick="setPanelTab('${k}')">${esc(panelTabLabel(k))}${k === "documents" && n ? `<span class="pp-count">${n}</span>` : ""}</button>`).join("");
+  return `<div class="pp-head"><h2 class="pp-title">${esc(p.name)}</h2>
+      <button type="button" class="icon-btn pp-close" id="productPanelClose" title="${escAttr(T("match.close"))}" aria-label="${escAttr(T("match.close"))}" onclick="closeProductPanel(true)">${railIcon("x", 18)}</button></div>
+    <div class="pp-tabs" role="tablist" aria-label="${escAttr(T("prodpanel.title"))}" onkeydown="panelTabKey(event)">${tabs}</div>
+    <div class="pp-pane" id="ppPane" role="tabpanel" aria-labelledby="ppTab-${tab}">${body}</div>`;
+}
+function renderProductPanel() {
+  const el = $("productPanel"); if (!el) return;
+  const chat = activeChat();
+  // First time this chat has a product: open the panel. After that the farmer decides.
+  if (chat && chat.product && chat.panelOpen === undefined) chat.panelOpen = true;
+  renderAssistHead();
+  const wasOpen = !!(el.classList && el.classList.contains("open")), willOpen = !!(chat && chat.product && chat.panelOpen);
+  if (wasOpen !== willOpen) keepChatAtBottom();
+  if (!willOpen) { setSidePanel(el, false, ""); return; }
+  const had = document.activeElement && el.contains && el.contains(document.activeElement) ? document.activeElement.id : "";
+  setSidePanel(el, true, productPanelHTML(chat));
+  if (had) { const f = $(had); if (f && f.focus) f.focus(); }
+}
+/* The panel slides in and out, which re-wraps the chat while it animates. If the
+   farmer was reading the newest message, keep them there once it has settled
+   instead of leaving the last bubble half under the message box. */
+function keepChatAtBottom() {
+  const t = $("assistTranscript"); if (!t || !t.clientHeight) return;
+  const atBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 90;
+  if (atBottom) setTimeout(() => { t.scrollTop = t.scrollHeight; }, 320);
+}
+function setPanelTab(k) {
+  const chat = activeChat(); if (!chat || PANEL_TABS.indexOf(k) === -1) return;
+  chat.panelTab = k; renderProductPanel();
+  const t = $("ppTab-" + k); if (t && t.focus) t.focus();
+}
+function panelTabKey(e) {
+  const chat = activeChat(); if (!chat) return;
+  const i = PANEL_TABS.indexOf(chat.panelTab || "roadmap");
+  const to = e.key === "ArrowRight" ? (i + 1) % PANEL_TABS.length : e.key === "ArrowLeft" ? (i - 1 + PANEL_TABS.length) % PANEL_TABS.length : e.key === "Home" ? 0 : e.key === "End" ? PANEL_TABS.length - 1 : -1;
+  if (to < 0) return;
+  if (e.preventDefault) e.preventDefault(); setPanelTab(PANEL_TABS[to]);
+}
+function toggleRoadmapList() { const chat = activeChat(); if (!chat) return; chat.roadmapShut = !chat.roadmapShut; renderProductPanel(); }
+function toggleProductPanel() {
+  const chat = activeChat(); if (!chat || !chat.product) return;
+  chat.panelOpen = !chat.panelOpen; renderProductPanel();
+  const f = $(chat.panelOpen ? "productPanelClose" : "productPanelBtn"); if (f && f.focus) f.focus();
+}
+// Returns true when it closed something, so Escape can tell whether it was used.
+function closeProductPanel(returnFocus) {
+  const chat = activeChat(); if (!chat || !chat.panelOpen) return false;
+  chat.panelOpen = false; renderProductPanel();
+  if (returnFocus) { const f = $("productPanelBtn"); if (f && f.focus) f.focus(); }
+  return true;
+}
+// The producer ticks an optional document item ("Upload the DOP certificate").
+async function toggleDocDone(i) {
+  const chat = activeChat(); const p = chat && chat.product; if (!p) return;
+  const name = ((p.details || {}).suggested_documents || [])[i]; if (!name) return;
+  const done = new Set((p.details || {}).docs_done || []);
+  if (done.has(name)) done.delete(name); else done.add(name);
+  try {
+    const res = await DataStore.updateProduct(p.id, { details: Object.assign({}, p.details, { docs_done: Array.from(done) }) });
+    if (res.error) throw res.error;
+    chat.product = res.data || chat.product; rememberProduct(chat.product); saveOk();
+  } catch (e) { saveFailedWithOwnMessage("save.product", e, T("save.couldnt", { what: T("save.product") })); }
+  renderProductPanel();
 }
 
 /* ---------- Reading attached labels and documents (ROADMAP item 32 pass D) ----------
@@ -1104,8 +1541,9 @@ async function fileToBase64(file) {
 }
 // The content blocks that carry the file to the model.
 function scanContentBlocks(file, b64) {
-  const src = { type: "base64", media_type: file.type, data: b64 };
-  return [file.type === "application/pdf" ? { type: "document", source: src } : { type: "image", source: src },
+  const type = productFileType(file);
+  const src = { type: "base64", media_type: type, data: b64 };
+  return [type === "application/pdf" ? { type: "document", source: src } : { type: "image", source: src },
     { type: "text", text: "Read this file." }];
 }
 // True when the sheet from a scan holds at least one value.
@@ -1115,6 +1553,9 @@ function scanHasFindings(sheet) {
 }
 async function scanAttached(chat, file, doc) {
   if (state.offline || !state.apiKey) return;
+  // Only pictures and PDFs can be read by the model; Word, Excel and CSV files are just stored.
+  const kind = productFileType(file);
+  if (kind !== "application/pdf" && productFileGroup(kind) !== "image") return;
   toast(T("attach.reading", { name: file.name }));
   setTyping(true);
   try {
@@ -1355,34 +1796,43 @@ function rememberProduct(row) {
   if (i === -1) state.products.unshift(row); else state.products[i] = Object.assign({}, state.products[i], row);
 }
 
-function addMsg(chat, role, text) {
-  chat.messages.push({ role, text, ts: Date.now() });
+function addMsg(chat, role, text, docIds) {
+  chat.messages.push({ role, text, ts: Date.now(), docIds: docIds || [] });
   if (chat.id === state.activeChatId) renderTranscript();
-  if (!isLocalId(chat.id)) bgSave(DataStore.addMessage(chat.id, role, text), "save.message");
+  if (!isLocalId(chat.id)) bgSave(DataStore.addMessage(chat.id, role, text, docIds), "save.message");
 }
-function renderTranscript() {
+// keepScroll: redraw without jumping to the bottom (a preview finished loading).
+function renderTranscript(keepScroll) {
   const chat = activeChat();
   const el = $("assistTranscript"); if (!el) return;
-  if (!chat) { el.innerHTML = ""; return; }
+  if (!chat) { el.innerHTML = ""; renderAssistHead(); return; }
   const bubbles = chat.messages.map(m => {
     if (m.role === "sys") return `<div class="bubble meta">${esc(m.text)}</div>`;
-    return `<div class="bubble ${m.role === "user" ? "out" : "in"}">${esc(m.text)}</div>`;
+    if (m.role === "user") {
+      // Files sent with a message sit above its bubble, on the same side.
+      const files = msgFilesHTML(chat, m);
+      const bubble = m.text ? `<div class="bubble out">${esc(m.text)}</div>` : "";
+      return files ? `<div class="msg-group out">${files}${bubble}</div>` : bubble;
+    }
+    return `<div class="bubble in">${esc(m.text)}</div>`;
   }).join("");
   // Once matching has produced something the transcript ends with the best
   // buyers as cards, and (if the farmer wants it) a way to publish an offer.
   // There is no "edit details" button on purpose: changes are made by asking in
-  // the chat, and the cards below are redrawn when the ranking changes.
-  const cta = matchCardsHTML(chat) + productSheetHTML(chat) + scanCardHTML(chat) + productPickerHTML(chat);
+  // the chat, and the cards below are redrawn when the ranking changes. The
+  // product sheet itself lives in the side panel, not here.
+  const cta = matchCardsHTML(chat) + scanCardHTML(chat) + productPickerHTML(chat);
+  const prev = el.scrollTop;
   el.innerHTML = bubbles + cta;
   refreshAttachStrip();
-  el.scrollTop = el.scrollHeight;
+  el.scrollTop = keepScroll ? prev : el.scrollHeight;
 }
 
 /* ---------- Brain 1 turn ---------- */
-async function sendUserMessage(text) {
+async function sendUserMessage(text, docIds) {
   const chat = activeChat(); if (!chat) return;
   clearErr();
-  addMsg(chat, "user", text);
+  addMsg(chat, "user", text, docIds);
 
   const findings = guardianScanText(text);
   findings.forEach(f => addLog(f.level, "Guardian · input scan: " + f.msg));
@@ -1394,7 +1844,9 @@ async function sendUserMessage(text) {
 
   if (state.offline) return offlineTurn(chat);
 
-  chat.apiMessages.push({ role: "user", content: text });
+  // Tell the model about the files that came with this message (their names only; what a label says arrives through the scan card).
+  const sent = (docIds || []).map(id => (chat.docs || []).find(d => d.id === id)).filter(Boolean).map(d => d.file_name);
+  chat.apiMessages.push({ role: "user", content: sent.length ? text + "\n[Files attached to this message: " + sent.join(", ") + "]" : text });
   setTyping(true);
   try {
     const resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE, TOOL_PRODUCT], 700);
@@ -5227,9 +5679,29 @@ function boot() {
   $("newChatBtn").onclick = () => startNewChat();
 
   // Chat
-  $("sendBtn").onclick = () => { const v = $("userInput").value.trim(); if (v) { $("userInput").value = ""; sendUserMessage(v); } };
-  $("userInput").addEventListener("keydown", e => { if (e.key === "Enter") $("sendBtn").onclick(); });
+  $("sendBtn").onclick = () => composerSend();
+  // Enter sends, Shift+Enter starts a new line; Enter while an input method is composing is left alone.
+  $("userInput").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); composerSend(); } });
+  $("userInput").addEventListener("input", autosizeComposer);
   $("attachBtn").onclick = pickAttachment;
+  $("imageBtn").onclick = pickImage;
+  $("productPanelBtn").onclick = () => toggleProductPanel();
+  // A drop anywhere on the chat waits in the message box; a drop on the product panel goes to the product's documents.
+  const dropTarget = (el, stage) => {
+    if (!el) return;
+    const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf("Files") !== -1;
+    el.addEventListener("dragover", e => { if (hasFiles(e)) { e.preventDefault(); el.classList.add("dragging"); } });
+    el.addEventListener("dragleave", e => { if (e.target === el) el.classList.remove("dragging"); });
+    el.addEventListener("drop", e => {
+      el.classList.remove("dragging");
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      const f = Array.from(e.dataTransfer.files || []); if (f.length) onAttachFiles(f, { stage });
+    });
+  };
+  dropTarget($("assistChat"), true); dropTarget($("productPanel"), false);
+  $("imageInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });
+  $("anyInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f, { stage: false }); });
   $("addProductBtn").onclick = addProduct;
   [["prodKind", "kind"], ["prodStatus", "status"], ["prodCategory", "category"]].forEach(([id, key]) =>
     $(id).addEventListener("change", e => { state.productFilter[key] = e.target.value; renderProducts(); }));
@@ -5292,11 +5764,18 @@ function boot() {
      listeners each closed their own sheet, so a single press while correcting a
      profile also closed the match sheet waiting behind it. Tab is held inside
      whichever sheet is on top — see trapSheetTab(). */
-  document.addEventListener("click", e => { if (state.railMenuId && !(e.target.closest && e.target.closest(".chat-rail-row"))) closeRailMenu(); });
+  // A click anywhere outside the sidebar menu closes it; so does a right-click somewhere else.
+  const railMenuOutside = e => { if (state.railMenu && !(e.target.closest && e.target.closest("#railMenu, .chat-rail-more"))) closeRailMenu(false); };
+  document.addEventListener("click", railMenuOutside);
+  document.addEventListener("contextmenu", e => { if (!(e.target.closest && e.target.closest(".chat-rail-row"))) railMenuOutside(e); });
+  window.addEventListener("resize", () => closeRailMenu(false));
+  const railList = $("chatRailList"); if (railList) railList.addEventListener("scroll", () => closeRailMenu(false));
   document.addEventListener("keydown", e => {
     if (profileMenuOpen() && profileMenuKey(e)) return;
-    if (e.key === "Escape" && !topSheet() && closeRailMenu()) return;
+    if (state.railMenu && railMenuKey(e)) return;
     if (e.key === "Escape" && !topSheet() && (closeFarmerPanel(true) || closeClientPanel(true))) return;
+    // Escape closes the product panel only when the keyboard is inside it, so it never steals Escape from the message box.
+    if (e.key === "Escape" && !topSheet() && $("productPanel") && $("productPanel").contains(document.activeElement) && closeProductPanel(true)) return;
     if (e.key === "Escape") { closeTopSheet(); return; }
     if (e.key === "Tab") trapSheetTab(e);
   });
