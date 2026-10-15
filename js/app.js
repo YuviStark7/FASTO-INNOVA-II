@@ -1701,7 +1701,7 @@ function productCardHTML(p) {
   actions.push(p.status === "archived" ? act("archive-restore", "products.restore", "products.restoreFor", "setProductArchived('" + id + "', false)")
     : act("archive", "products.archive", "products.archiveFor", "setProductArchived('" + id + "', true)"));
   const docs = state.productDocs[p.id] || [];
-  const folder = folderCardHTML({ id: p.id, label: name, seed: name, width: 300,
+  const folder = folderCardHTML({ id: p.id, label: name, seed: name, width: GF_CARD_W,
     meta: p.kind === "fresh" ? T("products.kindTagFresh") : T("products.kindTagPackaged"),
     badge: { text: productStatusLabel(p.status), tone: p.status }, actions,
     openLabel: T("products.folderOpen", { name, n: state.productDocCounts[p.id] || 0 }), closeLabel: T("products.folderClose", { name }), filesLabel: T("products.folderFiles", { name }),
@@ -1737,6 +1737,8 @@ function productSearchFields(p) {
   const d = p.details || {};
   return [p.name, p.ai_category, p.kind, p.status].concat(d.ingredients || []).concat(d.pack_sizes || []);
 }
+// A My products folder is drawn at 0.7 of the size it had (300 px, now 210 px), Yuvi 2026-10-15.
+const GF_CARD_W = 210;
 const PRODUCT_SORTS = ["new", "old", "az"];
 function productSortInfo(mode) {
   switch (mode) {
@@ -1752,7 +1754,7 @@ function cycleProductSort() {
 }
 // The blank white folder that starts a new product chat (it replaces the "Add product" chip).
 function addProductCardHTML() {
-  return `<article class="prod-card prod-folder-card prod-add-card">${folderCardHTML({ id: "add-product", label: T("products.add"), blank: true, width: 300,
+  return `<article class="prod-card prod-folder-card prod-add-card">${folderCardHTML({ id: "add-product", label: T("products.add"), blank: true, width: GF_CARD_W,
     onclick: "addProduct()", openLabel: T("products.add") })}</article>`;
 }
 function renderProducts() {

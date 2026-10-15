@@ -3700,6 +3700,17 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     // the pill sits level with the folder's top edge: its top is the stage's top (the tab), not above it
     const f = a.folderCardHTML({ id: "x", label: "Donuts", openLabel: "o", closeLabel: "c", badge: { text: "Active", tone: "active" }, width: 340 });
     check("the status pill is level with the folder's top edge", /class="gf-badge gf-badge--active" style="top:54\.0px"/.test(f));
+    // 0.7x folders, glass clipped to the panel, see-through white Add folder (2026-10-15)
+    const fcss = require("fs").readFileSync(path + "/css/folder.css", "utf8");
+    check("every My products folder is drawn at 0.7 of its old width (300 px -> 210 px), the Add folder included",
+      (g.match(/style="--gf-k:0\.6176;width:210px/g) || []).length >= 3);
+    check("the products grid starts at the left edge of the panel, level with the 'My products' title (no side padding, left-aligned)",
+      /#productsScreen \.prod-grid\{[^}]*padding:18px 0 12px[^}]*justify-content:start[^}]*justify-items:start/.test(fcss));
+    check("text and buttons are sized in screen pixels through --gf-k, so they stay readable on a small folder", /font-size:calc\(16px \/ var\(--gf-k/.test(fcss) && /height:calc\(30px \/ var\(--gf-k/.test(fcss));
+    check("the frosted front is clipped to the panel's own outline by a mask (the blur no longer leaks past the corners)",
+      /class="gf-front" style="[^"]*mask-image:url\([^"]*data:image\/svg\+xml,/.test(f));
+    check("the front leans with a gentle perspective, so it no longer overhangs the back panel", /perspective\(2200px\)/.test(fcss) && !/perspective\(760px\)/.test(fcss));
+    check("the Add product folder is see-through white glass, not an opaque white", /\.gf-root--blank \.gf-back\{ background:rgba\(255,255,255,\.4\d?\)/.test(fcss) && !/#f3f3f5/.test(fcss) && /\.gf-root--blank \.gf-tint\{ background:linear-gradient\(180deg,rgba\(255,255,255,/.test(fcss));
     st.products = saved.products; st.productFilter = saved.filter; st.productSort = saved.sort; st.search = saved.search; st.productDocCounts = saved.counts; st.productDocs = saved.docs;
   }
 

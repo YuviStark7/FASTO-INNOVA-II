@@ -32,6 +32,14 @@ const GF_ART = [
   ["#d9e2ea", "#9fb4c7", "#bccbd8", "#e8edf2", "#ffffff"],   // glacier
   ["#173024", "#4f7a5a", "#a7843a", "#e9cf87", "#fbf3d6"]    // verdant
 ];
+/* The front panel's frosted glass has to stop exactly at the panel's outline. A plain clip-path did not stop
+   the blur: in Chrome the blurred rectangle leaked past the rounded corners and showed as a ghost box when the
+   folder leans. A mask of the same shape clips the blur properly. */
+function gfFrontMask() {
+  const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + GF_W + " " + GF_FRONT_H + "'><path d='" + GF_FRONT_PATH + "' fill='black'/></svg>";
+  const url = "url('data:image/svg+xml," + encodeURIComponent(svg).replace(/'/g, "%27") + "')";
+  return "-webkit-mask-image:" + url + ";mask-image:" + url + ";-webkit-mask-size:" + GF_W + "px " + GF_FRONT_H + "px;mask-size:" + GF_W + "px " + GF_FRONT_H + "px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;";
+}
 function gfHash(s) { let h = 2166136261; s = String(s); for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
 function gfEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 // A back-panel picture for a name: the same name always gets the same picture.
@@ -64,18 +72,20 @@ function folderCardHTML(o) {
       '<span class="gf-sheet-head"><span class="gf-sheet-name">' + gfEsc(f.name) + "</span>" + (f.meta ? '<span class="gf-sheet-meta">' + gfEsc(f.meta) + "</span>" : "") + "</span></button></div>";
   }).join("");
   const badge = o.badge ? '<span class="gf-badge gf-badge--' + gfEsc(o.badge.tone || "draft") + '" style="top:' + (GF_HEADROOM * k).toFixed(1) + 'px">' + gfEsc(o.badge.text) + "</span>" : "";
-  const icon = n => (typeof lucide === "function" ? lucide(n, 17) : "");
+  // The folder is drawn at 340 px and scaled down by k. Text and buttons must not shrink with it (an 8 px caption is unreadable),
+  // so they are sized in screen pixels through --gf-k (see folder.css); icons are drawn bigger here for the same reason.
+  const icon = n => (typeof lucide === "function" ? lucide(n, Math.round(16 / k)) : "");
   const actions = (o.actions || []).map(a => '<button type="button" class="gf-act" aria-label="' + gfEsc(a.aria || a.label) + '" onclick="' + gfEsc(a.onclick || "") + '">' +
     icon(a.icon) + '<span class="gf-act-label" aria-hidden="true">' + gfEsc(a.label) + "</span></button>").join("");
   const blank = !!o.blank;
   const hitClick = blank ? gfEsc(o.onclick || "") : "toggleFolder(this)";
-  const plus = blank && typeof lucide === "function" ? '<div class="gf-actions"><span class="gf-act gf-plus" aria-hidden="true">' + lucide("plus", 18) + "</span></div>" : "";
-  return '<div class="gf-root' + (blank ? " gf-root--blank" : "") + '" data-tone="dark" data-place="bottom-left" style="width:' + width + "px;height:" + ((GF_H + GF_HEADROOM) * k).toFixed(1) + 'px">' + badge +
+  const plus = blank && typeof lucide === "function" ? '<div class="gf-actions"><span class="gf-act gf-plus" aria-hidden="true">' + lucide("plus", Math.round(16 / k)) + "</span></div>" : "";
+  return '<div class="gf-root' + (blank ? " gf-root--blank" : "") + '" data-tone="dark" data-place="bottom-left" style="--gf-k:' + k.toFixed(4) + ";width:" + width + "px;height:" + ((GF_H + GF_HEADROOM) * k).toFixed(1) + 'px">' + badge +
     '<div class="gf-stage" style="transform:translateY(' + (GF_HEADROOM * k).toFixed(1) + "px) scale(" + k.toFixed(4) + ')"><div class="gf-tilt">' +
     '<div class="gf-shadow" aria-hidden="true"></div>' +
     '<div class="gf-back" style="clip-path:path(\'' + GF_BACK_PATH + "');" + (blank ? "" : gfEsc(gfArtStyle(o.seed || o.label))) + '" aria-hidden="true"><div class="gf-back-sheen"></div></div>' +
     '<svg class="gf-rim gf-back-rim" viewBox="0 0 ' + GF_W + " " + GF_H + '" aria-hidden="true"><path d="' + GF_BACK_PATH + '"/></svg>' +
-    '<div class="gf-front" style="clip-path:path(\'' + GF_FRONT_PATH + '\')"><div class="gf-tint" aria-hidden="true"></div><div class="gf-spec" aria-hidden="true"></div>' +
+    '<div class="gf-front" style="clip-path:path(\'' + GF_FRONT_PATH + '\');' + gfEsc(gfFrontMask()) + '"><div class="gf-tint" aria-hidden="true"></div><div class="gf-spec" aria-hidden="true"></div>' +
     '<svg class="gf-rim gf-front-rim" viewBox="0 0 ' + GF_W + " " + GF_FRONT_H + '" aria-hidden="true"><defs><linearGradient id="gf-rim-' + uid + '" x1="0" y1="0" x2="0" y2="1">' +
     '<stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.35" stop-color="#fff" stop-opacity="0.35"/><stop offset="1" stop-color="#fff" stop-opacity="0.12"/></linearGradient></defs>' +
     '<path d="' + GF_FRONT_PATH + '" stroke="url(#gf-rim-' + uid + ')"/></svg>' +
