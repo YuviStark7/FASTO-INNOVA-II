@@ -351,8 +351,6 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   const pillActive = rgba(cssVar(decl(":root", "--pill-active")));
   const railTint = rgba(cssVar(decl(".chat-history-rail", "background")));
   const bubbleTint = rgba(cssVar(decl(".assist-transcript .bubble.in", "background")));
-  const chipTint = rgba(cssVar(decl(".sugg-chip", "background")));
-  const chipHover = rgba(cssVar(decl(".sugg-chip:hover", "background")));
   // The chat is a near-black panel of its own (2026-10-15 redesign); bubbles and the message box are measured on top of it.
   const chatPanel = rgba(cssVar(decl(".assist-chat", "background")));
   const barTint = rgba(cssVar(decl(".composer", "background")));
@@ -361,8 +359,7 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
   const missing = [!ink70 && "--ink-70", !ink50 && "--ink-50", !topbar && "#topbar background",
                    !navOpacity && ".nav-item opacity", !warnText && ".sync-warn color", !pillBlue && ".pill-blue color",
                    !pillActive && "--pill-active", !railTint && ".chat-history-rail background",
-                   !bubbleTint && ".assist-transcript .bubble.in background", !chipTint && ".sugg-chip background",
-                   !chipHover && ".sugg-chip:hover background",
+                   !bubbleTint && ".assist-transcript .bubble.in background",
                    !chatPanel && ".assist-chat background", !barTint && ".composer background"].filter(Boolean);
   report("contrast check couldn't read these values out of the CSS", missing);
 
@@ -396,14 +393,8 @@ for (const [name, file] of [["app.css", "/css/app.css"], ["base.css", "/css/base
         over(railTint.rgb, railTint.a, SCRIM_ASSIST)],
       ["the open conversation in the rail", W,
         over(pillActive.rgb, pillActive.a, over(railTint.rgb, railTint.a, SCRIM_ASSIST))],
-      ["the example chips", over(ink70.rgb, ink70.a, over(chipTint.rgb, chipTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))),
-        over(chipTint.rgb, chipTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))],
       ["the message bar placeholder", over(ink50.rgb, ink50.a, over(barTint.rgb, barTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))),
-        over(barTint.rgb, barTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))],
-      /* Hover is measured too: it is the one state the farmer is looking
-         straight at, and putting white back on hover would undo this item on
-         exactly the chip being read. */
-      ["a hovered example chip", W, over(chipHover.rgb, chipHover.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))]
+        over(barTint.rgb, barTint.a, over(chatPanel.rgb, chatPanel.a, SCRIM_BOTTOM))]
     ];
     const failed = cases.filter(([, f, b]) => ratio(f, b) < 4.5)
       .map(([label, f, b]) => label + " " + ratio(f, b).toFixed(2) + ":1");

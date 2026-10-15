@@ -126,6 +126,7 @@ const TOOL_RECS = {
 const SYSTEM_PRODUCT = `
 
 FINISHED PRODUCTS: if the person makes a finished, packaged product (for example sliced cheese, jam, pasta, olive oil in bottles, biscuits) rather than selling fresh produce by the kilo, do NOT call submit_farmer_profile. Instead build a product sheet by interviewing them, still ONE question per message, under 65 words, mirroring their language. Start with what the product is, then ask in this order, skipping what you already know: ingredients; allergens (ask even if they think there are none; "none" is a valid answer); shelf life; how it must be stored; pack sizes; minimum order; the nutrition table per 100 g (energy kcal, fat, saturated fat, carbohydrates, sugars, protein, salt); certifications (optional); price range (optional). Tell them they can also attach a photo of the label (picture button) or a document such as a PDF, Word or Excel file (paperclip button) in the message box, and that at least one document is needed to finish.
+After every save_product_sheet call, if the sheet is not complete, keep going in the same turn: write ONE short question about the next missing thing (never leave the producer without a next step, and never wait to be asked what is missing).
 As soon as you know what the product is, call save_product_sheet with its name and ai_category, even before anything else is known: that opens the product profile panel beside the chat. In that same first call send suggested_documents: up to 5 short names of documents that suit THIS product (for example "DOP certificate" for a protected-origin cheese, "organic certificate" if it is organic, "lab analysis" for a product with health claims); skip it if none really fits. The panel shows the sheet and a checklist that follows what you save, so never repeat the whole sheet back in the chat: just ask the next question.
 At the END of every turn in which you learned something new, call save_product_sheet with the facts so far (only fields you actually know). You invent the category yourself, in lowercase and in the person's language (e.g. "sliced cheese"), as ai_category.
 If they do not know a value for shelf_life_days, storage, pack_sizes or a nutrition number, you MAY suggest a typical value, say clearly that it is only a suggestion to confirm, and list that field in suggested_fields (use "nutrition.salt_g" style for nutrition). NEVER suggest or invent ingredients, allergens, certifications, minimum order or prices: those must come from the person or from a document. When they confirm a suggestion, send it again WITHOUT listing it in suggested_fields.
@@ -1113,6 +1114,7 @@ async function loadChatDocs(chat) {
       chat.docs.forEach(d => loadThumb(chat, d));
     }
     chat.docsState = "done";
+    syncSheetComplete(chat, false);   // opened from the database: record the state, do not announce it
   } catch (e) { chat.docsState = null; noteSaveFailure("save.file", e); release(); return; }
   release();
   if (chat.id === state.activeChatId) { renderAttachStrip(); renderTranscript(); }
@@ -1176,6 +1178,7 @@ async function attachOne(chat, file, u) {
     refreshChatFiles(chat);
     return false;
   }
+  syncSheetComplete(chat, true);
   refreshChatFiles(chat);
   // The file is safely stored; reading it is a bonus and its failure never undoes the upload.
   await scanAttached(chat, file, savedDoc);
@@ -1218,6 +1221,7 @@ async function removeAttachment(id) {
     if (r.error) throw r.error;
     chat.docs = chat.docs.filter(x => x.id !== id);
     chat.staged = (chat.staged || []).filter(x => x !== id);
+    syncSheetComplete(chat, false);
     if (chat.product) state.productDocCounts[chat.product.id] = Math.max(0, (state.productDocCounts[chat.product.id] || 1) - 1);
     DataStore.removeProductFile(d.storage_path).catch(() => {}); // the record is the truth; a stray file is invisible and private
     toast(T("attach.removed", { name: d.file_name }));
@@ -1335,12 +1339,26 @@ async function onProductSheet(raw, chat) {
   const saved = await saveProductSnapshot(chat, v.sheet);
   if (saved === "local") return "Not saved: the conversation was never saved.";
   if (!saved) return "Could not save the product sheet; tell the producer and carry on.";
+  syncSheetComplete(chat, true);
   if (chat.id === state.activeChatId) renderTranscript();
   const pc = productCompleteness(chat.product, (chat.docs || []).length);
   const dropped = v.warnings.filter(w => w.indexOf("dropped:") === 0).map(w => w.slice(8));
-  return "Saved. " + (pc.complete ? "The sheet is complete." : "Still missing: " + pc.missing.join(", ") + ".") +
+  return "Saved. " + (pc.complete ? "The sheet is complete. Write nothing more this turn: the app is already telling the producer and starting the buyer search." : "Still missing: " + pc.missing.join(", ") + ". Now ask about the next missing thing, one short question.") +
     (dropped.length ? " Not stored because they cannot be suggested, ask the producer: " + dropped.join(", ") + "." : "");
 }
+/* The moment a product sheet becomes complete the assistant says so, once, in the
+   chat: everything is in, the best-buyer search starts (the cards appear under the
+   conversation) and the profile now offers Launch. announce=false only records the
+   state (a chat opened from the database that was already complete). It fires again
+   if a document is removed and the sheet is completed a second time. */
+function syncSheetComplete(chat, announce) {
+  const now = !!(chat && chat.product && productCompleteness(chat.product, (chat.docs || []).length).complete);
+  const was = chat.sheetComplete;
+  chat.sheetComplete = now;
+  if (announce && now && was !== true) addMsg(chat, "ai", T("prod.allSet"));
+  return now;
+}
+
 /* ---------- The product profile panel ----------
    The sheet is no longer drawn inside the chat. The moment a product is being
    made in a conversation (the AI saved its first details, a file was attached,
@@ -1406,7 +1424,25 @@ function roadmapPaneHTML(chat) {
     <div class="pp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${rm.pct}" aria-label="${escAttr(T("prodpanel.progress"))}"><span style="width:${rm.pct}%"></span></div>
     <button type="button" class="pp-disclose" id="ppChecklistToggle" aria-expanded="${shut ? "false" : "true"}" aria-controls="ppChecklist" onclick="toggleRoadmapList()">${esc(T("prodpanel.checklist", { done: rm.done, total: rm.total }))}${railIcon(shut ? "chevron-right" : "chevron-down", 16)}</button>
     <ul class="pp-checklist" id="ppChecklist"${shut ? " hidden" : ""}>${steps}</ul>${optional}
-    ${rm.complete ? `<p class="prod-status ok">${esc(T("prod.complete"))}</p>` : ""}`;
+    ${rm.complete ? `<p class="prod-status ok">${esc(T("prod.complete"))}</p>` : ""}${launchBlockHTML(p, rm.complete)}`;
+}
+// Launch (or Withdraw) on the open market. Only a complete sheet can be launched; the database refuses an incomplete one too.
+function launchBlockHTML(p, complete) {
+  if (!complete || p.status === "archived") return "";
+  if (p.status === "active") return `<div class="pp-launch live"><span class="pp-live">${esc(T("prodpanel.live"))}</span>
+    <button type="button" class="btn btn-ghost btn-sm" id="ppWithdrawBtn" onclick="withdrawFromPanel()">${esc(T("prodpanel.withdraw"))}</button></div>`;
+  return `<div class="pp-launch"><button type="button" class="btn btn-primary" id="ppLaunchBtn" onclick="launchFromPanel()">${esc(T("prodpanel.launch"))}</button>
+    <p class="pp-launch-hint">${esc(T("prodpanel.launchHint"))}</p></div>`;
+}
+async function launchFromPanel() {
+  const chat = activeChat(); if (!chat || !chat.product) return;
+  if (!(await launchProduct(chat.product.id))) return;
+  renderProductPanel();
+}
+async function withdrawFromPanel() {
+  const chat = activeChat(); if (!chat || !chat.product) return;
+  if (!(await withdrawProduct(chat.product.id))) return;
+  renderProductPanel();
 }
 function detailsPaneHTML(chat) {
   const p = chat.product, rows = productFactRows(p);
@@ -1604,7 +1640,13 @@ async function confirmScan(id) {
   if (ok !== true) return;
   chat.scans = chat.scans.filter(x => x.id !== id);
   addMsg(chat, "sys", T("scan.saved", { name: sc.fileName }));
+  const done = syncSheetComplete(chat, true);
   renderTranscript();
+  // The assistant carries on by itself with the next missing question (live AI only; the offline demo cannot scan).
+  if (!done && !state.offline && state.apiKey) {
+    (chat.apiMessages = chat.apiMessages || []).push({ role: "user", content: "[The producer confirmed the details read from " + sc.fileName + "; they are now saved in the product sheet. Carry on: ask about the next missing thing.]" });
+    await brainTurn(chat, 1);
+  }
 }
 function discardScan(id) {
   const chat = activeChat(); if (!chat || !chat.scans) return;
@@ -1743,9 +1785,24 @@ async function launchProduct(id) {
   if (!productCompleteness(p, state.productDocCounts[p.id] || 0).complete) { toast(T("products.notComplete")); return false; }
   const ok = await showDialog({ titleKey: "products.launchTitle", bodyKey: "products.launchBody", vars: { name: p.name }, okKey: "products.launchOk", cancelKey: "dlg.cancel" });
   if (!ok) return false;
-  return setProductStatus(id, "active", "products.launched");
+  const done = await setProductStatus(id, "active", "products.launched");
+  if (done) tellProductChat(id, "prod.launchedMsg");
+  return done;
 }
-function withdrawProduct(id) { return setProductStatus(id, "draft", "products.withdrawn"); }
+// Says it in the conversation the product belongs to (and keeps that chat's copy of the product in step).
+function tellProductChat(productId, key) {
+  const p = state.products.find(x => x.id === productId);
+  const chat = state.chats.find(c => c.product && c.product.id === productId) || (p && state.chats.find(c => c.id === p.source_chat_id));
+  if (!chat) return;
+  if (chat.product && p) chat.product.status = p.status;
+  addMsg(chat, "ai", T(key));
+  if (chat.id === state.activeChatId) renderProductPanel();
+}
+async function withdrawProduct(id) {
+  const done = await setProductStatus(id, "draft", "products.withdrawn");
+  if (done) tellProductChat(id, "prod.withdrawnMsg");
+  return done;
+}
 
 /* ---------- Pick an existing product in a new chat (ROADMAP item 32 pass F) ----------
    A brand-new, empty conversation offers the farmer's existing products as cards.
@@ -1807,7 +1864,8 @@ function renderTranscript(keepScroll) {
   const el = $("assistTranscript"); if (!el) return;
   if (!chat) { el.innerHTML = ""; renderAssistHead(); return; }
   const bubbles = chat.messages.map(m => {
-    if (m.role === "sys") return `<div class="bubble meta">${esc(m.text)}</div>`;
+    // Notices from the app (a file was saved, details were updated...) read as ordinary replies in the chat.
+    if (m.role === "sys") return `<div class="bubble in">${esc(m.text)}</div>`;
     if (m.role === "user") {
       // Files sent with a message sit above its bubble, on the same side.
       const files = msgFilesHTML(chat, m);
@@ -1847,15 +1905,24 @@ async function sendUserMessage(text, docIds) {
   // Tell the model about the files that came with this message (their names only; what a label says arrives through the scan card).
   const sent = (docIds || []).map(id => (chat.docs || []).find(d => d.id === id)).filter(Boolean).map(d => d.file_name);
   chat.apiMessages.push({ role: "user", content: sent.length ? text + "\n[Files attached to this message: " + sent.join(", ") + "]" : text });
+  await brainTurn(chat, 0);
+}
+/* One Brain 1 reply and what the app does with it. When the model only saved
+   details and said nothing, the app asks it to carry on (a second round, at most
+   two), so the producer is never left waiting for the next question. Once a sheet
+   is complete the app itself says so (syncSheetComplete), so no follow-up then. */
+async function brainTurn(chat, round) {
   setTyping(true);
   try {
-    const resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE, TOOL_PRODUCT], 700);
+    let resp;
+    try { resp = await callClaude(interviewSystem(chat), chat.apiMessages, [TOOL_PROFILE, TOOL_PRODUCT], 700); }
+    catch (e) { if (round === 0) chat.apiMessages.pop(); throw e; }   // a failed first call leaves no half-turn behind
     setTyping(false);
     chat.apiMessages.push({ role: "assistant", content: resp.content });
 
-    let toolUse = null, sheetUse = null;
+    let toolUse = null, sheetUse = null, spoke = false;
     for (const block of resp.content) {
-      if (block.type === "text" && block.text.trim()) addMsg(chat, "ai", block.text.trim());
+      if (block.type === "text" && block.text.trim()) { addMsg(chat, "ai", block.text.trim()); spoke = true; }
       if (block.type === "tool_use" && block.name === "submit_farmer_profile") toolUse = block;
       if (block.type === "tool_use" && block.name === "save_product_sheet") sheetUse = block;
     }
@@ -1864,6 +1931,8 @@ async function sendUserMessage(text, docIds) {
     if (sheetUse) {
       const outcome = await onProductSheet(sheetUse.input, chat);
       chat.apiMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: sheetUse.id, content: outcome }] });
+      const done = !!chat.product && productCompleteness(chat.product, (chat.docs || []).length).complete;
+      if (!spoke && !done && round < 2) await brainTurn(chat, round + 1);
     } else if (toolUse) {
       chat.apiMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUse.id, content: "Profile received by Guardian for validation." }] });
       // A profile that already exists means this is an edit asked for in the chat.
@@ -1873,7 +1942,6 @@ async function sendUserMessage(text, docIds) {
     setTyping(false);
     showErr(e.message);
     addLog("block", "System · " + e.message);
-    chat.apiMessages.pop();
   }
 }
 
@@ -2189,8 +2257,8 @@ function matchCardsHTML(chat) {
   })() : "";
   return `<div class="match-block"><div class="eyebrow">${esc(T("match.best"))}</div>
     <div class="match-cards">${cards}</div>${ideas}
-    <div class="match-cta">${offer}</div>
-    <div class="foot match-hint">${esc(T("card.editHint"))}</div></div>`;
+    <div class="match-cta">${offer}</div></div>
+    <div class="bubble in match-hint">${esc(T(packaged ? "card.editHintProduct" : "card.editHint"))}</div>`;
 }
 
 /* A map for a business we know by name and area. No coordinates are stored, so
@@ -2515,7 +2583,7 @@ function bootStatus(text) {
    So the same controls the stylesheet dims are really disabled here.
    Anything added to the #app.booting rules in css/app.css belongs in this
    list too, or the lock holds for a mouse and leaks for a keyboard. */
-const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #addProductBtn, #userInput, .sugg-chip";
+const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #addProductBtn, #userInput";
 function setBootLock(on) {
   if (!document.querySelectorAll) return;
   document.querySelectorAll(BOOT_LOCK_SEL).forEach(el => { el.disabled = !!on; });
@@ -5706,7 +5774,6 @@ function boot() {
   [["prodKind", "kind"], ["prodStatus", "status"], ["prodCategory", "category"]].forEach(([id, key]) =>
     $(id).addEventListener("change", e => { state.productFilter[key] = e.target.value; renderProducts(); }));
   $("attachInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });
-  document.querySelectorAll(".sugg-chip").forEach(ch => ch.onclick = () => { $("userInput").value = ch.dataset.fill; $("userInput").focus(); });
 
   /* Search. The box only ever writes the query into state — the renderers do
      the filtering (see the SEARCH section), which is what lets a filtered list

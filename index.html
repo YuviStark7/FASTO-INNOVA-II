@@ -16,9 +16,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/base.css?v=2026-10-15a">
-<link rel="stylesheet" href="css/app.css?v=2026-10-15a">
-<link rel="stylesheet" href="css/folder.css?v=2026-10-15a">
+<link rel="stylesheet" href="css/base.css?v=2026-10-15b">
+<link rel="stylesheet" href="css/app.css?v=2026-10-15b">
+<link rel="stylesheet" href="css/folder.css?v=2026-10-15b">
 </head>
 <body>
 
@@ -293,16 +293,6 @@
         <div class="err-banner" id="errBanner" role="alert"></div>
         <div class="assist-transcript" id="assistTranscript" role="log" data-i18n-aria="a11y.transcript" aria-label="Conversation with Fasto"></div>
         <div class="typing-ind" id="typingInd" role="status" data-i18n="assist.thinking">Fasto is thinking…</div>
-        <!-- The chips stay in their own language whatever the UI is set to: they
-             are there to show Brain 1 mirroring whoever writes to it, so an
-             English one and an Italian one is the point. -->
-        <!-- Buttons, not spans: these fill the message box, which is an action,
-             and a span with an onclick is invisible to the keyboard entirely. -->
-        <div class="chip-row" id="chipRow" role="group" data-i18n-aria="a11y.examples" aria-label="Example messages">
-          <button type="button" class="sugg-chip" data-fill="Hi! I'm a farmer near Sant'Elia Fiumerapido. I have about 80 kg of tomatoes and 40 kg of zucchine per week in summer. Not certified organic. What can I do in Cassino?" data-i18n="assist.chip1">Demo farmer (EN)</button>
-          <button type="button" class="sugg-chip" data-fill="Buongiorno! Sono Marco, ho un piccolo terreno vicino Cervaro: circa 60 kg di pomodori e 30 kg di fagioli cannellini a settimana, da giugno a ottobre. Niente certificazione bio." data-i18n="assist.chip2">Demo farmer (IT)</button>
-          <button type="button" class="sugg-chip" data-fill="I grow chestnuts near Terelle, around 150 kg per week in October and November. Who could buy them in Cassino?" data-i18n="assist.chip3">Autumn chestnuts</button>
-        </div>
         <!-- The message box. Files you attach wait in the tray at the top of it
              until you send; they then travel with that message's bubble. Two
              buttons, bottom left: the paperclip takes documents (PDF, Word,
@@ -595,13 +585,13 @@
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase-client.js?v=2026-10-15a"></script>
+<script src="js/supabase-client.js?v=2026-10-15b"></script>
 <!-- Before app.js: app.js calls T() while it builds its screens. -->
-<script src="js/i18n.js?v=2026-10-15a"></script>
-<script src="js/data.js?v=2026-10-15a"></script>
-<script src="js/core.js?v=2026-10-15a"></script>
-<script src="js/folder-card.js?v=2026-10-15a"></script>
-<script src="js/icons.js?v=2026-10-15a"></script>
-<script src="js/app.js?v=2026-10-15a"></script>
+<script src="js/i18n.js?v=2026-10-15b"></script>
+<script src="js/data.js?v=2026-10-15b"></script>
+<script src="js/core.js?v=2026-10-15b"></script>
+<script src="js/folder-card.js?v=2026-10-15b"></script>
+<script src="js/icons.js?v=2026-10-15b"></script>
+<script src="js/app.js?v=2026-10-15b"></script>
 </body>
 </html>

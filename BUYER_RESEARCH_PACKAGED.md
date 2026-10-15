@@ -42,3 +42,21 @@ _(Original note: nothing here was in the buyers database before the decision.)_ 
 ## Honest summary
 
 The search tool found **six named, plausible local buyers** (rows 1 to 6), **one chain whose stores are real but whose buying route is unknown** (7), and **three weak or duplicate rows** (8 to 10). It did not find wholesalers, which is what a cheese-slice producer would most want. I would approve 1, 2, 6 and perhaps 3, and treat the wholesaler lead as the real next research task.
+
+
+## Added 2026-10-15 at Yuvi's request (cafés, bars, pastry and vending)
+
+Yuvi asked for more buyers after a donut product matched no café: the database had no bar or café at all. Eight rows were added to the database `buyers` table as **p13 to p20** (`confidence: low`, empty needs/volume/quality, not contacted, **not** in `js/data.js` and so not on `buyers.html`). The web search tool is weak on small local businesses, so these are only the ones a source named. Nothing here was phoned or visited; addresses and opening state come from third-party listings and may be out of date.
+
+| id | Name | Type | Where | What the source says | Source |
+|----|------|------|-------|----------------------|--------|
+| p13 | Massimo Caffè | bar / café | Viale Dante 41-43, Cassino | Open 06:00-23:00 daily, outdoor seating, takeaway; reviewers praise breakfast and croissants; 4.3/5 from 130 votes | https://www.sluurpy.it/cassino/ristorante/92226/massimo-caffe |
+| p14 | Cornetteria Il Folletto | pastry shop (cornetteria) | Cassino, address not found | Croissants, donuts, maritozzi and creams; listed as a pastry shop on Restaurant Guru (4.6/5, 343 votes); mixed reviews on artisan quality | https://wanderlog.com/place/details/3014127/cornetteria-il-folletto |
+| p15 | Gelateria Green Garden | ice-cream shop | Cassino, around Piazza N. Green, exact address not found | Listed as a gelateria and pastry shop for Cassino | https://www.sluurpy.it/cassino/gelato |
+| p16 | Express Caffè | bar / café | Next to Cassino station, number not found | Informal bar, good coffee and breakfast, large portions | https://piatti.menu/restaurants/cassino/express-caffe |
+| p17 | Palace Caffè | bar / café | Cassino, address not verified | Named on Restaurant Guru's list of breakfast places in Cassino | https://restaurantguru.it/breakfast-Cassino-m9619 |
+| p18 | Alema Caffé | bar / café | Cassino, address not verified | Same Restaurant Guru list | https://restaurantguru.it/breakfast-Cassino-m9619 |
+| p19 | Caffè Centrale | bar / café | Cassino, address not verified | Same Restaurant Guru list; a second search could not confirm it, **check it still exists** | https://restaurantguru.it/breakfast-Cassino-m9619 |
+| p20 | M & Dr Srl | vending operator | Via Virgilio 45, Cassino | Listed on Beverfood as a vending-machine operator that also supplies coffee, drinks and food to the trade; vending operators buy packaged snacks | https://www.beverfood.com/gestore-vending/m-e-dr-s-r-l |
+
+Still missing: more bars and bakeries (the search found few), hotels' breakfast buyers, wholesalers and cash & carry (no named business found), and the other towns around Cassino. Google Maps or a walk through the centre would find many more.

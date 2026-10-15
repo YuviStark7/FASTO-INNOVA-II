@@ -534,11 +534,31 @@ var PACKAGED_TYPE_FIT = [
   [/gastronom|salumer|enoteca|delicatessen|alimentari/, 50, "shop"],
   [/ingrosso|wholesale|cash/, 45, "wholesale"],
   [/supermerc/, 40, "supermarket"],
+  [/distribut|vending/, 35, "vending"],
   [/bottega|negozio/, 45, "shop"],
   [/cater|banquet|eventi|hotel|agritur/, 35, "kitchen"],
   [/panific|pasticc|forno/, 30, "bakery"],
+  [/caff|^bar|gelater/, 30, "cafe"],
   [/istituz|mensa/, 30, "institution"],
   [/ristorant|trattor|osteri|pizz|steak|rostic|birr|sushi|locanda/, 25, "restaurant"],
+  [/mercato|km0/, 25, "market"]
+];
+/* Sweet baked goods and snacks (donuts, croissants, biscuits, cakes...). For these
+   the businesses that sell them across a counter or a vending machine are the
+   natural buyers, and a delicatessen or wine shop is not, so they use their own
+   table. Same shape as PACKAGED_TYPE_FIT; first match wins. Weights are my
+   judgment, not data (see ROADMAP "Reminders"). */
+var PACKAGED_SWEET_WORDS = /donut|doughnut|ciambell|krapfen|bombolon|cornett|croissant|brioche|biscott|biscuit|cookie|muffin|torta|\bcake|dolc|sweet|pastr|pasticc|merend|wafer|maritozz|panettone|snack/i;
+var PACKAGED_TYPE_FIT_SWEET = [
+  [/caff|^bar|panific|pasticc|forno|cornett/, 50, "cafe"],
+  [/distribut|vending/, 45, "vending"],
+  [/ingrosso|wholesale|cash/, 45, "wholesale"],
+  [/gelater/, 40, "cafe"],
+  [/supermerc|bottega|negozio|alimentari/, 40, "supermarket"],
+  [/cater|banquet|eventi|hotel|agritur/, 35, "kitchen"],
+  [/istituz|mensa/, 30, "institution"],
+  [/gastronom|salumer|enoteca|delicatessen/, 25, "shop"],
+  [/ristorant|trattor|osteri|pizz|steak|rostic|birr|sushi|locanda/, 20, "restaurant"],
   [/mercato|km0/, 25, "market"]
 ];
 // Words in the AI-chosen category (free text) that point at a need we track.
@@ -550,7 +570,9 @@ var PACKAGED_NEED_WORDS = [
 function scorePackagedBuyer(product, buyer) {
   var why = [];
   var type = String(buyer.type || "").toLowerCase(), tier = [20, "other"];
-  for (var i = 0; i < PACKAGED_TYPE_FIT.length; i++) if (PACKAGED_TYPE_FIT[i][0].test(type)) { tier = [PACKAGED_TYPE_FIT[i][1], PACKAGED_TYPE_FIT[i][2]]; break; }
+  var sweet = PACKAGED_SWEET_WORDS.test(String((product && product.ai_category) || "") + " " + String((product && product.name) || ""));
+  var table = sweet ? PACKAGED_TYPE_FIT_SWEET : PACKAGED_TYPE_FIT;
+  for (var i = 0; i < table.length; i++) if (table[i][0].test(type)) { tier = [table[i][1], table[i][2]]; break; }
   why.push({ k: "type", v: tier[1] });
   var typePts = tier[0];
 

@@ -207,7 +207,7 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
-  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
@@ -3505,6 +3505,138 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("Retry uploads it again and, on success, clears the failure and stages the file", c11.uploads.length === 0 && c11.staged.indexOf("n9") !== -1);
 
     st.chats.length = 0; savedChats.forEach(c => st.chats.push(c)); st.activeChatId = savedActive; st.projects = [];
+  }
+
+
+  /* ---- Follow-ups, completion message, launch from the panel, cafes (2026-10-15) ---- */
+  console.log("\n== Test 13: the assistant follows up, announces completion and launches ==");
+  {
+    const a = app, st = a.state;
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId, savedFetch = box.fetch, savedOffline = st.offline, savedKey = st.apiKey, savedProducts = st.products, savedCounts = st.productDocCounts;
+    st.farmerId = "u1"; st.offline = false; st.apiKey = "sk-test";
+    for (const id of ["dialogSheet", "dialogTitle", "dialogBody", "dialogOk", "dialogCancel", "productPanel", "productPanelBtn", "assistChatTitle", "assistTranscript"]) els[id] = els[id] || fakeEl(id);
+    let prod = null, calls = [], replies = [], failNext = 0;
+    sb.reset();
+    sb.router = ch => { if (ch.table === "farmer_products") { const op = ch.ops[0];
+      if (op.op === "insert") prod = Object.assign({ id: "p30", status: "draft", details: {}, nutrition: {} }, op.args[0]);
+      if (op.op === "update") prod = Object.assign({}, prod, op.args[0]); return { data: prod, error: null }; }
+      return ch.table === "product_documents" ? { data: { id: "dn", file_name: "label.png", mime_type: "image/png", storage_path: "x" }, error: null } : { data: [], error: null }; };
+    box.fetch = (url, opts) => { calls.push(JSON.parse(opts.body)); if (failNext > 0 && --failNext === 0) return Promise.reject(new Error("net down")); const r = replies.shift(); return Promise.resolve({ ok: true, status: 200, json: async () => r }); };
+    const mk = id => { const c = { id, title: "Donuts", messages: [], apiMessages: [{ role: "user", content: "i make donuts" }], docs: [], docsState: "done", ts: 1 }; st.chats.push(c); st.activeChatId = id; return c; };
+    const tool = input => ({ type: "tool_use", name: "save_product_sheet", id: "t" + Math.random().toString(36).slice(2, 6), input });
+    const ai = c => c.messages.filter(m => m.role === "ai").map(m => m.text);
+
+    // the model saves details and says nothing: the app asks it to carry on
+    let c = mk("c20"); calls = []; prod = null;
+    replies = [{ content: [tool({ name: "Donuts", ai_category: "donuts" })] }, { content: [{ type: "text", text: "Which ingredients do you use?" }] }];
+    await a.brainTurn(c, 0);
+    check("a silent save is followed by a second call, and its question reaches the chat", calls.length === 2 && ai(c).join() === "Which ingredients do you use?");
+    const last = calls[1].messages[calls[1].messages.length - 1];
+    check("the second call carries the tool result, so the model can answer it", last.role === "user" && Array.isArray(last.content) && last.content[0].type === "tool_result" && /next missing/.test(last.content[0].content));
+    check("the details were saved by that turn", c.product && c.product.name === "Donuts" && c.product.ai_category === "donuts");
+
+    // the model already spoke: no extra call
+    c = mk("c21"); calls = []; prod = null;
+    replies = [{ content: [{ type: "text", text: "Thanks! Allergens?" }, tool({ name: "Donuts", ai_category: "donuts" })] }];
+    await a.brainTurn(c, 0);
+    check("when the model already asked something no extra call is made", calls.length === 1 && ai(c).join() === "Thanks! Allergens?");
+
+    // never more than two follow-ups
+    c = mk("c22"); calls = []; prod = null;
+    replies = [{ content: [tool({ name: "Donuts" })] }, { content: [tool({ name: "Donuts" })] }, { content: [tool({ name: "Donuts" })] }, { content: [tool({ name: "Donuts" })] }];
+    await a.brainTurn(c, 0);
+    check("a model that keeps staying silent is asked at most twice more", calls.length === 3);
+
+    // failures
+    c = mk("c23"); calls = []; failNext = 1; const before = c.apiMessages.length;
+    await a.brainTurn(c, 0);
+    check("a failed first call leaves no half-finished turn behind", c.apiMessages.length === before - 1);
+    c = mk("c24"); calls = []; prod = null; failNext = 2;
+    replies = [{ content: [tool({ name: "Donuts" })] }];
+    await a.brainTurn(c, 0);
+    const tail = c.apiMessages[c.apiMessages.length - 1];
+    check("a failed follow-up keeps the saved details and the tool result in the conversation", tail.role === "user" && Array.isArray(tail.content) && tail.content[0].type === "tool_result" && c.product && c.product.name === "Donuts");
+
+    // completion: said once, in the chat, no follow-up call
+    const full = { name: "Donuts", ai_category: "donuts", ingredients: ["flour", "sugar"], allergens: ["gluten"], shelf_life_days: 3, storage: "room temperature", pack_sizes: ["6 pieces"], min_order: "20 boxes",
+      nutrition: { energy_kcal: 420, fat_g: 20, saturated_fat_g: 9, carbs_g: 50, sugars_g: 20, protein_g: 6, salt_g: 0.5 } };
+    c = mk("c25"); c.docs = [{ id: "d1", file_name: "label.png", mime_type: "image/png" }]; calls = []; prod = null;
+    replies = [{ content: [tool(full)] }];
+    await a.brainTurn(c, 0);
+    const said = ai(c).filter(t => t.indexOf("I now have everything I need") === 0);
+    check("when the sheet becomes complete the assistant says so once and no follow-up call is made", said.length === 1 && calls.length === 1 && c.sheetComplete === true);
+    check("the tool result tells the model not to write more", c.apiMessages[c.apiMessages.length - 1].content[0].content.indexOf("Write nothing more") > -1);
+    calls = []; replies = [{ content: [{ type: "text", text: "Done." }, tool(full)] }];
+    await a.brainTurn(c, 0);
+    check("saving the same complete sheet again does not repeat the announcement", ai(c).filter(t => t.indexOf("I now have everything I need") === 0).length === 1);
+
+    // completion by uploading the last document
+    c = mk("c26"); prod = Object.assign({ id: "p30", status: "draft", details: { ingredients: ["flour"], allergens: [], shelf_life_days: 3, storage: "cool", pack_sizes: ["6"], min_order: "5", suggested: [] }, nutrition: full.nutrition }, { name: "Donuts", ai_category: "donuts" });
+    c.product = prod; c.docs = []; c.docsState = "done"; calls = []; replies = [];
+    await a.onAttachFiles([{ name: "label.png", type: "image/png", size: 100 }]);
+    check("attaching the last missing document completes the sheet and the assistant says so", ai(c).some(t => t.indexOf("I now have everything I need") === 0));
+    st.apiKey = ""; sb.router = () => ({ data: null, error: null });
+    await a.removeAttachment(c.docs[0].id);
+    check("removing the document marks it incomplete again without a message", c.sheetComplete === false && ai(c).filter(t => t.indexOf("I now have everything I need") === 0).length === 1);
+    st.apiKey = "sk-test";
+
+    // a confirmed scan: notice as a bubble, then the assistant carries on
+    sb.router = ch => ch.table === "farmer_products" ? { data: (prod = Object.assign({ id: "p30", status: "draft", details: {}, nutrition: {} }, ch.ops[0].op === "update" ? ch.ops[0].args[0] : prod)), error: null } : { data: [], error: null };
+    c = mk("c27"); c.product = { id: "p30", name: "Donuts", details: {}, nutrition: {} }; calls = []; failNext = 0;
+    c.scans = [{ id: "s1", fileName: "donuts.png", sheet: { name: "Donuts", details: { ingredients: ["flour"], suggested: [] }, nutrition: {} } }];
+    replies = [{ content: [{ type: "text", text: "What are the allergens?" }] }];
+    await a.confirmScan("s1");
+    const notice = c.messages.find(m => m.role === "sys");
+    check("confirming a scan says so in the chat and the assistant asks the next question by itself",
+      notice && notice.text === "I've saved the details from donuts.png to your product sheet." && ai(c).join() === "What are the allergens?" && calls.length === 1 &&
+      /The producer confirmed the details read from donuts.png/.test(c.apiMessages[c.apiMessages.length - 2].content));
+    a.renderTranscript();
+    check("app notices are drawn as ordinary chat bubbles, not small grey captions", els.assistTranscript.innerHTML.includes('<div class="bubble in">I&#39;ve saved the details') || els.assistTranscript.innerHTML.includes("I've saved the details"));
+    check("...and no notice uses the caption style any more", els.assistTranscript.innerHTML.indexOf("bubble meta") === -1);
+
+    // launch from the profile panel
+    const completeRow = { id: "p31", name: "Donuts", ai_category: "donuts", kind: "packaged", status: "draft",
+      details: { ingredients: ["flour"], allergens: ["gluten"], shelf_life_days: 3, storage: "cool", pack_sizes: ["6"], min_order: "5", suggested: [] }, nutrition: full.nutrition };
+    c = mk("c28"); c.product = Object.assign({}, completeRow); c.docs = [{ id: "d1", file_name: "l.png", mime_type: "image/png" }]; c.panelOpen = true;
+    st.products = [Object.assign({}, completeRow)]; st.productDocCounts = { p31: 1 };
+    a.renderProductPanel();
+    check("a complete draft shows a Launch button with what buyers will and won't see", els.productPanel.innerHTML.includes("Launch on the open market") && els.productPanel.innerHTML.includes("never your name, phone, address or VAT"));
+    c.product.details = { ingredients: ["flour"] }; a.renderProductPanel();
+    check("an incomplete sheet shows no Launch button", els.productPanel.innerHTML.indexOf("Launch on the open market") === -1);
+    c.product = Object.assign({}, completeRow); a.renderProductPanel();
+    sb.reset(); sb.router = ch => ({ data: Object.assign({}, completeRow, ch.ops[0].op === "update" ? ch.ops[0].args[0] : {}), error: null });
+    let pr = a.launchFromPanel(); a.settleDialog(true); await pr;
+    const lastAi = ai(c).pop();
+    check("launching asks first, sets the product live and the assistant confirms in the chat",
+      st.products[0].status === "active" && c.product.status === "active" && /successfully launched your offer on the open market/.test(lastAi));
+    check("the panel then says it is live and offers Withdraw instead", els.productPanel.innerHTML.includes("Live on the open market") && els.productPanel.innerHTML.includes("Withdraw") && els.productPanel.innerHTML.indexOf("ppLaunchBtn") === -1);
+    await a.withdrawFromPanel();
+    check("withdrawing puts it back to a draft and the assistant says so", c.product.status === "draft" && /taken your offer off the open market/.test(ai(c).pop()));
+    pr = a.launchFromPanel(); a.settleDialog(false); await pr;
+    check("declining the question changes nothing and says nothing", c.product.status === "draft" && ai(c).filter(t => /successfully launched/.test(t)).length === 1);
+
+    // packaged cards: the hint is a chat bubble about the product
+    const savedBuyers = a.DB.buyers, savedChannels = a.DB.channels;
+    const B = o => Object.assign({ id: "x", name: "N", type: "gastronomia", zone: "Cassino", distance_km: 1, needs: [], volume: null, quality_focus: [], confidence: "low" }, o);
+    a.DB.buyers = [B({ id: "k1", name: "Bar Test", type: "bar_caffetteria" }), B({ id: "g1", name: "Deli Test", type: "gastronomia" })]; a.DB.channels = [];
+    c.product = Object.assign({}, completeRow); c.docs = [{ id: "d1" }];
+    const cards = a.matchCardsHTML(c);
+    check("the buyer cards are followed by a chat bubble saying how to change the product", cards.includes('class="bubble in match-hint"') && cards.includes("To change anything about your product") && cards.indexOf("Bar Test") < cards.indexOf("Deli Test"));
+    a.DB.buyers = savedBuyers; a.DB.channels = savedChannels;
+
+    // cafes and bars now match sweet baked goods
+    const donut = { name: "Donuts", ai_category: "donuts" }, brie = { name: "Brie", ai_category: "soft cheese" };
+    const sc = (t, p) => a.scorePackagedBuyer(p, B({ type: t }));
+    check("for donuts a café, a pastry shop and a vending operator outrank a delicatessen and a wine shop",
+      sc("bar_caffetteria", donut).score > sc("gastronomia", donut).score && sc("pasticceria", donut).score > sc("enoteca", donut).score && sc("distributore_automatico", donut).score > sc("gastronomia", donut).score);
+    check("for cheese the delicatessen still comes first and a café is a modest fit", sc("gastronomia", brie).score > sc("bar_caffetteria", brie).score && sc("bar_caffetteria", brie).score > sc("zzz", brie).score);
+    check("cafés, ice-cream shops and vending operators are named for the farmer in both languages",
+      sc("bar_caffetteria", donut).reasons[0].v === "cafe" && sc("gelateria", donut).reasons[0].v === "cafe" && sc("distributore_automatico", donut).reasons[0].v === "vending" &&
+      ["pm.type.cafe", "pm.type.vending", "buyers.type.bar_caffetteria", "buyers.type.gelateria", "buyers.type.distributore_automatico"].every(k => a.STRINGS.en[k] && a.STRINGS.it[k]));
+    check("the demo example chips are gone from the screen and from the dictionary", !a.STRINGS.en["assist.chip1"] && !a.STRINGS.it["assist.chip3"] && !/sample chip/.test(a.STRINGS.en["assist.greetOffline"]));
+
+    box.fetch = savedFetch; st.offline = savedOffline; st.apiKey = savedKey; st.products = savedProducts; st.productDocCounts = savedCounts;
+    st.chats.length = 0; savedChats.forEach(x => st.chats.push(x)); st.activeChatId = savedActive;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");
