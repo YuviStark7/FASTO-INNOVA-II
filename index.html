@@ -16,9 +16,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/base.css?v=2026-10-15d">
-<link rel="stylesheet" href="css/app.css?v=2026-10-15d">
-<link rel="stylesheet" href="css/folder.css?v=2026-10-15d">
+<link rel="stylesheet" href="css/base.css?v=2026-10-15e">
+<link rel="stylesheet" href="css/app.css?v=2026-10-15e">
+<link rel="stylesheet" href="css/folder.css?v=2026-10-15e">
 </head>
 <body>
 
@@ -222,23 +222,32 @@
          that made the product, where changes are asked for. -->
     <section class="screen" id="productsScreen">
       <div class="research-panel glass-45">
-        <div class="research-panel-head">
+        <div class="research-panel-head prod-head">
           <span class="title-md" data-i18n="products.title">My products</span>
-          <button type="button" class="see-all" id="addProductBtn" data-i18n="products.add">Add product</button>
-        </div>
-        <div class="prod-filters" role="group" data-i18n-aria="products.filters" aria-label="Filter products">
-          <label>
-            <span data-i18n="products.fKind">Type</span>
-            <select id="prodKind"><option value="" data-i18n="products.kindAll">All types</option><option value="packaged" data-i18n="products.kindPackaged">Finished products</option><option value="fresh" data-i18n="products.kindFresh">Fresh produce</option></select>
-          </label>
-          <label>
-            <span data-i18n="products.fStatus">Status</span>
-            <select id="prodStatus"><option value="open" data-i18n="products.stOpen">Drafts and active</option><option value="draft" data-i18n="products.stDraft">Drafts</option><option value="active" data-i18n="products.stActive">Active</option><option value="archived" data-i18n="products.stArchived">Archived</option><option value="all" data-i18n="products.stAll">Everything</option></select>
-          </label>
-          <label>
-            <span data-i18n="products.fCategory">Category</span>
-            <select id="prodCategory"><option value="" data-i18n="products.catAll">All categories</option></select>
-          </label>
+          <div class="prod-tools">
+            <!-- One filter icon. Its three filters open on hover, and also on press or keyboard focus (a hover alone cannot be reached from a keyboard or a phone). -->
+            <div class="prod-filter" id="prodFilterWrap">
+              <button type="button" class="prod-tool-btn" id="prodFilterBtn" aria-haspopup="true" aria-expanded="false" aria-controls="prodFilterMenu" aria-label="Filter products" title="Filter products" data-i18n-title="products.filters" data-i18n-aria="products.filters"><span data-icon="filter" data-size="16"></span><span class="prod-dot" id="prodFilterDot" aria-hidden="true" hidden></span></button>
+              <div class="prod-filter-menu" id="prodFilterMenu" hidden>
+                <div class="prod-filters" role="group" data-i18n-aria="products.filters" aria-label="Filter products">
+                  <label>
+                    <span data-i18n="products.fKind">Type</span>
+                    <select id="prodKind"><option value="" data-i18n="products.kindAll">All types</option><option value="packaged" data-i18n="products.kindPackaged">Finished products</option><option value="fresh" data-i18n="products.kindFresh">Fresh produce</option></select>
+                  </label>
+                  <label>
+                    <span data-i18n="products.fStatus">Status</span>
+                    <select id="prodStatus"><option value="open" data-i18n="products.stOpen">Drafts and active</option><option value="draft" data-i18n="products.stDraft">Drafts</option><option value="active" data-i18n="products.stActive">Active</option><option value="archived" data-i18n="products.stArchived">Archived</option><option value="all" data-i18n="products.stAll">Everything</option></select>
+                  </label>
+                  <label>
+                    <span data-i18n="products.fCategory">Category</span>
+                    <select id="prodCategory"><option value="" data-i18n="products.catAll">All categories</option></select>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <!-- The sort toggle: each press moves to the next order (newest, oldest, A to Z). Its icon, word and accessible name are written by renderProducts. -->
+            <button type="button" class="prod-tool-btn" id="prodSortBtn" aria-label="Sort products" data-i18n-aria="products.sortBtn"><span id="prodSortIcon"></span><span class="prod-sort-label" id="prodSortLabel"></span></button>
+          </div>
         </div>
         <div class="prod-grid" id="productsGrid"></div>
         <div class="empty-state" id="productsEmpty" role="status"></div>
@@ -587,13 +596,13 @@
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase-client.js?v=2026-10-15d"></script>
+<script src="js/supabase-client.js?v=2026-10-15e"></script>
 <!-- Before app.js: app.js calls T() while it builds its screens. -->
-<script src="js/i18n.js?v=2026-10-15d"></script>
-<script src="js/data.js?v=2026-10-15d"></script>
-<script src="js/core.js?v=2026-10-15d"></script>
-<script src="js/folder-card.js?v=2026-10-15d"></script>
-<script src="js/icons.js?v=2026-10-15d"></script>
-<script src="js/app.js?v=2026-10-15d"></script>
+<script src="js/i18n.js?v=2026-10-15e"></script>
+<script src="js/data.js?v=2026-10-15e"></script>
+<script src="js/core.js?v=2026-10-15e"></script>
+<script src="js/folder-card.js?v=2026-10-15e"></script>
+<script src="js/icons.js?v=2026-10-15e"></script>
+<script src="js/app.js?v=2026-10-15e"></script>
 </body>
 </html>

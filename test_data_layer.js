@@ -207,7 +207,7 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
-  guardianValidateProductSheet, mergeProductSheet, productCompleteness, onProductSheet, productHasContent, updateSendState, setTyping, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  guardianValidateProductSheet, mergeProductSheet, productCompleteness, sortProductRows, productFiltersActive, cycleProductSort, addProductCardHTML, setProdFilterOpen, prodFilterOpen, productSortInfo, onProductSheet, productHasContent, updateSendState, setTyping, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
@@ -2237,8 +2237,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the lines under the folder are gone: no chips, no completeness, no source chat, no 'visible' note",
       !/class="chips"|<p>|prod-actions|From chat|documents<|Visible to approved/.test(card));
     check("a product whose chat was deleted offers a new chat instead", (() => { const h = a.productCardHTML(rows[1]); return h.includes('aria-label="Edit ' + rows[1].name + ' in a new chat"') && !h.includes("The chat it came from was deleted"); })());
-    check("the front of a folder is solid: no frosted blur and no see-through layer left in the styles",
-      !/backdrop-filter/.test(require("fs").readFileSync(path + "/css/folder.css", "utf8").replace(/@media \(prefers-reduced-transparency[\s\S]*$/, "")) && !card.includes("gf-spec"));
+    check("the front of a folder is translucent glass again: blur, a tinted see-through layer and a highlight", /backdrop-filter:blur/.test(require("fs").readFileSync(path + "/css/folder.css", "utf8")) && card.includes("gf-spec") && /rgba\(14,14,16,\.62\)/.test(require("fs").readFileSync(path + "/css/folder.css", "utf8")));
     check("an archived product offers Restore", a.productCardHTML(rows[2]).includes('aria-label="Restore Old"'));
     check("a card escapes the product name", a.productCardHTML(Object.assign({}, rows[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
 
@@ -3656,6 +3655,52 @@ console.log("== Test 2: saveProducts and saveMatches ==");
 
     box.fetch = savedFetch; st.offline = savedOffline; st.apiKey = savedKey; st.products = savedProducts; st.productDocCounts = savedCounts;
     st.chats.length = 0; savedChats.forEach(x => st.chats.push(x)); st.activeChatId = savedActive;
+  }
+
+
+  /* ---- My products header: one filter icon, a sort toggle, a blank "Add product" folder (2026-10-15) ---- */
+  console.log("\n== Test 14: the My products header and the blank folder ==");
+  {
+    const a = app, st = a.state;
+    const R = [{ id: "a", name: "banana jam", updated_at: "2026-10-10T10:00:00Z" }, { id: "b", name: "Apple butter", updated_at: "2026-10-14T10:00:00Z" }, { id: "c", name: "cheese", updated_at: "2026-10-12T10:00:00Z" }, { id: "d", name: "Zucchini", updated_at: null }];
+    check("newest first is the default order and a row with no date goes last", a.sortProductRows(R).map(x => x.id).join("") === "bcad" && a.sortProductRows(R, "new").map(x => x.id).join("") === "bcad");
+    check("oldest first reverses it (undated first)", a.sortProductRows(R, "old").map(x => x.id).join("") === "dacb");
+    check("A to Z ignores case", a.sortProductRows(R, "az").map(x => x.id).join("") === "bacd");
+    check("sorting never changes the list it was given", (() => { const copy = R.map(x => x.id).join(""); a.sortProductRows(R, "az"); return R.map(x => x.id).join("") === copy; })());
+    check("the filter dot counts filters that are away from their defaults",
+      a.productFiltersActive({ kind: "", status: "open", category: "" }) === 0 && a.productFiltersActive({ kind: "fresh", status: "open", category: "" }) === 1 &&
+      a.productFiltersActive({ kind: "fresh", status: "all", category: "jam" }) === 3 && a.productFiltersActive(undefined) === 0);
+
+    for (const id of ["productsGrid", "productsEmpty", "prodCategory", "prodFilterBtn", "prodFilterDot", "prodSortBtn", "prodSortIcon", "prodSortLabel", "prodFilterMenu", "prodFilterWrap"]) els[id] = fakeEl(id);
+    els.prodFilterMenu.hidden = true; els.prodFilterDot.hidden = true;
+    const saved = { products: st.products, filter: st.productFilter, sort: st.productSort, search: st.search, counts: st.productDocCounts, docs: st.productDocs };
+    st.search = ""; st.productDocCounts = {}; st.productDocs = {};
+    st.products = R.map(x => Object.assign({ status: "draft", kind: "packaged", details: {}, nutrition: {}, source_chat_id: null }, x));
+    st.productFilter = { kind: "", status: "open", category: "" }; st.productSort = "new";
+    a.renderProducts();
+    const g = els.productsGrid.innerHTML;
+    check("the Add product folder is the first card: a blank white folder named Add product that starts a new product chat",
+      g.indexOf("gf-root--blank") > -1 && g.indexOf("gf-root--blank") < g.indexOf("Apple butter") && g.includes('onclick="addProduct()"') && g.includes('aria-label="Add product"'));
+    const hit = /<button type="button" class="gf-hit"([^>]*)>/.exec(g.slice(g.indexOf("gf-root--blank")));
+    check("the blank folder's button is a plain button with a name, not a pretend expander", hit && hit[1].indexOf("aria-expanded") === -1 && hit[1].includes('aria-label="Add product"') && hit[1].includes('onclick="addProduct()"'));
+    check("the blank folder has no status pill, no action buttons and no files", (() => { const blank = g.slice(g.indexOf("prod-add-card"), g.indexOf("Apple butter") > -1 ? g.indexOf("<article", g.indexOf("prod-add-card") + 10) : undefined); return blank.indexOf("gf-badge") === -1 && blank.indexOf('class="gf-act"') === -1 && blank.indexOf("gf-sheet") === -1; })());
+    check("the list follows the sort (newest first here)", g.indexOf("Apple butter") < g.indexOf("cheese") && g.indexOf("cheese") < g.indexOf("banana jam"));
+    check("the sort toggle shows its order and names it for a screen reader", els.prodSortLabel.textContent === "Newest first" && /Sort: Newest first/.test(els.prodSortBtn.getAttribute("aria-label")));
+    a.cycleProductSort();
+    check("pressing it moves to oldest first, then A to Z, then back to newest", st.productSort === "old" && els.prodSortLabel.textContent === "Oldest first" && (a.cycleProductSort(), st.productSort === "az" && els.prodSortLabel.textContent === "Name A to Z") && (a.cycleProductSort(), st.productSort === "new"));
+    a.cycleProductSort(); a.cycleProductSort();
+    check("A to Z really reorders the cards", (() => { const h = els.productsGrid.innerHTML; return st.productSort === "az" && h.indexOf("Apple butter") < h.indexOf("banana jam") && h.indexOf("banana jam") < h.indexOf("cheese"); })());
+    check("a dot shows on the filter icon only while a filter is on", els.prodFilterDot.hidden === true && (st.productFilter.kind = "fresh", a.renderProducts(), els.prodFilterDot.hidden === false && /1 on/.test(els.prodFilterBtn.getAttribute("aria-label"))) && (st.productFilter.kind = "", a.renderProducts(), els.prodFilterDot.hidden === true));
+    check("with nothing matching, the Add product folder is still there", (() => { st.productFilter.kind = "fresh"; a.renderProducts(); const ok = els.productsGrid.innerHTML.includes("gf-root--blank") && els.productsEmpty.textContent.length > 0; st.productFilter.kind = ""; return ok; })());
+    // the popover
+    a.setProdFilterOpen(true);
+    check("the filter menu opens (hover or press) and the icon says so", els.prodFilterMenu.hidden === false && els.prodFilterBtn.getAttribute("aria-expanded") === "true" && a.prodFilterOpen());
+    a.setProdFilterOpen(false);
+    check("...and closes again", els.prodFilterMenu.hidden === true && els.prodFilterBtn.getAttribute("aria-expanded") === "false" && !a.prodFilterOpen());
+    // the pill sits level with the folder's top edge: its top is the stage's top (the tab), not above it
+    const f = a.folderCardHTML({ id: "x", label: "Donuts", openLabel: "o", closeLabel: "c", badge: { text: "Active", tone: "active" }, width: 340 });
+    check("the status pill is level with the folder's top edge", /class="gf-badge gf-badge--active" style="top:54\.0px"/.test(f));
+    st.products = saved.products; st.productFilter = saved.filter; st.productSort = saved.sort; st.search = saved.search; st.productDocCounts = saved.counts; st.productDocs = saved.docs;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

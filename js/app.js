@@ -45,6 +45,7 @@ let state = {
   openFeedProductId: null,
   contactProductId: null,   // the launched product whose Contact box is open
   productFilter: { kind: "", status: "open", category: "" },
+  productSort: "new",     // My products order: "new" | "old" | "az"
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
   contactOfferId: null, // the offer whose Contact box is open
@@ -1736,6 +1737,24 @@ function productSearchFields(p) {
   const d = p.details || {};
   return [p.name, p.ai_category, p.kind, p.status].concat(d.ingredients || []).concat(d.pack_sizes || []);
 }
+const PRODUCT_SORTS = ["new", "old", "az"];
+function productSortInfo(mode) {
+  switch (mode) {
+    case "old": return { icon: "arrow-up-narrow-wide", label: T("products.sortOld") };
+    case "az": return { icon: "arrow-down-a-z", label: T("products.sortAz") };
+    default: return { icon: "arrow-down-wide-narrow", label: T("products.sortNew") };
+  }
+}
+// The sort toggle moves to the next order and redraws the list.
+function cycleProductSort() {
+  state.productSort = PRODUCT_SORTS[(PRODUCT_SORTS.indexOf(state.productSort) + 1) % PRODUCT_SORTS.length];
+  renderProducts();
+}
+// The blank white folder that starts a new product chat (it replaces the "Add product" chip).
+function addProductCardHTML() {
+  return `<article class="prod-card prod-folder-card prod-add-card">${folderCardHTML({ id: "add-product", label: T("products.add"), blank: true, width: 300,
+    onclick: "addProduct()", openLabel: T("products.add") })}</article>`;
+}
 function renderProducts() {
   const grid = $("productsGrid"); if (!grid) return;
   // Category options come from the products themselves (the AI invents them).
@@ -1745,10 +1764,41 @@ function renderProducts() {
     if (state.productFilter.category && cats.indexOf(state.productFilter.category) === -1) state.productFilter.category = "";
     sel.innerHTML = `<option value="">${esc(T("products.catAll"))}</option>` + cats.map(c => `<option value="${escAttr(c)}"${c === state.productFilter.category ? " selected" : ""}>${esc(c)}</option>`).join("");
   }
-  const rows = filterProductRows(state.products, state.productFilter).filter(p => matchesSearch(productSearchFields(p), state.search));
-  grid.innerHTML = rows.map(productCardHTML).join("");
+  const rows = sortProductRows(filterProductRows(state.products, state.productFilter).filter(p => matchesSearch(productSearchFields(p), state.search)), state.productSort);
+  grid.innerHTML = addProductCardHTML() + rows.map(productCardHTML).join("");
   const empty = $("productsEmpty");
   if (empty) empty.textContent = rows.length ? "" : T(state.products.length ? "products.emptyFilter" : "products.empty");
+  // The header tools: a dot on the filter icon while a filter is on, and the sort toggle's current order.
+  const n = productFiltersActive(state.productFilter);
+  const fb = $("prodFilterBtn"), dot = $("prodFilterDot");
+  if (dot) dot.hidden = n === 0;
+  if (fb) { const t = n ? T("products.filtersOn", { n }) : T("products.filters"); fb.setAttribute("aria-label", t); fb.setAttribute("title", t); }
+  const sb = $("prodSortBtn");
+  if (sb) {
+    const info = productSortInfo(state.productSort);
+    const ic = $("prodSortIcon"); if (ic) ic.innerHTML = typeof lucide === "function" ? lucide(info.icon, 16) : "";
+    const lb = $("prodSortLabel"); if (lb) lb.textContent = info.label;
+    const a = T("products.sortAria", { mode: info.label }); sb.setAttribute("aria-label", a); sb.setAttribute("title", a);
+  }
+}
+/* The filter popover. It opens when the pointer rests on the icon, and also on press or when the
+   keyboard reaches it. It stays open while a filter menu has the focus (the browser's option list
+   is not part of the page, so a mouse-leave there must not close it); Escape or a click elsewhere closes it. */
+let prodFilterTimer = null;
+function setProdFilterOpen(open, returnFocus) {
+  const m = $("prodFilterMenu"), b = $("prodFilterBtn"); if (!m || !b) return;
+  clearTimeout(prodFilterTimer);
+  m.hidden = !open; b.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open && returnFocus && b.focus) b.focus();
+}
+function prodFilterOpen() { const m = $("prodFilterMenu"); return !!m && !m.hidden; }
+function prodFilterLeaveSoon() {
+  clearTimeout(prodFilterTimer);
+  prodFilterTimer = setTimeout(() => {
+    const w = $("prodFilterWrap");
+    if (w && w.contains && w.contains(document.activeElement)) return;   // a select still has the focus
+    setProdFilterOpen(false);
+  }, 220);
 }
 // Add: a fresh chat; Brain 1 works out from what is said whether it is a finished product.
 async function addProduct() {
@@ -2588,7 +2638,7 @@ function bootStatus(text) {
    So the same controls the stylesheet dims are really disabled here.
    Anything added to the #app.booting rules in css/app.css belongs in this
    list too, or the lock holds for a mouse and leaks for a keyboard. */
-const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #addProductBtn, #userInput";
+const BOOT_LOCK_SEL = ".nav-item[data-screen], #topbar .icon-btn, #topbar .lang-toggle button, #topSearch, #researchSeeAll, #exportBtn, #newChatBtn, #sendBtn, #attachBtn, #prodFilterBtn, #prodSortBtn, #userInput";
 function setBootLock(on) {
   if (!document.querySelectorAll) return;
   document.querySelectorAll(BOOT_LOCK_SEL).forEach(el => { el.disabled = !!on; });
@@ -5777,7 +5827,15 @@ function boot() {
   dropTarget($("assistChat"), true); dropTarget($("productPanel"), false);
   $("imageInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });
   $("anyInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f, { stage: false }); });
-  $("addProductBtn").onclick = addProduct;
+  $("prodSortBtn").onclick = cycleProductSort;
+  const pfw = $("prodFilterWrap");
+  $("prodFilterBtn").onclick = () => setProdFilterOpen(!prodFilterOpen());
+  pfw.addEventListener("mouseenter", () => setProdFilterOpen(true));
+  pfw.addEventListener("mouseleave", prodFilterLeaveSoon);
+  pfw.addEventListener("focusin", () => { clearTimeout(prodFilterTimer); });
+  pfw.addEventListener("focusout", e => { if (!pfw.contains(e.relatedTarget)) prodFilterLeaveSoon(); });
+  pfw.addEventListener("keydown", e => { if (e.key === "Escape" && prodFilterOpen()) { e.stopPropagation(); setProdFilterOpen(false, true); } });
+  document.addEventListener("click", e => { if (prodFilterOpen() && !pfw.contains(e.target)) setProdFilterOpen(false); });
   [["prodKind", "kind"], ["prodStatus", "status"], ["prodCategory", "category"]].forEach(([id, key]) =>
     $(id).addEventListener("change", e => { state.productFilter[key] = e.target.value; renderProducts(); }));
   $("attachInput").addEventListener("change", e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) onAttachFiles(f); });

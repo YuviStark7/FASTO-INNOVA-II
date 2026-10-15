@@ -502,6 +502,22 @@ function groupChatRail(chats, projects) {
   };
 }
 
+/* Sorting for My products. mode: "new" (last changed first, the default), "old", or "az" (by name).
+   Pure; returns a new array. Rows with no date sort as oldest. */
+function sortProductRows(rows, mode) {
+  var arr = (rows || []).slice();
+  var t = function (p) { var n = Date.parse(p && p.updated_at); return isFinite(n) ? n : 0; };
+  var nm = function (p) { return String((p && p.name) || ""); };
+  if (mode === "az") return arr.sort(function (a, b) { return nm(a).localeCompare(nm(b), undefined, { sensitivity: "base" }); });
+  if (mode === "old") return arr.sort(function (a, b) { return t(a) - t(b); });
+  return arr.sort(function (a, b) { return t(b) - t(a); });
+}
+/* How many of the three filters are away from their defaults (type: any, status: drafts and active, category: any). */
+function productFiltersActive(f) {
+  var fl = f || {};
+  return (fl.kind ? 1 : 0) + ((fl.status !== undefined && fl.status !== "open") ? 1 : 0) + (fl.category ? 1 : 0);
+}
+
 /* ---------- "My products" list filters (ROADMAP item 32 pass E) ----------
    status filter: "open" = drafts and active (the default; archived are tucked
    away), "all", or one status. kind and category "" mean any. */
@@ -673,7 +689,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     productRoadmap: productRoadmap, groupChatRail: groupChatRail,
-    filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
+    sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };

@@ -1172,3 +1172,22 @@
 .pp-launch.live{ flex-direction:row; align-items:center; justify-content:space-between; }
 .pp-live{ color:#6fe3a8; font-size:13.5px; font-weight:700; }
 .pp-launch.live .btn{ width:auto; }
+
+/* My products header: one filter icon (its menu opens on hover or press), a sort toggle. */
+.prod-head{ align-items:center; }
+.prod-tools{ margin-left:auto; display:flex; align-items:center; gap:8px; }
+.prod-tool-btn{ position:relative; display:inline-flex; align-items:center; gap:7px; height:34px; min-width:34px; padding:0 11px; justify-content:center; border:1px solid var(--hairline); border-radius:999px;
+  background:rgba(255,255,255,.08); color:#fff; font:inherit; font-size:12.5px; cursor:pointer; transition:background .15s ease; }
+.prod-tool-btn:hover, .prod-tool-btn[aria-expanded="true"]{ background:rgba(255,255,255,.18); }
+.prod-sort-label{ white-space:nowrap; }
+.prod-dot{ position:absolute; top:5px; right:6px; width:8px; height:8px; border-radius:50%; background:#ff6b63; box-shadow:0 0 0 2px rgba(20,12,10,.9); }
+.prod-dot[hidden]{ display:none; }
+.prod-filter{ position:relative; }
+.prod-filter-menu{ position:absolute; right:0; top:calc(100% + 6px); z-index:30; width:250px; padding:14px; border-radius:16px;
+  background:rgba(14,9,6,.96); border:1px solid var(--hairline); box-shadow:0 14px 34px rgba(0,0,0,.55); }
+.prod-filter-menu[hidden]{ display:none; }
+/* an invisible bridge, so the pointer can travel from the icon to the menu without closing it */
+.prod-filter-menu::before{ content:""; position:absolute; left:0; right:0; top:-8px; height:8px; }
+.prod-filter-menu .prod-filters{ flex-direction:column; gap:12px; margin:0; }
+.prod-filter-menu .prod-filters select{ min-width:0; width:100%; }
+@media (max-width:600px){ .prod-sort-label{ display:none; } }

@@ -48,19 +48,22 @@
 .gf-lines i{ display:block; height:5px; border-radius:3px; background:rgba(255,255,255,.08); }
 .gf-lines i:first-child{ height:9px; margin-bottom:4px; background:rgba(255,255,255,.16); }
 
-/* the front, hinged on its bottom edge. Solid on purpose (Yuvi, 2026-10-15): nothing shows through it. */
+/* the frosted front, hinged on its bottom edge (translucent again, Yuvi 2026-10-15: "like before") */
 .gf-front{
   position:absolute; left:0; top:74px; width:340px; height:198px; z-index:10;
+  -webkit-backdrop-filter:blur(22px) saturate(1.5); backdrop-filter:blur(22px) saturate(1.5);
   transform-origin:50% 100%; transform:perspective(760px) rotateX(var(--gf-hinge));
   transition:transform .8s var(--gf-spring);
 }
-.gf-tint{ position:absolute; inset:0; background:linear-gradient(180deg,#2a2a2f 0%,#1a1a1e 46%,#0f0f12 100%); }
-.gf-front-rim{ width:340px; height:198px; opacity:.4; }
+.gf-tint{ position:absolute; inset:0; background:linear-gradient(180deg,rgba(18,18,20,.18) 0%,rgba(14,14,16,.62) 46%,rgba(8,8,10,.94) 100%); }
+.gf-spec{ position:absolute; inset:0; pointer-events:none; mix-blend-mode:screen; opacity:.16;
+  background:radial-gradient(260px 200px at 50% 30%,rgba(255,255,255,.5),rgba(255,255,255,0) 70%); }
+.gf-front-rim{ width:340px; height:198px; opacity:.55; }
 .gf-front-rim path{ stroke-width:2.4; transition:stroke-width .3s var(--gf-ease); }
 .gf-hit{ all:unset; position:absolute; inset:0; z-index:1; cursor:pointer; }
 .gf-hit:focus-visible ~ .gf-label .gf-title{ text-decoration:underline; text-decoration-thickness:1.5px; text-underline-offset:4px; }
 .gf-front:has(.gf-hit:focus-visible) .gf-front-rim path{ stroke-width:5; }
-.gf-label{ position:absolute; z-index:2; left:28px; bottom:74px; display:flex; flex-direction:column; gap:4px; max-width:284px; pointer-events:none; color:var(--gf-ink); }
+.gf-label{ position:absolute; z-index:2; left:28px; bottom:82px; display:flex; flex-direction:column; gap:4px; max-width:284px; pointer-events:none; color:var(--gf-ink); }
 .gf-title{ font-size:22px; font-weight:700; line-height:1.1; letter-spacing:.01em; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gf-meta{ font-size:14px; color:var(--gf-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
@@ -87,9 +90,24 @@
 
 /* My products: one folder per product; everything else is on the folder itself */
 .prod-folder-card{ background:none; padding:0; align-items:center; }
+.gf-root--blank .gf-hit:focus-visible{ outline:2px solid #fff; outline-offset:-4px; border-radius:22px; }
 .prod-folder-card > h3{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 #productsScreen .prod-grid{ padding:24px 30px 12px; row-gap:22px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); justify-items:center; }
 @media (max-width:600px){ #productsScreen .prod-grid{ padding:24px 8px 12px; } }
 @media (prefers-reduced-transparency:reduce){
+  .gf-front{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+  .gf-tint{ background:#0e0e10; }
   .gf-act{ background:#2d2d32; }
 }
+
+/* The blank "Add product" folder: no colour, white, same shape. */
+.gf-root--blank{ --gf-ink:#15151a; --gf-ink-soft:rgba(21,21,26,.7); }
+.gf-root--blank .gf-back{ background:#f3f3f5; }
+.gf-root--blank .gf-back-sheen{ background:linear-gradient(180deg,rgba(255,255,255,.7) 0%,rgba(255,255,255,0) 40%); }
+.gf-root--blank .gf-back-rim path{ stroke:rgba(0,0,0,.14); }
+.gf-root--blank .gf-tint{ background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,rgba(255,255,255,.72) 100%); }
+.gf-root--blank .gf-spec{ opacity:.35; }
+.gf-root--blank .gf-front-rim path{ stroke:rgba(0,0,0,.18); }
+.gf-root--blank .gf-label{ bottom:62px; }
+.gf-plus{ cursor:pointer; background:rgba(0,0,0,.08) !important; color:#15151a !important; }
+.gf-root--blank:hover .gf-plus{ background:rgba(0,0,0,.16) !important; }
