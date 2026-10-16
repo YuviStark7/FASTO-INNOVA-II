@@ -3162,7 +3162,6 @@ function renderThread() {
       ${c.initiatedBy === "buyer" ? "" : `<div class="bubble out">${esc(c.message_it)}</div>
       <div class="bubble-actions">
         ${c.status === "sent" ? "" : `<button class="btn btn-primary btn-sm" onclick="reviewDraft('${c.id}')">${esc(T("clients.reviewSend"))}</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="copyClientMsg('${c.id}')">${esc(T("clients.copyIt"))}</button>
       </div>
       <div class="bubble meta">${esc(T("clients.englishTranslation"))}</div>
       <div class="bubble in">${esc(c.message_en)}</div>`}
@@ -3227,7 +3226,6 @@ function reviewDraft(id) {
   switchScreen("assistant"); selectChat(chat.id);
   openBuyerCard(chat.id, c.buyerId);
 }
-function copyClientMsg(id) { const c = state.clients.find(x => x.id === id); if (c) { navigator.clipboard.writeText(c.message_it); toast(T("clients.copied")); } }
 
 
 /* ================= LOGISTICS HAND-OFF =================
