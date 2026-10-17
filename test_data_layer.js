@@ -142,7 +142,8 @@ function fakeEl(id) {
       add: (...c) => c.forEach(x => classes.add(x)),
       remove: (...c) => c.forEach(x => classes.delete(x)),
       contains: c => classes.has(c),
-      toggle: c => (classes.has(c) ? classes.delete(c) : classes.add(c))
+      // like the real classList.toggle: an optional second argument forces on or off
+      toggle: (c, force) => { const on = force === undefined ? !classes.has(c) : !!force; if (on) classes.add(c); else classes.delete(c); return on; }
     },
     has: c => classes.has(c),
     addEventListener() {}, removeEventListener() {}, focus() {}, scrollTo() {}, querySelector: () => null
@@ -3730,6 +3731,14 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       /data-screen="products"><span class="ic-svg" data-icon="store"/.test(require("fs").readFileSync(path + "/index.html", "utf8")));
     check("the folder title is smaller and sits lower, so it clears the front panel's top edge", /\.gf-title\{ font-size:calc\(14px/.test(fcss) && /bottom:calc\(60px \+ 21px/.test(fcss));
     check("the Add product folder is more see-through (22% back, 16 to 30% front)", /\.gf-root--blank \.gf-back\{ background:rgba\(255,255,255,\.22\)/.test(fcss) && /rgba\(255,255,255,\.16\) 0%,rgba\(255,255,255,\.3\) 100%/.test(fcss));
+    // the live / offline pill at the bottom of the sidebar
+    els.modePill = fakeEl("modePill"); els.modeIcon = fakeEl("modeIcon"); els.modeItem = fakeEl("modeItem");
+    const savedOff = st.offline;
+    st.offline = true; a.paintModePill();
+    check("offline demo: a crossed-out signal icon, no live dot, and the 'Offline demo' words", els.modeIcon.innerHTML.includes("lucide-wifi-off") && !els.modeIcon.innerHTML.includes("mode-dot") && els.modePill.textContent === "Offline demo" && !els.modeItem.has("live"));
+    st.offline = false; a.paintModePill();
+    check("live: a connected globe with a green dot, the model name, and the pill marked live", els.modeIcon.innerHTML.includes("lucide-globe") && els.modeIcon.innerHTML.includes("mode-dot") && /^Live · /.test(els.modePill.textContent) && els.modeItem.has("live"));
+    st.offline = savedOff; a.paintModePill();
     st.products = saved.products; st.productFilter = saved.filter; st.productSort = saved.sort; st.search = saved.search; st.productDocCounts = saved.counts; st.productDocs = saved.docs;
   }
 

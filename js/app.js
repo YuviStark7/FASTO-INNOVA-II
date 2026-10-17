@@ -194,10 +194,15 @@ function onLangChange(fn) { langListeners.push(fn); }
    chosen would be wrong half the time: `data-i18n="pill.offline"` on a live
    session had applyI18n() quietly relabel it "Offline demo" on every language
    switch, telling the farmer their API key wasn't being used. */
+/* The pill at the bottom of the sidebar. Live: a connected globe with a green dot that pulses.
+   Offline demo: a crossed-out signal and no dot. (It used to show the disconnected icon in both modes.) */
 function paintModePill() {
   const el = $("modePill"); if (!el) return;
   el.textContent = state.offline ? T("pill.offline")
     : T("pill.live", { model: state.model.includes("haiku") ? "Haiku 4.5" : "Sonnet 5" });
+  const ic = $("modeIcon");
+  if (ic && typeof lucide === "function") ic.innerHTML = lucide(state.offline ? "wifi-off" : "globe", 20) + (state.offline ? "" : '<span class="mode-dot"></span>');
+  const item = $("modeItem"); if (item && item.classList) item.classList.toggle("live", !state.offline);
 }
 
 function setLang(lang) {

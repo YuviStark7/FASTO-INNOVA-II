@@ -1193,3 +1193,10 @@
 @media (max-width:600px){ .prod-sort-label{ display:none; } }
 /* the My shop icon is an inline SVG (Lucide), not an <img>: centre it like the others */
 .nav-item .ic-svg[data-icon]{ display:inline-flex; align-items:center; justify-content:center; }
+
+/* Live / offline mode pill (bottom of the sidebar) */
+.mode-icon{ position:relative; display:inline-flex; align-items:center; justify-content:center; }
+.mode-dot{ position:absolute; top:-2px; right:-3px; width:8px; height:8px; border-radius:50%; background:#4ae38a; box-shadow:0 0 0 2px var(--red); }
+.status-item.live .mode-dot{ animation:mode-pulse 2s ease-out infinite; }
+@keyframes mode-pulse{ 0%{ box-shadow:0 0 0 2px var(--red), 0 0 0 2px rgba(74,227,138,.7); } 100%{ box-shadow:0 0 0 2px var(--red), 0 0 0 9px rgba(74,227,138,0); } }
+@media (prefers-reduced-motion: reduce){ .status-item.live .mode-dot{ animation:none; } }
