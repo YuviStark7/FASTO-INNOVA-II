@@ -207,7 +207,7 @@ function loadApp(root) {
   renderDashboard, renderClientList, renderChatRail, renderChats, switchScreen,
   draftCount, renderBell,
   checkProductFile, productFilePath, attachChipHTML, renderAttachStrip, loadChatDocs, onAttachFiles, removeAttachment, refreshAttachStrip,
-  guardianValidateProductSheet, mergeProductSheet, productCompleteness, sortProductRows, productFiltersActive, cycleProductSort, addProductCardHTML, setProdFilterOpen, prodFilterOpen, productSortInfo, onProductSheet, productHasContent, updateSendState, setTyping, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
+  guardianValidateProductSheet, mergeProductSheet, productCompleteness, startNewChat, addProduct, sortProductRows, productFiltersActive, cycleProductSort, addProductCardHTML, setProdFilterOpen, prodFilterOpen, productSortInfo, onProductSheet, productHasContent, updateSendState, setTyping, brainTurn, syncSheetComplete, launchBlockHTML, launchFromPanel, withdrawFromPanel, tellProductChat, roadmapPaneHTML, productRoadmap, productFileType, productFileGroup, formatBytes, productFileLabel, renderProductPanel, productPanelHTML, setPanelTab, panelTabKey, closeProductPanel, toggleProductPanel, toggleRoadmapList, toggleDocDone, retryUpload, dismissUpload, composerSend, msgFilesHTML, renderTranscript, sendUserMessage, openProductDoc, ensureChatProduct, TOOL_PRODUCT, SYSTEM_PRODUCT, productFieldLabel,
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
@@ -3699,18 +3699,37 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("...and closes again", els.prodFilterMenu.hidden === true && els.prodFilterBtn.getAttribute("aria-expanded") === "false" && !a.prodFilterOpen());
     // the pill sits level with the folder's top edge: its top is the stage's top (the tab), not above it
     const f = a.folderCardHTML({ id: "x", label: "Donuts", openLabel: "o", closeLabel: "c", badge: { text: "Active", tone: "active" }, width: 340 });
-    check("the status pill is level with the folder's top edge", /class="gf-badge gf-badge--active" style="top:54\.0px"/.test(f));
+    check("the status pill sits a little above the folder's top edge (7 px), and has an even, centred padding", /class="gf-badge gf-badge--active" style="top:47\.0px"/.test(f) &&
+      /\.gf-badge\{[^}]*display:inline-flex[^}]*align-items:center[^}]*height:20px[^}]*padding:0 9px[^}]*line-height:1/.test(require("fs").readFileSync(path + "/css/folder.css", "utf8")));
     // 0.7x folders, glass clipped to the panel, see-through white Add folder (2026-10-15)
     const fcss = require("fs").readFileSync(path + "/css/folder.css", "utf8");
     check("every My products folder is drawn at 0.7 of its old width (300 px -> 210 px), the Add folder included",
       (g.match(/style="--gf-k:0\.6176;width:210px/g) || []).length >= 3);
     check("the products grid starts at the left edge of the panel, level with the 'My products' title (no side padding, left-aligned)",
       /#productsScreen \.prod-grid\{[^}]*padding:18px 0 12px[^}]*justify-content:start[^}]*justify-items:start/.test(fcss));
-    check("text and buttons are sized in screen pixels through --gf-k, so they stay readable on a small folder", /font-size:calc\(16px \/ var\(--gf-k/.test(fcss) && /height:calc\(30px \/ var\(--gf-k/.test(fcss));
+    check("text and buttons are sized in screen pixels through --gf-k, so they stay readable on a small folder", /font-size:calc\(1\d(\.5)?px \/ var\(--gf-k/.test(fcss) && /height:calc\(30px \/ var\(--gf-k/.test(fcss));
     check("the frosted front is clipped to the panel's own outline by a mask (the blur no longer leaks past the corners)",
       /class="gf-front" style="[^"]*mask-image:url\([^"]*data:image\/svg\+xml,/.test(f));
     check("the front leans with a gentle perspective, so it no longer overhangs the back panel", /perspective\(2200px\)/.test(fcss) && !/perspective\(760px\)/.test(fcss));
-    check("the Add product folder is see-through white glass, not an opaque white", /\.gf-root--blank \.gf-back\{ background:rgba\(255,255,255,\.4\d?\)/.test(fcss) && !/#f3f3f5/.test(fcss) && /\.gf-root--blank \.gf-tint\{ background:linear-gradient\(180deg,rgba\(255,255,255,/.test(fcss));
+    check("the Add product folder is see-through white glass, not an opaque white", /\.gf-root--blank \.gf-back\{ background:rgba\(255,255,255,\.\d+\)/.test(fcss) && !/#f3f3f5/.test(fcss) && /\.gf-root--blank \.gf-tint\{ background:linear-gradient\(180deg,rgba\(255,255,255,/.test(fcss));
+    // Add product always opens a genuinely new thread, even when an old empty chat exists (the New chat button still reuses it)
+    const savedChats = st.chats.slice(), savedActive = st.activeChatId, savedCreate = a.DataStore.createChat;
+    st.farmerId = "u1";
+    st.chats = [{ id: "e1", title: "Empty", messages: [{ role: "ai", text: "hi" }], apiMessages: [], profile: null, ts: 1 }];
+    st.activeChatId = "e1"; els.userInput = els.userInput || fakeEl("userInput");
+    let made = 0;
+    a.DataStore.createChat = async () => ({ data: { id: "n" + (++made), title: "New chat", phase: "interview", pct: 0, created_at: "2026-10-17T10:00:00Z" }, error: null });
+    const r1 = await a.startNewChat();
+    check("the plain New chat button reuses an existing empty chat instead of piling up another", r1 && r1.id === "e1" && made === 0);
+    await a.addProduct();
+    check("Add product always starts a brand-new thread and opens the Fasto-AI screen", made === 1 && st.chats.length === 2 && st.chats[0].id === "n1" && st.activeChatId === "n1" && st.screen === "assistant");
+    await a.addProduct();
+    check("pressing it again makes another new thread (it never lands in an old one)", made === 2 && st.activeChatId === "n2");
+    a.DataStore.createChat = savedCreate; st.chats = savedChats; st.activeChatId = savedActive; st.screen = "products";
+    check("the sidebar entry is called My shop in both languages and has a shop icon, not the chat icon", a.STRINGS.en["nav.products"] === "My shop" && a.STRINGS.it["nav.products"] === "Il mio negozio" &&
+      /data-screen="products"><span class="ic-svg" data-icon="store"/.test(require("fs").readFileSync(path + "/index.html", "utf8")));
+    check("the folder title is smaller and sits lower, so it clears the front panel's top edge", /\.gf-title\{ font-size:calc\(14px/.test(fcss) && /bottom:calc\(60px \+ 21px/.test(fcss));
+    check("the Add product folder is more see-through (22% back, 16 to 30% front)", /\.gf-root--blank \.gf-back\{ background:rgba\(255,255,255,\.22\)/.test(fcss) && /rgba\(255,255,255,\.16\) 0%,rgba\(255,255,255,\.3\) 100%/.test(fcss));
     st.products = saved.products; st.productFilter = saved.filter; st.productSort = saved.sort; st.search = saved.search; st.productDocCounts = saved.counts; st.productDocs = saved.docs;
   }
 

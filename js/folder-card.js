@@ -71,7 +71,7 @@ function folderCardHTML(o) {
         '<span class="gf-lines" aria-hidden="true"><i style="width:86%"></i><i style="width:92%"></i><i style="width:64%"></i><i style="width:88%"></i><i style="width:42%"></i></span>') +
       '<span class="gf-sheet-head"><span class="gf-sheet-name">' + gfEsc(f.name) + "</span>" + (f.meta ? '<span class="gf-sheet-meta">' + gfEsc(f.meta) + "</span>" : "") + "</span></button></div>";
   }).join("");
-  const badge = o.badge ? '<span class="gf-badge gf-badge--' + gfEsc(o.badge.tone || "draft") + '" style="top:' + (GF_HEADROOM * k).toFixed(1) + 'px">' + gfEsc(o.badge.text) + "</span>" : "";
+  const badge = o.badge ? '<span class="gf-badge gf-badge--' + gfEsc(o.badge.tone || "draft") + '" style="top:' + (GF_HEADROOM * k - 7).toFixed(1) + 'px">' + gfEsc(o.badge.text) + "</span>" : "";
   // The folder is drawn at 340 px and scaled down by k. Text and buttons must not shrink with it (an 8 px caption is unreadable),
   // so they are sized in screen pixels through --gf-k (see folder.css); icons are drawn bigger here for the same reason.
   const icon = n => (typeof lucide === "function" ? lucide(n, Math.round(16 / k)) : "");

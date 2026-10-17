@@ -63,12 +63,12 @@
 .gf-hit{ all:unset; position:absolute; inset:0; z-index:1; cursor:pointer; }
 .gf-hit:focus-visible ~ .gf-label .gf-title{ text-decoration:underline; text-decoration-thickness:1.5px; text-underline-offset:4px; }
 .gf-front:has(.gf-hit:focus-visible) .gf-front-rim path{ stroke-width:5; }
-.gf-label{ position:absolute; z-index:2; left:28px; bottom:calc(60px + 30px / var(--gf-k,1)); display:flex; flex-direction:column; gap:calc(2px / var(--gf-k,1)); max-width:284px; pointer-events:none; color:var(--gf-ink); }
-.gf-title{ font-size:calc(16px / var(--gf-k,1)); font-weight:700; line-height:1.1; letter-spacing:.01em; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.gf-meta{ font-size:calc(11.5px / var(--gf-k,1)); color:var(--gf-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.gf-label{ position:absolute; z-index:2; left:28px; bottom:calc(60px + 21px / var(--gf-k,1)); display:flex; flex-direction:column; gap:calc(2px / var(--gf-k,1)); max-width:284px; pointer-events:none; color:var(--gf-ink); }
+.gf-title{ font-size:calc(14px / var(--gf-k,1)); font-weight:700; line-height:1.1; letter-spacing:.01em; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gf-meta{ font-size:calc(11px / var(--gf-k,1)); color:var(--gf-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* status pill level with the folder's top edge (it is outside the scaled stage, so its size is in real pixels) */
-.gf-badge{ position:absolute; left:8px; z-index:12; padding:2px 8px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fff; pointer-events:none; }
+.gf-badge{ position:absolute; left:8px; z-index:12; display:inline-flex; align-items:center; justify-content:center; height:20px; padding:0 9px; border-radius:6px; font-size:10px; line-height:1; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fff; pointer-events:none; }
 .gf-badge--active{ background:var(--red,#962524); }
 .gf-badge--draft{ background:rgba(255,255,255,.2); }
 .gf-badge--archived{ background:rgba(0,0,0,.55); color:rgba(255,255,255,.75); }
@@ -103,11 +103,11 @@
 
 /* The blank "Add product" folder: no colour, see-through white glass, same shape. Dark text, because the glass is white. */
 .gf-root--blank{ --gf-ink:#101014; --gf-ink-soft:rgba(16,16,20,.72); }
-.gf-root--blank .gf-back{ background:rgba(255,255,255,.44); }
-.gf-root--blank .gf-back-sheen{ background:linear-gradient(180deg,rgba(255,255,255,.35) 0%,rgba(255,255,255,0) 40%); }
+.gf-root--blank .gf-back{ background:rgba(255,255,255,.22); }
+.gf-root--blank .gf-back-sheen{ background:linear-gradient(180deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 40%); }
 .gf-root--blank .gf-back-rim path{ stroke:rgba(255,255,255,.55); }
-.gf-root--blank .gf-tint{ background:linear-gradient(180deg,rgba(255,255,255,.3) 0%,rgba(255,255,255,.5) 100%); }
+.gf-root--blank .gf-tint{ background:linear-gradient(180deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.3) 100%); }
 .gf-root--blank .gf-spec{ opacity:.3; }
-.gf-root--blank .gf-front-rim path{ stroke:rgba(255,255,255,.75); }
+.gf-root--blank .gf-front-rim path{ stroke:rgba(255,255,255,.7); }
 .gf-plus{ cursor:pointer; background:rgba(255,255,255,.45) !important; color:#101014 !important; }
 .gf-root--blank:hover .gf-plus{ background:rgba(255,255,255,.7) !important; }

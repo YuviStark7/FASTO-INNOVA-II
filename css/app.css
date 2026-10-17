@@ -1191,3 +1191,5 @@
 .prod-filter-menu .prod-filters{ flex-direction:column; gap:12px; margin:0; }
 .prod-filter-menu .prod-filters select{ min-width:0; width:100%; }
 @media (max-width:600px){ .prod-sort-label{ display:none; } }
+/* the My shop icon is an inline SVG (Lucide), not an <img>: centre it like the others */
+.nav-item .ic-svg[data-icon]{ display:inline-flex; align-items:center; justify-content:center; }

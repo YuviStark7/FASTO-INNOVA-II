@@ -730,8 +730,10 @@ function reusableChat() {
 }
 
 let creatingChat = false; // a second click while the first row is still being created would make two
-async function startNewChat() {
-  const spare = reusableChat();
+/* opts.fresh: always make a new thread (used by Add product on My shop). The plain
+   New chat button still reuses an empty chat so empty ones do not pile up. */
+async function startNewChat(opts) {
+  const spare = opts && opts.fresh ? null : reusableChat();
   if (spare) {
     const wasOpen = spare.id === state.activeChatId;
     selectChat(spare.id);
@@ -1804,7 +1806,7 @@ function prodFilterLeaveSoon() {
 }
 // Add: a fresh chat; Brain 1 works out from what is said whether it is a finished product.
 async function addProduct() {
-  await startNewChat();
+  if (!(await startNewChat({ fresh: true }))) return;   // null: a chat is already being made (a double press)
   switchScreen("assistant");
   toast(T("products.addHint"));
   const input = $("userInput"); if (input) input.focus();
