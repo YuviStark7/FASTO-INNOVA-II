@@ -1,32 +1,26 @@
 /* ============================================================
    FASTO INNOVA — the farmer's Dashboard home (requested by Yuvi, 2026-10-17)
    ------------------------------------------------------------
-   Nine cards above the old Research Progress table:
-     1 Needs your attention    2 Your shop            3 Your pipeline
-     4 Latest conversations    5 Best buyers + map    6 This month
-     7 Market gaps             8 Buyer interest       9 Recent activity + Document health
+   A "bento" grid of seven tiles above the old Research Progress table:
+     1 Needs your attention   2 Your shop (four small tiles)   3 Best buyers + map
+     4 Buyer interest         5 Document health                6 Market gaps
+     7 Recent activity
+   (Latest conversations, Your pipeline and What you can sell this month were
+   taken off the page at Yuvi's request, 2026-10-17.)
 
-   What each card SAYS is decided by pure functions in core.js (buildAttention,
+   What each tile SAYS is decided by pure functions in core.js (buildAttention,
    buildShopTiles, ...), which are unit tested. This file only gathers the data
-   (dashInput) and draws it. Every card is a real section with a heading, and
-   every row you can press is a button.
+   (dashInput) and draws it. Every tile is a real section with a heading, every
+   row you can press is a button, and every icon is decoration (the words say it).
    ============================================================ */
 
 /* ---------- gathering the data ---------- */
 function dashInput() {
-  const month = new Date().getMonth() + 1;
   return {
-    now: Date.now(), month,
+    now: Date.now(),
     clients: (state.clients || []).map(c => ({ id: c.id, name: c.name, status: c.status, initiatedBy: c.initiatedBy, chatId: c.chatId, productId: c.productId,
       buyerId: c.buyerId, seenAt: c.seenAt, ts: c.ts, messages: c.messages || [] })),
     products: state.products || [], docCounts: state.productDocCounts || {}, docs: state.productDocs || {},
-    chats: (state.chats || []).map(c => {
-      // a chat that made a finished product only has `product` loaded once it has been opened, so look in the shop list too
-      const prod = c.product || (state.products || []).filter(p => p.source_chat_id === c.id)[0];
-      const packagedDone = !!prod && prod.kind === "packaged" && productCompleteness(prod, (state.productDocCounts || {})[prod.id] || 0).complete;
-      return { id: c.id, title: c.title, ts: c.ts, hasWork: !!(c.profile || prod), matched: c.phase === "done" || packagedDone,
-        months: (c.profile && c.profile.available_months) || [], items: ((c.profile && c.profile.products) || []).map(p => p.name).filter(Boolean) };
-    }),
     views: state.productViews || {}, events: state.productEvents || []
   };
 }
@@ -55,12 +49,17 @@ function dashFmtDate(iso) {
   return isFinite(d) ? d.toLocaleDateString(T("date.locale"), { day: "2-digit", month: "short", year: "numeric" }) : String(iso);
 }
 function dashIcon(name, size) { return typeof lucide === "function" ? lucide(name, size || 16) : ""; }
-function dashCard(id, titleKey, body, cls) {
-  return `<section class="dash-card glass-45 ${cls || ""}" aria-labelledby="dh-${id}"><h3 class="dash-h" id="dh-${id}">${esc(T(titleKey))}</h3>${body}</section>`;
+// A rounded square holding one icon, tinted by tone: red, amber, green, blue, or plain.
+function dashChip(icon, tone, size) { return `<span class="dash-ico t-${tone || "plain"}" aria-hidden="true">${dashIcon(icon, size || 18)}</span>`; }
+/* One bento tile: an icon chip and a title across the top, then whatever the tile holds. */
+function dashTile(id, icon, tone, titleKey, body, cls, badge) {
+  return `<section class="dash-card glass-45 dash-bento ${cls || ""}" aria-labelledby="dh-${id}"><header class="dash-head">${dashChip(icon, tone)}<h3 class="dash-h" id="dh-${id}">${esc(T(titleKey))}</h3>${badge || ""}</header>${body}</section>`;
 }
-function dashEmpty(key) { return `<p class="dash-empty">${esc(T(key))}</p>`; }
-function dashRow(icon, text, go, extra) {
-  return `<li><button type="button" class="dash-row" onclick="dashGo(${go})">${dashIcon(icon, 16)}<span class="dash-row-text">${text}</span>${extra || ""}${dashIcon("chevron-right", 14)}</button></li>`;
+function dashEmpty(key, icon, tone) {
+  return `<div class="dash-empty">${icon ? dashChip(icon, tone || "plain", 26) : ""}<p>${esc(T(key))}</p></div>`;
+}
+function dashRow(icon, tone, text, go, extra) {
+  return `<li><button type="button" class="dash-row" onclick="dashGo(${go})">${dashChip(icon, tone, 17)}<span class="dash-row-text">${text}</span>${extra || ""}${dashIcon("chevron-right", 14)}</button></li>`;
 }
 function dashGoArgs(g) { return "'" + esc(g.to) + "','" + esc(g.id || "") + "','" + esc(g.tab || "") + "'"; }
 
@@ -71,7 +70,7 @@ async function dashGo(to, id, tab) {
   if (to === "product") { await openProductChat(id); if (tab) setPanelTab(tab); }
 }
 
-/* ---------- the cards ---------- */
+/* ---------- the tiles ---------- */
 function attentionText(it) {
   switch (it.k) {
     case "unread": return esc(T("dh.a.unread", { n: it.n }));
@@ -84,83 +83,68 @@ function attentionText(it) {
   }
 }
 const ATTENTION_ICON = { unread: "message-square", awaiting: "clock", ready: "rocket", almost: "circle-alert", drafts: "pencil", expired: "circle-alert", soon: "clock" };
+const ATTENTION_TONE = { unread: "blue", awaiting: "amber", ready: "green", almost: "green", drafts: "plain", expired: "red", soon: "amber" };
+// The hero tile: brick-red glass, one row per thing that needs you.
 function dashAttentionHTML(d) {
-  const items = buildAttention(d).slice(0, 6);
+  const all = buildAttention(d), items = all.slice(0, 7);
   const body = items.length
-    ? `<ul class="dash-list">${items.map(it => dashRow(ATTENTION_ICON[it.k] || "circle-alert", attentionText(it), dashGoArgs(it.go), it.k === "unread" ? '<span class="dash-dot" aria-hidden="true"></span>' : "")).join("")}</ul>`
-    : dashEmpty("dh.a.none");
-  return dashCard("attention", "dh.title.attention", body, "dash-span-7");
+    ? `<ul class="dash-list">${items.map(it => dashRow(ATTENTION_ICON[it.k] || "circle-alert", ATTENTION_TONE[it.k] || "plain", attentionText(it), dashGoArgs(it.go))).join("")}</ul>`
+    : dashEmpty("dh.a.none", "circle-check", "green");
+  return dashTile("attention", "bell", "plain", "dh.title.attention", body, "dash-span-6 dash-rows-2 dash-attn", all.length ? `<span class="dash-count" aria-hidden="true">${all.length}</span>` : "");
 }
+/* Your shop: four small tiles in a 2 x 2 block, each one a button into My shop. The block has no background of its own,
+   so to the eye they are four separate bento tiles; to a screen reader they are one labelled group. */
 function dashShopHTML(d) {
   const t = buildShopTiles(d);
-  const tile = (n, key, extra) => `<button type="button" class="dash-tile" onclick="dashGo('shop')"><b>${esc(n)}</b><span>${esc(T(key))}</span>${extra || ""}</button>`;
-  const body = t.total
-    ? `<div class="dash-tiles">${tile(t.live, "dh.t.live")}${tile(t.draft, "dh.t.drafts")}${tile(t.ready, "dh.t.ready")}${tile(t.avgPct + "%", "dh.t.complete", `<i class="dash-mini"><i style="width:${t.avgPct}%"></i></i>`)}</div>` +
-      (t.archived ? `<p class="dash-note">${esc(T("dh.t.archived", { n: t.archived }))}</p>` : "")
-    : dashEmpty("dh.t.none");
-  return dashCard("shop", "dh.title.shop", body, "dash-span-5");
-}
-function pipelineLabel(k) {
-  switch (k) { case "chats": return T("dh.p.chats"); case "matched": return T("dh.p.matched"); case "sent": return T("dh.p.sent"); default: return T("dh.p.replied"); }
-}
-function dashPipelineHTML(d) {
-  const p = buildPipeline(d);
-  if (!p.steps[0].n) return dashCard("pipeline", "dh.title.pipeline", dashEmpty("dh.p.none"), "dash-span-5");
-  const rows = p.steps.map(s => `<div class="dash-step"><span class="dash-step-label">${esc(pipelineLabel(s.k))}</span><span class="dash-step-bar" aria-hidden="true"><i style="width:${s.pct}%"></i></span><b>${s.n}</b></div>`).join("");
-  return dashCard("pipeline", "dh.title.pipeline", rows + (p.byBuyers ? `<p class="dash-note">${esc(T("dh.p.byBuyers", { n: p.byBuyers }))}</p>` : ""), "dash-span-5");
-}
-function dashConversationsHTML(d) {
-  const rows = buildConversationPreview(d, 3);
-  const body = rows.length ? `<ul class="dash-list">${rows.map(r => {
-    const tick = r.who === "farmer" ? `<span class="dash-tick">${esc(T(r.seen ? "clients.tickSeen" : "clients.tickInbox"))}</span>` : "";
-    const text = (r.who === "farmer" ? esc(T("dh.c.you")) : "") + esc(r.text);
-    return `<li><button type="button" class="dash-row dash-conv" onclick="dashGo('client','${esc(r.id)}')" aria-label="${escAttr(T("dh.c.open", { name: r.name }))}">
-      <span class="dash-row-text"><span class="dash-conv-top"><b>${esc(r.name)}</b>${r.what ? `<small>${esc(r.what)}</small>` : ""}<time>${esc(relDate(r.ts))}</time></span>
-      <span class="dash-conv-msg">${text}</span>${tick}</span>${r.unread ? '<span class="dash-dot" aria-hidden="true"></span>' : ""}${dashIcon("chevron-right", 14)}</button></li>`;
-  }).join("")}</ul>` : dashEmpty("dh.c.none");
-  return dashCard("convs", "dh.title.convs", body, "dash-span-7");
+  const label = `<h3 class="sr-only" id="dh-shop">${esc(T("dh.title.shop"))}</h3>`;
+  if (!t.total) return `<section class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop">${label}<div class="dash-card glass-45 dash-bento dash-shop-empty">${dashEmpty("dh.t.none", "store")}</div></section>`;
+  const tile = (icon, tone, n, key) => `<button type="button" class="dash-card dash-bento dash-stat" onclick="dashGo('shop')">${dashChip(icon, tone)}<b>${esc(n)}</b><span class="dash-stat-label">${esc(T(key))}</span></button>`;
+  const ring = `<svg class="dash-ring" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle class="bg" cx="18" cy="18" r="15.9155" pathLength="100"/><circle class="fg" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="${t.avgPct} 100"/></svg>`;
+  const gauge = `<button type="button" class="dash-card dash-bento dash-stat dash-gauge" onclick="dashGo('shop')"><span class="dash-ring-wrap">${ring}<b>${t.avgPct}%</b></span><span class="dash-stat-label">${esc(T("dh.t.complete"))}</span>` +
+    (t.archived ? `<small>${esc(T("dh.t.archived", { n: t.archived }))}</small>` : "") + `</button>`;
+  return `<section class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop">${label}${tile("rocket", "green", t.live, "dh.t.live")}${tile("pencil", "amber", t.draft, "dh.t.drafts")}${tile("circle-check", "blue", t.ready, "dh.t.ready")}${gauge}</section>`;
 }
 function dashBestHTML(subjects) {
   const best = buildBestBuyers(subjects, 3);
-  const rows = best.length ? `<ul class="dash-list">${best.map(b => {
+  const rows = best.length ? `<ul class="dash-list dash-best-list">${best.map((b, i) => {
     const km = isFinite(Number(b.distance_km)) ? " · " + Math.round(Number(b.distance_km)) + " km" : "";
-    return `<li class="dash-best"><span class="dash-best-main"><b>${esc(b.name)}</b><small>${esc((b.type || "").replace(/_/g, " "))}${esc(km)} · ${esc(T("dh.b.for", { name: b.forName }))}</small></span><span class="pill ${scorePillClass(b.score)}">${b.score}/100</span></li>`;
-  }).join("")}</ul>` : dashEmpty("dh.b.none");
-  const map = best.length ? `<div class="dash-map-host" id="dashMapHost" role="group" aria-label="${escAttr(T("dh.b.mapAria"))}"></div><p class="dash-note" id="dashMapNote" hidden>${esc(T("dh.b.noMap"))}</p>` : "";
-  return dashCard("best", "dh.title.best", rows + map, "dash-span-7");
-}
-function dashMonthHTML(d) {
-  const m = buildMonthStrip(d), names = monthNames();
-  if (!m.rows.length) return dashCard("month", "dh.title.month", dashEmpty("dh.m.none"), "dash-span-5");
-  const head = `<div class="dash-month-head" aria-hidden="true"><span></span>${names.map((n, i) => `<i class="${i + 1 === m.month ? "now" : ""}">${esc(String(n).charAt(0).toUpperCase())}</i>`).join("")}</div>`;
-  const rows = m.rows.map(r => `<div class="dash-month-row"><span>${esc(r.name)}</span>${r.flags.map((f, i) => `<i class="${f ? "on" : ""}${i + 1 === m.month ? " now" : ""}"></i>`).join("")}</div>`).join("");
-  const nowTxt = m.now.length ? T("dh.m.now", { list: humanList(m.now) }) : T("dh.m.nothingNow");
-  return dashCard("month", "dh.title.month", `<p class="dash-lead">${esc(nowTxt)}</p><div class="dash-month" role="img" aria-label="${escAttr(nowTxt)}">${head}${rows}</div>`, "dash-span-5");
-}
-function dashGapsHTML(subjects, d) {
-  const gaps = buildGaps(subjects, d.clients);
-  const body = gaps.length ? `<ul class="dash-list">${gaps.map(g => `<li class="dash-gap"><b>${esc(g.name)}</b><span>${esc(T("dh.g.row", { fit: g.fit, km: g.km, contacted: g.contacted }))}</span>
-      <i class="dash-mini"><i style="width:${Math.round(g.contacted * 100 / g.fit)}%"></i></i></li>`).join("")}</ul>` : dashEmpty("dh.g.none");
-  return dashCard("gaps", "dh.title.gaps", body, "dash-span-4");
+    return `<li class="dash-best">${avatarHTML(b.name, i)}<span class="dash-best-main"><b>${esc(b.name)}</b><small>${esc((b.type || "").replace(/_/g, " "))}${esc(km)} · ${esc(T("dh.b.for", { name: b.forName }))}</small></span><span class="pill ${scorePillClass(b.score)}">${b.score}/100</span></li>`;
+  }).join("")}</ul>` : dashEmpty("dh.b.none", "target");
+  // The map host starts hidden; paintDashMap shows it (and widens the tile) once there is something to draw.
+  const map = best.length ? `<div class="dash-map-host" id="dashMapHost" role="group" aria-label="${escAttr(T("dh.b.mapAria"))}" hidden></div>` : "";
+  const note = best.length ? `<p class="dash-note" id="dashMapNote" hidden>${esc(T("dh.b.noMap"))}</p>` : "";
+  return dashTile("best", "target", "red", "dh.title.best", `<div class="dash-best-grid" id="dashBestGrid"><div>${rows}${note}</div>${map}</div>`, "dash-span-7 dash-rows-2");
 }
 function dashInterestHTML(d) {
   const rows = buildInterest(d);
-  const body = rows.length ? `<ul class="dash-list">${rows.map(r => `<li class="dash-int"><b>${esc(r.name)}</b>
-      <span><em>${r.last30}</em>${esc(T("dh.i.month"))}</span><span><em>${r.total}</em>${esc(T("dh.i.total"))}</span><span><em>${r.contacts}</em>${esc(T("dh.i.contacts"))}</span></li>`).join("")}</ul>
-      <p class="dash-note">${esc(T("dh.i.note"))}</p>` : dashEmpty("dh.i.none");
-  return dashCard("interest", "dh.title.interest", body, "dash-span-4");
+  if (!rows.length) return dashTile("interest", "eye", "blue", "dh.title.interest", dashEmpty("dh.i.none", "eye"), "dash-span-5");
+  const month = rows.reduce((n, r) => n + r.last30, 0);
+  const stat = (icon, n, key) => `<span class="dash-metric">${dashIcon(icon, 14)}<em>${n}</em><i>${esc(T(key))}</i></span>`;
+  const list = rows.slice(0, 3).map(r => `<li class="dash-int"><b>${esc(r.name)}</b><span class="dash-metrics">${stat("eye", r.last30, "dh.i.month")}${stat("trending-up", r.total, "dh.i.total")}${stat("message-square", r.contacts, "dh.i.contacts")}</span></li>`).join("");
+  const body = `<p class="dash-big"><b>${month}</b><span>${esc(T("dh.i.month"))}</span></p><ul class="dash-list dash-plain">${list}</ul><p class="dash-note">${esc(T("dh.i.note"))}</p>`;
+  return dashTile("interest", "eye", "blue", "dh.title.interest", body, "dash-span-5");
 }
 function dashDocsHTML(d) {
   const h = buildDocHealth(d);
-  if (h.ok) return dashCard("docs", "dh.title.docs", dashEmpty("dh.d.ok"), "dash-span-4");
+  if (h.ok) return dashTile("docs", "shield-check", "green", "dh.title.docs", dashEmpty("dh.d.ok", "shield-check", "green"), "dash-span-5");
   const go = (id, tab) => dashGoArgs({ to: "product", id, tab });
   const rows = [];
-  h.expiring.forEach(e => rows.push(dashRow("circle-alert", esc(T(e.state === "expired" ? "dh.d.expired" : "dh.d.soon", { file: e.file, name: e.name, date: dashFmtDate(e.date) })), go(e.id, "documents"))));
-  h.noDocs.forEach(e => rows.push(dashRow("file-text", esc(T("dh.d.nodocs", { name: e.name })), go(e.id, "documents"))));
-  h.optional.slice(0, 4).forEach(e => rows.push(dashRow("check", esc(T("dh.d.optional", { name: e.name, doc: e.doc })), go(e.id, "roadmap"))));
-  return dashCard("docs", "dh.title.docs", `<ul class="dash-list">${rows.slice(0, 7).join("")}</ul>`, "dash-span-4");
+  h.expiring.forEach(e => rows.push(dashRow("circle-alert", e.state === "expired" ? "red" : "amber", esc(T(e.state === "expired" ? "dh.d.expired" : "dh.d.soon", { file: e.file, name: e.name, date: dashFmtDate(e.date) })), go(e.id, "documents"))));
+  h.noDocs.forEach(e => rows.push(dashRow("file-text", "amber", esc(T("dh.d.nodocs", { name: e.name })), go(e.id, "documents"))));
+  h.optional.slice(0, 4).forEach(e => rows.push(dashRow("check", "plain", esc(T("dh.d.optional", { name: e.name, doc: e.doc })), go(e.id, "roadmap"))));
+  return dashTile("docs", "shield-check", "amber", "dh.title.docs", `<ul class="dash-list">${rows.slice(0, 6).join("")}</ul>`, "dash-span-5");
+}
+function dashGapsHTML(subjects, d) {
+  // the three biggest gaps (good-fit businesses not yet written to) are enough for a tile
+  const gaps = buildGaps(subjects, d.clients).sort((a, b) => (b.fit - b.contacted) - (a.fit - a.contacted)).slice(0, 3);
+  const body = gaps.length ? `<ul class="dash-list dash-plain">${gaps.map(g => `<li class="dash-gap"><b>${esc(g.name)}</b>
+      <span class="dash-gap-bar" aria-hidden="true"><i style="width:${Math.max(3, Math.round(g.contacted * 100 / g.fit))}%"></i></span>
+      <span class="dash-metrics"><span class="dash-metric">${dashIcon("users", 14)}${esc(T("dh.g.near", { n: g.fit, km: g.km }))}</span><span class="dash-metric">${dashIcon("send", 14)}${esc(T("dh.g.sent", { n: g.contacted }))}</span></span></li>`).join("")}</ul>`
+    : dashEmpty("dh.g.none", "map-pin");
+  return dashTile("gaps", "map-pin", "amber", "dh.title.gaps", body, "dash-span-5");
 }
 const TIMELINE_ICON = { created: "plus", launched: "rocket", withdrawn: "eye-off", archived: "archive", restored: "archive-restore", doc: "file-text", buyerMsg: "message-square", seen: "check", inquiry: "message-square" };
+const TIMELINE_TONE = { created: "plain", launched: "green", withdrawn: "plain", archived: "plain", restored: "plain", doc: "blue", buyerMsg: "blue", seen: "green", inquiry: "blue" };
 function timelineText(e) {
   switch (e.k) {
     case "created": return T("dh.e.created", { name: e.name });
@@ -176,31 +160,34 @@ function timelineText(e) {
 }
 function dashTimelineHTML(d) {
   const ev = buildTimeline(d, 8);
-  const body = ev.length ? `<ul class="dash-timeline">${ev.map(e => `<li>${dashIcon(TIMELINE_ICON[e.k] || "check", 15)}<span>${esc(timelineText(e))}</span><time>${esc(relDate(e.ts))}</time></li>`).join("")}</ul>` : dashEmpty("dh.e.none");
-  return dashCard("timeline", "dh.title.timeline", body, "dash-span-12");
+  const body = ev.length ? `<ul class="dash-timeline">${ev.map(e => `<li>${dashChip(TIMELINE_ICON[e.k] || "check", TIMELINE_TONE[e.k] || "plain", 16)}<span class="dash-tl-text">${esc(timelineText(e))}</span><time>${esc(relDate(e.ts))}</time></li>`).join("")}</ul>` : dashEmpty("dh.e.none", "history");
+  return dashTile("timeline", "history", "plain", "dh.title.timeline", body, "dash-span-7 dash-tl");
 }
 
 /* ---------- the page ---------- */
 function renderDashHome() {
   const host = $("dashHome"); if (!host) return;
-  // While the account is still loading the cards would only say "nothing yet", which is not true.
+  // While the account is still loading the tiles would only say "nothing yet", which is not true.
   const app = $("app"); if (app && app.classList && app.classList.contains("booting")) { host.innerHTML = ""; return; }
   const d = dashInput(), subjects = dashSubjects();
-  host.innerHTML = dashAttentionHTML(d) + dashShopHTML(d) + dashConversationsHTML(d) + dashPipelineHTML(d) + dashBestHTML(subjects) + dashMonthHTML(d) +
-    dashGapsHTML(subjects, d) + dashInterestHTML(d) + dashDocsHTML(d) + dashTimelineHTML(d);
+  host.innerHTML = dashAttentionHTML(d) + dashShopHTML(d) + dashBestHTML(subjects) + dashInterestHTML(d) + dashDocsHTML(d) + dashGapsHTML(subjects, d) + dashTimelineHTML(d);
   paintDashMap(buildBestBuyers(subjects, 6));
 }
 
-/* The small map under "Best buyers right now". It is made once and moved into each new card, because the card is redrawn
-   whenever the dashboard is; if the map cannot load, the list above it already says the same thing. */
+/* The small map inside "Best buyers right now". It is made once and moved into each new tile, because the tile is redrawn
+   whenever the dashboard is; if the map cannot load, the list beside it already says the same thing and the tile stays one column. */
 let dashMapEl = null, dashMap = null, dashLayer = null;
 async function paintDashMap(best) {
-  const host = $("dashMapHost"); if (!host || typeof window === "undefined" || !best.length) return;
+  if (!$("dashMapHost") || typeof window === "undefined" || !best.length) return;
   const pts = best.map(b => ({ b, ll: dashBuyerPoint(b.id) })).filter(x => x.ll);
-  if (!pts.length) { host.hidden = true; return; }
+  if (!pts.length) return;
   try {
     const L = await loadLeaflet();
-    if (!dashMapEl) { dashMapEl = document.createElement("div"); dashMapEl.className = "dash-map"; }
+    // The tile may have been redrawn (a language switch, a search) or left while Leaflet was loading: use the one on the page now.
+    const host = $("dashMapHost"), grid = $("dashBestGrid");
+    if (!host) return;
+    host.hidden = false; if (grid && grid.classList) grid.classList.add("has-map");
+    if (!dashMapEl) { dashMapEl = document.createElement("div"); dashMapEl.className = "dash-map"; dashMapEl.style.cssText = "position:absolute;inset:0"; }
     host.appendChild(dashMapEl);
     if (!dashMap) {
       dashMap = L.map(dashMapEl, { scrollWheelZoom: false }).setView([41.49, 13.83], 11);
@@ -212,6 +199,5 @@ async function paintDashMap(best) {
     setTimeout(() => { if (dashMap) { dashMap.invalidateSize(); dashMap.fitBounds(pts.map(x => x.ll), { padding: [24, 24], maxZoom: 13 }); } }, 0);
   } catch (e) {
     const n = $("dashMapNote"); if (n) n.hidden = false;
-    host.hidden = true;
   }
 }

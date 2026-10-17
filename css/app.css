@@ -154,78 +154,113 @@
 #dashboardScreen .research-panel{ max-height:none; overflow:visible; }
 .research-panel{ border-radius:var(--radius-lg); padding:18px 20px 8px; max-height:100%; overflow-y:auto; }
 
-/* ---- the nine cards (js/dashboard.js) ---- */
-.dash-grid{ display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); gap:14px; }
+/* ---- the Dashboard bento grid (js/dashboard.js) ----
+   Apple-style: one 12-column grid, big rounded tiles of different sizes packed tight with an even gap, each with an icon chip,
+   a quiet title and one clear thing to read. Tiles stay translucent black glass (the app's look); only the hero tile is tinted brick red. */
+.dash-grid{ display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); grid-auto-rows:minmax(150px, auto); gap:14px; }
 .dash-grid:empty{ display:none; }
-.dash-card{ border-radius:var(--radius-lg); padding:16px 18px 18px; min-width:0; }
-.dash-span-4{ grid-column:span 4; } .dash-span-5{ grid-column:span 5; } .dash-span-7{ grid-column:span 7; } .dash-span-12{ grid-column:1 / -1; }
-.dash-h{ margin:0 0 10px; font-size:11.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-70); }
-.dash-empty{ margin:0; font-size:13px; color:var(--ink-70); line-height:1.5; }
-.dash-note{ margin:10px 0 0; font-size:11.5px; color:var(--ink-50); line-height:1.5; }
-.dash-lead{ margin:0 0 10px; font-size:13px; color:#fff; line-height:1.45; }
-.dash-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
-.dash-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:none; border-radius:10px; padding:9px 8px; color:#fff; font-size:13px; line-height:1.4; }
-.dash-row:hover{ background:rgba(255,255,255,.09); }
-.dash-row > svg{ flex:none; color:var(--ink-70); }
-.dash-row > svg:last-child{ color:var(--ink-50); }
+.dash-span-5{ grid-column:span 5; } .dash-span-6{ grid-column:span 6; } .dash-span-7{ grid-column:span 7; }
+.dash-rows-2{ grid-row:span 2; }
+
+.dash-bento{ position:relative; display:flex; flex-direction:column; min-width:0; border-radius:26px; padding:18px 20px 20px; border:1px solid rgba(255,255,255,.1);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 10px 28px rgba(0,0,0,.18); }
+.dash-head{ display:flex; align-items:center; gap:11px; margin-bottom:14px; }
+.dash-h{ margin:0; flex:1; min-width:0; font-size:14px; font-weight:600; letter-spacing:.005em; color:var(--ink-70); }
+.dash-count{ flex:none; min-width:26px; height:26px; padding:0 8px; border-radius:13px; display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.18); font-size:12.5px; font-weight:700; }
+
+/* the icon chip: a tinted rounded square; the same tones are used for rows, tiles and the activity list */
+.dash-ico{ flex:none; width:34px; height:34px; border-radius:11px; display:inline-flex; align-items:center; justify-content:center; background:rgba(255,255,255,.12); color:#fff; }
+.dash-row .dash-ico, .dash-timeline .dash-ico{ width:30px; height:30px; border-radius:10px; }
+.dash-empty .dash-ico{ width:52px; height:52px; border-radius:17px; }
+.t-red{ background:rgba(224,80,78,.26); color:#ffa09e; }
+.t-amber{ background:rgba(217,164,65,.24); color:#f0c375; }
+.t-green{ background:rgba(59,165,93,.24); color:#7bd696; }
+.t-blue{ background:rgba(74,134,201,.28); color:#9ac7f1; }
+
+.dash-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:6px 10px 10px; }
+.dash-empty p{ margin:0; max-width:30ch; font-size:13.5px; line-height:1.5; color:var(--ink-70); }
+.dash-note{ margin:12px 0 0; font-size:11.5px; line-height:1.5; color:var(--ink-50); }
+.dash-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+
+/* 1 - the hero tile, tinted brick red */
+.dash-attn{ background:linear-gradient(155deg, rgba(150,37,36,.84), rgba(84,16,16,.74)); border-color:rgba(255,170,168,.24); }
+.dash-attn .dash-h{ color:#fff; font-size:15px; }
+.dash-attn .dash-count{ background:rgba(255,255,255,.22); }
+.dash-attn .dash-ico{ background:rgba(255,255,255,.16); }
+.dash-attn .t-red{ background:rgba(255,255,255,.9); color:#962524; }
+.dash-attn .t-amber{ background:rgba(240,195,117,.9); color:#5b3b05; }
+.dash-attn .t-green{ background:rgba(123,214,150,.92); color:#0f4d25; }
+.dash-attn .t-blue{ background:rgba(154,199,241,.92); color:#123a63; }
+.dash-row{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:rgba(255,255,255,.07); border:none; border-radius:16px; padding:8px 12px 8px 8px; color:#fff; font-size:13.5px; line-height:1.4;
+  transition:background .15s ease, transform .15s ease; }
+.dash-row:hover{ background:rgba(255,255,255,.14); }
+.dash-row > svg{ flex:none; color:var(--ink-50); }
 .dash-row-text{ flex:1; min-width:0; }
-.dash-dot{ flex:none; width:9px; height:9px; border-radius:50%; background:#e0504e; box-shadow:0 0 0 3px rgba(224,80,78,.25); }
+.dash-plain .dash-int, .dash-plain .dash-gap{ background:rgba(255,255,255,.06); border-radius:16px; padding:11px 14px; }
 
-.dash-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
-.dash-tile{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left; padding:12px 14px; border-radius:12px; border:1px solid var(--hairline); background:rgba(255,255,255,.05); color:#fff; }
-.dash-tile:hover{ background:rgba(255,255,255,.1); }
-.dash-tile b{ font-size:26px; line-height:1.1; }
-.dash-tile span{ font-size:12px; color:var(--ink-70); }
-.dash-mini{ display:block; align-self:stretch; height:4px; margin-top:6px; border-radius:2px; background:rgba(255,255,255,.16); overflow:hidden; }
-.dash-mini > i{ display:block; height:100%; background:var(--ok); }
+/* 2 - Your shop: a 2 x 2 block of four small tiles (the block itself has no background) */
+.dash-shop{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); grid-template-rows:repeat(2, minmax(0,1fr)); gap:14px; min-width:0; }
+.dash-stat{ display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-end; gap:2px; text-align:left; color:#fff; font:inherit;
+  background:var(--glass-45); backdrop-filter:blur(18px) saturate(140%); -webkit-backdrop-filter:blur(18px) saturate(140%); transition:transform .18s ease, background .18s ease; }
+.dash-stat:hover{ background:rgba(0,0,0,.34); transform:translateY(-2px); }
+.dash-stat .dash-ico{ position:absolute; top:16px; left:18px; }
+.dash-stat b{ font-size:40px; line-height:1; font-weight:700; letter-spacing:-.02em; }
+.dash-stat-label{ font-size:13px; color:var(--ink-70); }
+.dash-stat small{ font-size:11px; color:var(--ink-50); }
+.dash-gauge{ justify-content:space-between; }
+.dash-ring-wrap{ position:relative; width:84px; height:84px; flex:none; }
+.dash-ring{ width:100%; height:100%; transform:rotate(-90deg); }
+.dash-ring circle{ fill:none; stroke-width:3.4; }
+.dash-ring .bg{ stroke:rgba(255,255,255,.16); }
+.dash-ring .fg{ stroke:var(--ok); stroke-linecap:round; }
+.dash-ring-wrap b{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:22px; letter-spacing:-.01em; }
+.dash-shop-empty{ grid-column:1 / -1; grid-row:1 / -1; }
 
-.dash-step{ display:grid; grid-template-columns:minmax(96px,34%) minmax(0,1fr) 30px; gap:10px; align-items:center; margin-bottom:10px; font-size:12.5px; }
-.dash-step-label{ color:var(--ink-70); }
-.dash-step-bar{ height:10px; border-radius:5px; background:rgba(255,255,255,.12); overflow:hidden; }
-.dash-step-bar > i{ display:block; height:100%; min-width:3px; border-radius:5px; background:#d94a48; }
-.dash-step b{ text-align:right; }
-
-.dash-conv .dash-row-text{ display:flex; flex-direction:column; gap:2px; }
-.dash-conv-top{ display:flex; align-items:baseline; gap:8px; min-width:0; }
-.dash-conv-top b{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.dash-conv-top small{ color:var(--ink-50); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.dash-conv-top time{ margin-left:auto; flex:none; font-size:11px; color:var(--ink-50); }
-.dash-conv-msg{ display:block; color:var(--ink-70); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.dash-tick{ font-size:11px; color:var(--ink-50); }
-
-.dash-best{ display:flex; align-items:center; gap:10px; padding:8px; }
+/* 3 - Best buyers: the list on top, the map filling the rest of the tile once it is ready */
+.dash-best-grid{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:14px; }
+.dash-best-grid:not(.has-map){ grid-template-rows:auto; }
+.dash-best{ display:flex; align-items:center; gap:12px; padding:10px 12px 10px 10px; border-radius:18px; background:rgba(255,255,255,.07); }
+.dash-best .avatar{ width:38px; height:38px; font-size:12px; }
 .dash-best-main{ flex:1; min-width:0; display:flex; flex-direction:column; }
-.dash-best-main b{ font-size:13px; }
-.dash-best-main small{ color:var(--ink-50); font-size:11.5px; }
-.dash-map-host{ margin-top:12px; border-radius:12px; overflow:hidden; border:1px solid var(--hairline); isolation:isolate; }
-.dash-map{ height:190px; background:#1c1414; }
+.dash-best-main b{ font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-best-main small{ color:var(--ink-50); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-map-host{ position:relative; border-radius:20px; overflow:hidden; border:1px solid rgba(255,255,255,.12); isolation:isolate; min-height:220px; }
+/* two classes, so it beats Leaflet's own .leaflet-container{position:relative}, which loads later */
+.dash-map-host .dash-map{ position:absolute; inset:0; background:#1c1414; }
 
-.dash-month-head, .dash-month-row{ display:grid; grid-template-columns:minmax(64px,26%) repeat(12, minmax(0,1fr)); gap:3px; align-items:center; }
-.dash-month-row{ margin-top:6px; }
-.dash-month-head i{ font-style:normal; font-size:10px; text-align:center; color:var(--ink-50); }
-.dash-month-head i.now{ color:#fff; font-weight:700; }
-.dash-month-row span{ font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.dash-month-row i{ height:14px; border-radius:3px; background:rgba(255,255,255,.1); }
-.dash-month-row i.on{ background:#4cae6a; }
-.dash-month-row i.now{ outline:1px solid #fff; outline-offset:1px; }
+/* 4 - Buyer interest */
+.dash-big{ margin:0 0 12px; display:flex; align-items:baseline; gap:10px; }
+.dash-big b{ font-size:44px; line-height:1; font-weight:700; letter-spacing:-.025em; }
+.dash-big span{ font-size:13px; color:var(--ink-70); }
+.dash-int b, .dash-gap b{ display:block; font-size:13.5px; margin-bottom:8px; }
+.dash-metrics{ display:flex; flex-wrap:wrap; gap:6px 18px; }
+.dash-metric{ display:inline-flex; align-items:baseline; gap:6px; font-size:12px; color:var(--ink-70); }
+.dash-metric svg{ align-self:center; color:var(--ink-50); }
+.dash-metric em{ font-style:normal; font-size:17px; font-weight:700; color:#fff; }
+.dash-metric i{ font-style:normal; color:var(--ink-50); font-size:11.5px; }
 
-.dash-gap{ display:flex; flex-direction:column; gap:3px; padding:8px; }
-.dash-gap b{ font-size:13px; }
-.dash-gap span{ font-size:12px; color:var(--ink-70); line-height:1.4; }
-.dash-int{ display:flex; flex-wrap:wrap; gap:2px 18px; padding:8px; }
-.dash-int b{ flex:1 0 100%; font-size:13px; }
-.dash-int span{ display:flex; flex-direction:column; font-size:11px; color:var(--ink-50); }
-.dash-int em{ font-style:normal; font-size:20px; font-weight:700; color:#fff; line-height:1.2; }
+/* 6 - Market gaps */
+.dash-gap-bar{ display:block; height:6px; border-radius:3px; margin-bottom:9px; background:rgba(255,255,255,.14); overflow:hidden; }
+.dash-gap-bar > i{ display:block; height:100%; border-radius:3px; background:#d94a48; }
 
-.dash-timeline{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 28px; }
-.dash-timeline li{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--hairline); font-size:13px; }
-.dash-timeline li > svg{ flex:none; color:var(--ink-70); }
-.dash-timeline li > span{ flex:1; min-width:0; }
+/* 7 - Recent activity: two columns when the tile is wide enough */
+.dash-timeline{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:4px 22px; }
+.dash-timeline li{ display:flex; align-items:center; gap:11px; padding:7px 0; font-size:13px; }
+.dash-tl-text{ flex:1; min-width:0; }
 .dash-timeline time{ flex:none; font-size:11px; color:var(--ink-50); }
-@media (max-width:1180px){ .dash-span-4{ grid-column:span 6; } }
-@media (max-width:1020px){ .dash-span-5, .dash-span-7{ grid-column:1 / -1; } }
+
+@media (prefers-reduced-transparency: reduce){ .dash-attn{ background:#4a1716; } .dash-stat{ background:#241a19; } }
+@media (prefers-reduced-motion: reduce){ .dash-stat, .dash-row{ transition:none; } .dash-stat:hover{ transform:none; } }
+@media (max-width:1180px){
+  .dash-span-6, .dash-span-7{ grid-column:1 / -1; grid-row:auto; }
+  .dash-span-5, .dash-tl{ grid-column:span 6; }
+  .dash-shop{ grid-template-columns:repeat(4, minmax(0,1fr)); grid-template-rows:none; }
+  .dash-stat{ min-height:150px; }
+}
 @media (max-width:900px){
-  .dash-span-4, .dash-span-5, .dash-span-7{ grid-column:1 / -1; }
+  .dash-span-5, .dash-tl{ grid-column:1 / -1; }
+  .dash-shop{ grid-template-columns:repeat(2, minmax(0,1fr)); }
   .dash-timeline{ grid-template-columns:minmax(0,1fr); }
 }
 .research-panel-head{ display:flex; align-items:center; margin-bottom:12px; }

@@ -1035,8 +1035,7 @@ var STRINGS = {
     "band.low": "low", "band.medium": "medium", "band.high": "high",
 
     /* ---- Dashboard home (js/dashboard.js) ---- */
-    "dh.title.attention": "Needs your attention", "dh.title.shop": "Your shop", "dh.title.pipeline": "Your pipeline",
-    "dh.title.convs": "Latest conversations", "dh.title.best": "Best buyers right now", "dh.title.month": "What you can sell this month",
+    "dh.title.attention": "Needs your attention", "dh.title.shop": "Your shop", "dh.title.best": "Best buyers right now",
     "dh.title.gaps": "Market gaps", "dh.title.interest": "Buyer interest", "dh.title.docs": "Document health", "dh.title.timeline": "Recent activity",
     "dh.a.none": "Nothing needs you right now. Nice work.",
     "dh.a.unread": "Unread messages from buyers: {n}",
@@ -1049,18 +1048,19 @@ var STRINGS = {
     "dh.t.live": "Live", "dh.t.drafts": "Drafts", "dh.t.ready": "Ready to launch", "dh.t.complete": "Average completeness",
     "dh.t.archived": "{n} archived, not counted above",
     "dh.t.none": "You have no products yet. Start one in Fasto-AI.",
-    "dh.p.none": "Start a chat with Fasto-AI and your pipeline will appear here.",
-    "dh.p.chats": "Chats with details", "dh.p.matched": "Matched with buyers", "dh.p.sent": "Messages sent", "dh.p.replied": "Buyers who replied",
-    "dh.p.byBuyers": "Started by buyers: {n}",
-    "dh.c.none": "No conversations yet. Send a message from a buyer card in Fasto-AI.",
-    "dh.c.you": "You: ", "dh.c.open": "Open the conversation with {name}",
+    
+    
+    
+    
+    
     "dh.b.none": "Finish a chat and your best-matching buyers will appear here.",
     "dh.b.for": "for {name}", "dh.b.mapAria": "Map of your best-matching buyers",
-    "dh.b.noMap": "The map could not load. The list above names the same buyers.",
-    "dh.m.none": "Add your harvest months to a fresh-produce chat to see your season here.",
-    "dh.m.now": "In season now: {list}", "dh.m.nothingNow": "Nothing you grow is in season this month.",
+    "dh.b.noMap": "The map could not load. The list names the same buyers.",
+    
+    
     "dh.g.none": "No good-fit buyers within 10 km yet.",
-    "dh.g.row": "Good-fit buyers within {km} km: {fit}. Contacted: {contacted}.",
+    "dh.g.near": "{n} good-fit within {km} km", "dh.g.sent": "{n} contacted",
+    
     "dh.i.none": "Launch a product to see how many buyers look at it.",
     "dh.i.month": "last 30 days", "dh.i.total": "all time", "dh.i.contacts": "conversations",
     "dh.i.note": "Only counts. You never see who looked.",
@@ -2033,8 +2033,7 @@ var STRINGS = {
     "band.low": "basso", "band.medium": "medio", "band.high": "alto",
 
     /* ---- Cruscotto (js/dashboard.js) ---- */
-    "dh.title.attention": "Da vedere subito", "dh.title.shop": "Il tuo negozio", "dh.title.pipeline": "Il tuo percorso di vendita",
-    "dh.title.convs": "Ultime conversazioni", "dh.title.best": "I migliori acquirenti ora", "dh.title.month": "Cosa puoi vendere questo mese",
+    "dh.title.attention": "Da vedere subito", "dh.title.shop": "Il tuo negozio", "dh.title.best": "I migliori acquirenti ora",
     "dh.title.gaps": "Occasioni mancate", "dh.title.interest": "Interesse degli acquirenti", "dh.title.docs": "Stato dei documenti", "dh.title.timeline": "Attività recente",
     "dh.a.none": "Nessuna urgenza al momento. Ottimo lavoro.",
     "dh.a.unread": "Messaggi non letti dagli acquirenti: {n}",
@@ -2047,18 +2046,19 @@ var STRINGS = {
     "dh.t.live": "Pubblicati", "dh.t.drafts": "Bozze", "dh.t.ready": "Pronti al lancio", "dh.t.complete": "Completezza media",
     "dh.t.archived": "{n} archiviati, non conteggiati sopra",
     "dh.t.none": "Non hai ancora prodotti. Inizia da Fasto-AI.",
-    "dh.p.none": "Inizia una chat con Fasto-AI e qui comparirà il tuo percorso di vendita.",
-    "dh.p.chats": "Chat con dettagli", "dh.p.matched": "Abbinate agli acquirenti", "dh.p.sent": "Messaggi inviati", "dh.p.replied": "Acquirenti che hanno risposto",
-    "dh.p.byBuyers": "Iniziate dagli acquirenti: {n}",
-    "dh.c.none": "Nessuna conversazione per ora. Invia un messaggio da una scheda acquirente in Fasto-AI.",
-    "dh.c.you": "Tu: ", "dh.c.open": "Apri la conversazione con {name}",
+    
+    
+    
+    
+    
     "dh.b.none": "Completa una chat e qui compariranno gli acquirenti più adatti.",
     "dh.b.for": "per {name}", "dh.b.mapAria": "Mappa degli acquirenti più adatti",
-    "dh.b.noMap": "Impossibile caricare la mappa. L'elenco qui sopra indica gli stessi acquirenti.",
-    "dh.m.none": "Aggiungi i mesi di raccolta in una chat sui prodotti freschi per vedere qui la tua stagione.",
-    "dh.m.now": "Di stagione adesso: {list}", "dh.m.nothingNow": "Nessuno dei tuoi prodotti è di stagione questo mese.",
+    "dh.b.noMap": "Impossibile caricare la mappa. L'elenco indica gli stessi acquirenti.",
+    
+    
     "dh.g.none": "Nessun acquirente adatto entro 10 km per ora.",
-    "dh.g.row": "Acquirenti adatti entro {km} km: {fit}. Contattati: {contacted}.",
+    "dh.g.near": "{n} adatti entro {km} km", "dh.g.sent": "{n} contattati",
+    
     "dh.i.none": "Pubblica un prodotto per vedere quanti acquirenti lo guardano.",
     "dh.i.month": "ultimi 30 giorni", "dh.i.total": "in totale", "dh.i.contacts": "conversazioni",
     "dh.i.note": "Solo numeri. Non vedi mai chi ha guardato.",

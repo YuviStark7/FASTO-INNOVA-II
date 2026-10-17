@@ -597,35 +597,6 @@ function buildShopTiles(d) {
   return t;
 }
 
-/* C: the funnel from first conversation to a buyer answering. */
-function buildPipeline(d) {
-  var chats = d.chats || [], clients = d.clients || [];
-  var mine = clients.filter(function (c) { return c.initiatedBy !== "buyer"; });
-  var steps = [
-    { k: "chats", n: chats.filter(function (c) { return c.hasWork; }).length },
-    { k: "matched", n: chats.filter(function (c) { return c.matched; }).length },
-    { k: "sent", n: mine.filter(function (c) { return c.status === "sent"; }).length },
-    { k: "replied", n: mine.filter(function (c) { return (c.messages || []).some(function (m) { return m.role === "buyer"; }); }).length }
-  ];
-  var max = Math.max(1, steps.reduce(function (m, s) { return Math.max(m, s.n); }, 0));
-  steps.forEach(function (s) { s.pct = Math.round(s.n * 100 / max); });
-  return { steps: steps, byBuyers: clients.filter(function (c) { return c.initiatedBy === "buyer"; }).length };
-}
-
-/* D: the latest conversations, newest first. */
-function buildConversationPreview(d, limit) {
-  var rows = [];
-  (d.clients || []).forEach(function (c) {
-    var m = dashLastMessage(c);
-    if (!m) return;
-    var what = dashProductName(d.products, c.productId);
-    if (!what) { var ch = (d.chats || []).filter(function (x) { return x.id === c.chatId; })[0]; what = ch ? ch.title : ""; }
-    rows.push({ id: c.id, name: c.name, what: what, text: String(m.text || "").replace(/\s+/g, " ").trim().slice(0, 90), who: m.role, ts: m.ts, seen: !!m.readAt, unread: dashUnread(c) > 0 });
-  });
-  rows.sort(function (a, b) { return b.ts - a.ts; });
-  return rows.slice(0, limit || 3);
-}
-
 /* E: the best matches across everything the farmer sells, one row per buyer.
    subjects: [{ name, rows: [{id, name, type, zone, distance_km, score}] }] */
 function buildBestBuyers(subjects, limit) {
@@ -636,21 +607,6 @@ function buildBestBuyers(subjects, limit) {
     });
   });
   return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) { return b.score - a.score; }).slice(0, limit || 3);
-}
-
-/* F: a 12-month strip per fresh product, plus what is in season now. */
-function buildMonthStrip(d) {
-  var rows = [], nowNames = [], month = d.month || (new Date().getMonth() + 1);
-  (d.chats || []).forEach(function (c) {
-    var months = c.months || [];
-    if (!months.length || !(c.items || []).length) return;
-    var flags = []; for (var m = 1; m <= 12; m++) flags.push(months.indexOf(m) !== -1);
-    (c.items || []).forEach(function (name) {
-      rows.push({ name: name, flags: flags });
-      if (flags[month - 1] && nowNames.indexOf(name) === -1) nowNames.push(name);
-    });
-  });
-  return { rows: rows.slice(0, 5), now: nowNames, month: month };
 }
 
 /* G: for each thing you sell, how many good-fit businesses are near and how many you have already written to.
@@ -894,7 +850,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     productRoadmap: productRoadmap, groupChatRail: groupChatRail,
-    dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildPipeline: buildPipeline, buildConversationPreview: buildConversationPreview, buildBestBuyers: buildBestBuyers, buildMonthStrip: buildMonthStrip, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
+    dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildBestBuyers: buildBestBuyers, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };

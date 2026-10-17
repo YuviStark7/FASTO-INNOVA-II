@@ -215,7 +215,7 @@ function loadApp(root) {
   launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
-  buildAttention, buildShopTiles, buildPipeline, buildConversationPreview, buildBestBuyers, buildMonthStrip, buildGaps, buildInterest, buildTimeline, buildDocHealth,
+  buildAttention, buildShopTiles, buildBestBuyers, buildGaps, buildInterest, buildTimeline, buildDocHealth,
   docExpiryState, dashUnread, dashInput, dashSubjects, dashGo, renderDashHome, dashAttentionHTML, dashDocsHTML, timelineText, attentionText,
   markClientSeen, logProductView, viewLogged, setDocKind, setDocExpiry, docControlsHTML, DOC_KINDS, loadDashboardExtras, patchDocLocally };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
@@ -3795,29 +3795,11 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("shop tiles count live, drafts, ready and archived, and average the roadmap over what is not archived", tiles.live === 1 && tiles.draft === 2 && tiles.ready === 1 && tiles.archived === 1 && tiles.total === 4 && tiles.avgPct === 89, JSON.stringify(tiles));
     check("an empty shop has total 0 and 0%", a.buildShopTiles({ products: [] }).total === 0 && a.buildShopTiles({ products: [] }).avgPct === 0);
 
-    // ---- C. pipeline
-    const pipe = a.buildPipeline(D);
-    check("the pipeline counts chats with work, matched, sent and replied, and shows buyer-started separately", pipe.steps.map(s => s.n).join() === "2,1,2,2" && pipe.byBuyers === 1 && pipe.steps.map(s => s.pct).join() === "100,50,100,100", JSON.stringify(pipe));
-    check("an empty pipeline never divides by zero", a.buildPipeline({}).steps.every(s => s.n === 0 && s.pct === 0));
-
-    // ---- D. conversations
-    const conv = a.buildConversationPreview(D, 3);
-    check("the conversation preview is newest first, skips threads with no messages, and names the product or chat", conv.map(r => r.id).join() === "o4,o1,o2" && conv[0].what === "Biscotti" && conv[1].what === "Donuts chat" && conv[0].unread === true && conv[2].unread === false);
-    const mine = a.buildConversationPreview({ clients: [{ id: "x", name: "Bar", messages: [msg("buyer", 1, "hi"), msg("farmer", 2, "  Thanks\n for   asking ", "2026-10-15T08:00:00Z")] }, { id: "y", name: "Bar2", messages: [msg("farmer", 3, "Sent")] }] }, 3);
-    check("...and shows who wrote last, whether the buyer has opened a message of yours, and tidies the text", conv[0].who === "buyer" && mine[0].id === "y" && mine[0].who === "farmer" && mine[0].seen === false && mine[1].seen === true && mine[1].text === "Thanks for asking");
-
     // ---- E. best buyers
     const subj = [{ name: "Donuts", chatId: "c1", rows: [{ id: "b1", name: "Bar Uno", score: 80, distance_km: "3" }, { id: "b2", name: "Pasticceria Due", score: 50, distance_km: 2 }] },
                   { name: "Zucchine", chatId: "c9", rows: [{ id: "b1", name: "Bar Uno", score: 90, distance_km: "3" }, { id: "b3", name: "Deli Tre", score: 60, distance_km: 4 }] }];
     const best = a.buildBestBuyers(subj, 2);
     check("best buyers: one row per business, its highest score, and what it fits best", best.length === 2 && best[0].id === "b1" && best[0].score === 90 && best[0].forName === "Zucchine" && best[1].id === "b3");
-
-    // ---- F. months
-    const mchats = [{ id: "c9", months: [6, 7, 8, 9, 10], items: ["pomodori", "zucchine"] }, { id: "c8", months: [], items: ["x"] }, { id: "c7", months: [3], items: [] }];
-    const mon = a.buildMonthStrip({ chats: mchats, month: 10 });
-    check("the month strip has 12 flags per product, lists what is in season now, and skips chats with no months", mon.rows.length === 2 && mon.rows[0].flags.length === 12 && mon.rows[0].flags[9] === true && mon.rows[0].flags[10] === false && mon.now.join() === "pomodori,zucchine");
-    check("...and says nothing is in season when it is not, and shows at most five products", a.buildMonthStrip({ chats: mchats, month: 2 }).now.length === 0 &&
-      a.buildMonthStrip({ chats: [{ months: [1], items: ["a", "b", "c", "d", "e", "f", "g"] }], month: 1 }).rows.length === 5);
 
     // ---- G. market gaps
     const gsub = [{ name: "Donuts", chatId: "c1", rows: [{ id: "b1", score: 80, distance_km: "3" }, { id: "b2", score: 30, distance_km: 2 }, { id: "b3", score: 90, distance_km: 25 }, { id: "b4", score: 70, distance_km: 9 }] },
@@ -3849,16 +3831,25 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     const dash = fakeEl("dashHome"); els.dashHome = dash;
     const keep = { clients: st.clients, products: st.products, counts: st.productDocCounts, docs: st.productDocs, chats: st.chats, views: st.productViews, events: st.productEvents, screen: st.screen, active: st.activeClientId, farmerId: st.farmerId };
     st.clients = clients.map(c => Object.assign({}, c)); st.products = products.map(p => Object.assign({}, p)); st.productDocCounts = docCounts; st.productDocs = JSON.parse(JSON.stringify(docs));
-    st.chats = [{ id: "c1", title: "Donuts chat", ts: NOW, profile: null, product: null, phase: "interview" }, { id: "c2", title: "Biscotti chat", ts: NOW, profile: null, product: null, phase: "interview" }];
+    st.chats = [{ id: "c1", title: "Donuts chat", ts: NOW, profile: null, product: null, phase: "interview" }, { id: "c2", title: "Biscotti chat", ts: NOW, profile: null, product: null, phase: "interview" },
+      { id: "c4", title: "Pomodori e zucchine", ts: NOW, phase: "done", product: null, profile: { village: "Sant'Elia", distance_km_from_cassino: 6, organic: "no", available_months: [6, 7, 8, 9, 10], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] } }];
     st.productViews = { p2: [new Date().toISOString().slice(0, 10)] }; st.productEvents = [];
     a.renderDashHome();
     const html = dash.innerHTML;
-    check("the page draws all ten blocks, each a section named by its own heading", (html.match(/<section class="dash-card/g) || []).length === 10 && ["attention", "shop", "pipeline", "convs", "best", "month", "gaps", "interest", "docs", "timeline"].every(k => html.includes('aria-labelledby="dh-' + k + '"') && html.includes('id="dh-' + k + '"')));
+    check("the page draws seven bento tiles, each a section named by its own heading", (html.match(/<section class="dash-/g) || []).length === 7 && ["attention", "shop", "best", "interest", "docs", "gaps", "timeline"].every(k => html.includes('aria-labelledby="dh-' + k + '"') && html.includes('id="dh-' + k + '"')));
+    check("Latest conversations, Your pipeline and What you can sell this month are gone, with their code and words", !/Latest conversations|Your pipeline|What you can sell this month|dh-convs|dh-pipeline|dh-month/.test(html) && !/dh\.(p|c|m)\./.test(Object.keys(a.STRINGS.en).join(" ")) &&
+      ["dh.title.pipeline", "dh.title.convs", "dh.title.month"].every(k => !(k in a.STRINGS.en) && !(k in a.STRINGS.it)) && typeof a.buildPipeline === "undefined" && typeof a.buildConversationPreview === "undefined" && typeof a.buildMonthStrip === "undefined");
+    check("icons wherever possible: every tile has an icon chip, every attention and document row has one, and the icons are decoration only (hidden from screen readers)",
+      (html.match(/class="dash-ico /g) || []).length >= 7 + 6 + 4 + 4 && !/<span class="dash-ico[^>]*>(?:(?!aria-hidden)[^<])*</.test(html.replace(/<span class="dash-ico t-\w+" aria-hidden="true">/g, "")) && /<svg class="lucide lucide-bell/.test(html) && /lucide-target/.test(html) && /lucide-shield-check/.test(html) && /lucide-history/.test(html) && /lucide-map-pin/.test(html) && /lucide-eye/.test(html));
+    check("the four shop numbers are four separate tiles (one button each) inside one labelled group", (html.match(/class="dash-card dash-bento dash-stat/g) || []).length === 4 && /class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop"/.test(html) && html.includes('stroke-dasharray="89 100"'));
+    check("the attention tile is the hero (brick red), shows how many things need you, and the map starts hidden until it can be drawn", /dash-attn/.test(html) && html.includes('<span class="dash-count" aria-hidden="true">7</span>') && (html.match(/class="dash-row"/g) || []).length >= 7 && /id="dashMapHost" role="group"[^>]*hidden/.test(html));
     check("every pressable row is a real button, never a clickable div", !/<(div|span|li|p)\b[^>]*onclick=/.test(html) && /<button type="button" class="dash-row"/.test(html));
     check("the attention rows say it in words (English)", html.includes("Unread messages from buyers: 2") && html.includes("Donuts is ready to launch") && html.includes("Brie is nearly ready (4 of 6 steps)") && html.includes("HACCP.pdf (Donuts) expired on"));
     check("the shop card shows the tiles and the archived note", html.includes("<b>89%</b>") && html.includes("1 archived, not counted above"));
-    check("the pipeline card shows the four steps and the buyer-started count", html.includes("Chats with details") && html.includes("Buyers who replied") && html.includes("Started by buyers: 1"));
-    check("a buyer-started conversation is marked unread by a dot, and the row opens that conversation by its id", /dashGo\('client','o4',''\)/.test(html) && html.includes("dash-dot"));
+    const gapRows = html.split('class="dash-gap"').slice(1);
+    check("Market gaps shows the three biggest gaps, biggest first, each with a bar and two icons", gapRows.length === 3 && /Pomodori e zucchine/.test(gapRows[0]) && gapRows.every(r => /dash-gap-bar/.test(r) && /lucide-users/.test(r) && /lucide-send/.test(r)) &&
+      /\d+ good-fit within 10 km/.test(gapRows[0]) && /0 contacted/.test(gapRows[0]));
+    check("the unread row opens that conversation by its id", /dashGo\('client','o4',''\)/.test(html));
     check("the interest card says only counts, never who", html.includes("Only counts. You never see who looked."));
     st.products[1].name = '<img src=x onerror=alert(1)>'; a.renderDashHome();
     check("a product name typed as markup is escaped everywhere on the dashboard", !dash.innerHTML.includes("<img src=x") && dash.innerHTML.includes("&lt;img src=x"));
@@ -3869,12 +3860,12 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the dashboard follows the language switch", dash.innerHTML.includes("Messaggi non letti dagli acquirenti: 2") && dash.innerHTML.includes("Il tuo negozio") && !dash.innerHTML.includes("Needs your attention"));
     a.setLangValue("en");
     const enKeys = Object.keys(a.STRINGS.en).filter(k => /^(dh|dk)\./.test(k)), itKeys = Object.keys(a.STRINGS.it).filter(k => /^(dh|dk)\./.test(k));
-    check("every dashboard string exists in both languages", enKeys.length > 60 && enKeys.length === itKeys.length && enKeys.every(k => a.STRINGS.it[k] && a.STRINGS.it[k] !== "") && ["prodpanel.docType", "prodpanel.expires", "prodpanel.docTypeFor", "prodpanel.expiresFor"].every(k => a.STRINGS.en[k] && a.STRINGS.it[k]));
+    check("every dashboard string exists in both languages", enKeys.length > 40 && enKeys.length === itKeys.length && enKeys.every(k => a.STRINGS.it[k] && a.STRINGS.it[k] !== "") && ["prodpanel.docType", "prodpanel.expires", "prodpanel.docTypeFor", "prodpanel.expiresFor"].every(k => a.STRINGS.en[k] && a.STRINGS.it[k]));
 
     // an empty account says so, and does not pretend
     st.clients = []; st.products = []; st.productDocCounts = {}; st.productDocs = {}; st.chats = []; st.productViews = {};
     a.renderDashHome();
-    check("with nothing yet every card shows a plain empty message", dash.innerHTML.includes("Nothing needs you right now") && dash.innerHTML.includes("You have no products yet") && dash.innerHTML.includes("Start a chat with Fasto-AI") && dash.innerHTML.includes("No conversations yet"));
+    check("with nothing yet every card shows a plain empty message", dash.innerHTML.includes("Nothing needs you right now") && dash.innerHTML.includes("You have no products yet") && dash.innerHTML.includes("No good-fit buyers within 10 km yet") && dash.innerHTML.includes("Nothing has happened yet"));
     // while the account is still loading it says nothing rather than something false
     els.app = fakeEl("app"); els.app.classList.add("booting"); a.renderDashHome();
     check("while the account loads the cards are left empty (an empty list would be a false 'nothing yet')", dash.innerHTML === ""); els.app = undefined;
