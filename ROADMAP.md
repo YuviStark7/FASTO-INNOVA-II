@@ -79,6 +79,16 @@ Batch 1 (items 1–13) was approved 2026-08-20 and is fully shipped — see Done
 
 ## Proposed
 
+**New ideas, drafted by the daily run 2026-10-17 (the approved queue is empty apart from item 16, which waits on your decision; none of these is approved, do not build them yet):**
+
+34. **[S] Phone chat switcher.** CLAUDE.md records that the sidebar is hidden on phones, so a phone cannot switch chats. A small "Chats" button in the top bar opening the rail as a bottom sheet fixes that.
+35. **[S] Fix the mobile sidebar height.** `#sidebar` keeps its desktop height in the mobile block, which makes the bottom nav fill the screen in a test harness; tidy it and add a qa_check rule.
+36. **[M] Dashboard on a phone, checked.** Render the bento grid in a real phone-width browser run, fix overflow, and add a qa_check that measures tile widths at 390 px.
+37. **[S] Buyer reply-time hint.** Show the farmer a plain count of how many of their sent messages got a real reply (a number only, nothing simulated).
+38. **[M] Certificate expiry reminders by email.** Opt-in weekly email listing certificates expiring within 60 days (needs an edge function; your decision on an email service).
+39. **[S] Italian wording pass.** A read-through of every Italian string by a native speaker, with a list of changes to apply to `js/i18n.js`.
+40. **[M] Export a product sheet as PDF.** A print stylesheet so a producer can save a launched product's sheet (no phone, address or VAT) to share outside the app.
+
 **Dashboard ideas A to J: all shipped on 2026-10-17 at Yuvi's request ("add 1 to 9 all of them"). See Done. Nothing from that list is left here.**
 
 Batch 2 was drafted by the daily run on **2026-09-05** and reviewed by Yuvi on **2026-09-06**: 15, 16, 17, 18, 19 and 21 were approved and have moved up to the queue, along with a new item 22 for the contrast decision item 11 had been holding open. Only item 20 was left here.
