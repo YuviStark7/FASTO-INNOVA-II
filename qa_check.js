@@ -12,7 +12,9 @@
 const fs = require("fs");
 const path = require("path").resolve(process.argv[2] || __dirname);  // resolved: the i18n/core requires below need an absolute path
 const html = fs.readFileSync(path + "/index.html", "utf8");
-const js = fs.readFileSync(path + "/js/app.js", "utf8");
+/* js/dashboard.js (the Dashboard's nine cards) is part of the app shell and uses the same globals, so every
+   check that reads "app.js" reads it too. */
+const js = fs.readFileSync(path + "/js/app.js", "utf8") + "\n" + fs.readFileSync(path + "/js/dashboard.js", "utf8");
 const sbjs = fs.readFileSync(path + "/js/supabase-client.js", "utf8");
 const i18njs = fs.readFileSync(path + "/js/i18n.js", "utf8");
 const corejs = fs.readFileSync(path + "/js/core.js", "utf8");

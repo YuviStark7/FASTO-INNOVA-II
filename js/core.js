@@ -518,6 +518,211 @@ function productFiltersActive(f) {
   return (fl.kind ? 1 : 0) + ((fl.status !== undefined && fl.status !== "open") ? 1 : 0) + (fl.category ? 1 : 0);
 }
 
+/* ---------- Dashboard builders (the farmer's home screen) ----------
+   Pure functions: they take plain data (see dashInput in js/dashboard.js) and return
+   what each card shows. All times are milliseconds. Nothing here touches the page. */
+var DASH_SOON_DAYS = 60;
+// Messages from buyers that arrived after the farmer last opened that thread.
+function dashUnread(c) {
+  var seen = (c && c.seenAt) || 0;
+  return ((c && c.messages) || []).filter(function (m) { return m.role === "buyer" && m.ts > seen; }).length;
+}
+function dashLastMessage(c) {
+  var ms = (c && c.messages) || [];
+  return ms.length ? ms.reduce(function (a, b) { return b.ts >= a.ts ? b : a; }) : null;
+}
+// "expired", "soon" (within 60 days) or null. expires_on is a plain date, YYYY-MM-DD.
+function docExpiryState(doc, now) {
+  if (!doc || !doc.expires_on) return null;
+  var t = Date.parse(String(doc.expires_on).slice(0, 10) + "T23:59:59");
+  if (!isFinite(t)) return null;
+  if (t < now) return "expired";
+  return t - now <= DASH_SOON_DAYS * 86400000 ? "soon" : null;
+}
+function dashProductName(products, id) {
+  for (var i = 0; i < (products || []).length; i++) if (products[i].id === id) return products[i].name;
+  return "";
+}
+
+/* A: what needs the farmer right now, most urgent first. Each item says where to go. */
+function buildAttention(d) {
+  var items = [], clients = d.clients || [], products = d.products || [], now = d.now || Date.now();
+  var unreadThreads = clients.filter(function (c) { return dashUnread(c) > 0; });
+  if (unreadThreads.length) {
+    var total = unreadThreads.reduce(function (n, c) { return n + dashUnread(c); }, 0);
+    var newest = unreadThreads.slice().sort(function (a, b) { return (dashLastMessage(b).ts) - (dashLastMessage(a).ts); })[0];
+    items.push({ k: "unread", n: total, go: { to: "client", id: newest.id } });
+  }
+  var waiting = clients.filter(function (c) { var m = dashLastMessage(c); return m && m.role === "buyer" && dashUnread(c) === 0; });
+  if (waiting.length) items.push({ k: "awaiting", n: waiting.length, go: { to: "client", id: waiting[0].id } });
+  var live = products.filter(function (p) { return p.status !== "archived"; });
+  live.forEach(function (p) {
+    if (p.status !== "draft") return;
+    var rm = productRoadmap(p, (d.docCounts || {})[p.id] || 0);
+    if (rm.complete) items.push({ k: "ready", name: p.name, go: { to: "shop", id: p.id } });
+  });
+  live.forEach(function (p) {
+    if (p.status !== "draft") return;
+    var rm = productRoadmap(p, (d.docCounts || {})[p.id] || 0);
+    if (!rm.complete && rm.done >= 1 && rm.total - rm.done <= 2) items.push({ k: "almost", name: p.name, done: rm.done, total: rm.total, go: { to: "product", id: p.id } });
+  });
+  var drafts = clients.filter(function (c) { return c.status === "draft"; });
+  if (drafts.length) items.push({ k: "drafts", n: drafts.length, go: { to: "client", id: drafts[0].id } });
+  var docsBy = d.docs || {};
+  Object.keys(docsBy).forEach(function (pid) {
+    var p = products.filter(function (x) { return x.id === pid; })[0];
+    if (!p || p.status === "archived") return;
+    docsBy[pid].forEach(function (doc) {
+      var st = docExpiryState(doc, now);
+      if (st) items.push({ k: st === "expired" ? "expired" : "soon", name: p.name, file: doc.file_name, date: String(doc.expires_on).slice(0, 10), go: { to: "product", id: pid, tab: "documents" } });
+    });
+  });
+  // expired documents jump the queue: they can block a sale
+  items.sort(function (a, b) { return (a.k === "expired" ? 0 : 1) - (b.k === "expired" ? 0 : 1); });
+  return items;
+}
+
+/* B: the shop in numbers. Completeness is the average roadmap percentage of products that are not archived. */
+function buildShopTiles(d) {
+  var products = d.products || [], t = { live: 0, draft: 0, archived: 0, ready: 0, avgPct: 0 }, sum = 0, n = 0;
+  products.forEach(function (p) {
+    if (p.status === "archived") { t.archived++; return; }
+    if (p.status === "active") t.live++; else t.draft++;
+    var rm = productRoadmap(p, (d.docCounts || {})[p.id] || 0);
+    sum += rm.pct; n++;
+    if (p.status === "draft" && rm.complete) t.ready++;
+  });
+  t.avgPct = n ? Math.round(sum / n) : 0;
+  t.total = t.live + t.draft + t.archived;
+  return t;
+}
+
+/* C: the funnel from first conversation to a buyer answering. */
+function buildPipeline(d) {
+  var chats = d.chats || [], clients = d.clients || [];
+  var mine = clients.filter(function (c) { return c.initiatedBy !== "buyer"; });
+  var steps = [
+    { k: "chats", n: chats.filter(function (c) { return c.hasWork; }).length },
+    { k: "matched", n: chats.filter(function (c) { return c.matched; }).length },
+    { k: "sent", n: mine.filter(function (c) { return c.status === "sent"; }).length },
+    { k: "replied", n: mine.filter(function (c) { return (c.messages || []).some(function (m) { return m.role === "buyer"; }); }).length }
+  ];
+  var max = Math.max(1, steps.reduce(function (m, s) { return Math.max(m, s.n); }, 0));
+  steps.forEach(function (s) { s.pct = Math.round(s.n * 100 / max); });
+  return { steps: steps, byBuyers: clients.filter(function (c) { return c.initiatedBy === "buyer"; }).length };
+}
+
+/* D: the latest conversations, newest first. */
+function buildConversationPreview(d, limit) {
+  var rows = [];
+  (d.clients || []).forEach(function (c) {
+    var m = dashLastMessage(c);
+    if (!m) return;
+    var what = dashProductName(d.products, c.productId);
+    if (!what) { var ch = (d.chats || []).filter(function (x) { return x.id === c.chatId; })[0]; what = ch ? ch.title : ""; }
+    rows.push({ id: c.id, name: c.name, what: what, text: String(m.text || "").replace(/\s+/g, " ").trim().slice(0, 90), who: m.role, ts: m.ts, seen: !!m.readAt, unread: dashUnread(c) > 0 });
+  });
+  rows.sort(function (a, b) { return b.ts - a.ts; });
+  return rows.slice(0, limit || 3);
+}
+
+/* E: the best matches across everything the farmer sells, one row per buyer.
+   subjects: [{ name, rows: [{id, name, type, zone, distance_km, score}] }] */
+function buildBestBuyers(subjects, limit) {
+  var best = {};
+  (subjects || []).forEach(function (s) {
+    (s.rows || []).forEach(function (r) {
+      if (!best[r.id] || r.score > best[r.id].score) best[r.id] = { id: r.id, name: r.name, type: r.type, zone: r.zone, distance_km: r.distance_km, score: r.score, forName: s.name };
+    });
+  });
+  return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) { return b.score - a.score; }).slice(0, limit || 3);
+}
+
+/* F: a 12-month strip per fresh product, plus what is in season now. */
+function buildMonthStrip(d) {
+  var rows = [], nowNames = [], month = d.month || (new Date().getMonth() + 1);
+  (d.chats || []).forEach(function (c) {
+    var months = c.months || [];
+    if (!months.length || !(c.items || []).length) return;
+    var flags = []; for (var m = 1; m <= 12; m++) flags.push(months.indexOf(m) !== -1);
+    (c.items || []).forEach(function (name) {
+      rows.push({ name: name, flags: flags });
+      if (flags[month - 1] && nowNames.indexOf(name) === -1) nowNames.push(name);
+    });
+  });
+  return { rows: rows.slice(0, 5), now: nowNames, month: month };
+}
+
+/* G: for each thing you sell, how many good-fit businesses are near and how many you have already written to.
+   subjects: [{ name, chatId, rows: [{id, score, distance_km}] }] */
+/* "Good fit" = score 60 or more. Measured on the real buyer list: unrelated business types still reach about 40
+   on distance and confidence alone, so a lower bar would call nearly every business a good fit. */
+function buildGaps(subjects, clients, maxKm, minScore) {
+  var km = maxKm || 10, min = minScore || 60;
+  return (subjects || []).map(function (s) {
+    var fit = (s.rows || []).filter(function (r) { var dk = Number(r.distance_km); return r.score >= min && isFinite(dk) && dk <= km; });
+    var ids = {}; (clients || []).forEach(function (c) { if (c.initiatedBy !== "buyer" && c.chatId && c.chatId === s.chatId) ids[c.buyerId] = true; });
+    var contacted = fit.filter(function (r) { return ids[r.id]; }).length;
+    return { name: s.name, fit: fit.length, contacted: contacted, km: km };
+  }).filter(function (g) { return g.fit > 0; });
+}
+
+/* H: interest in launched products. views: { productId: ["2026-10-02", ...] } (one entry = one buyer on one day). */
+function buildInterest(d) {
+  var now = d.now || Date.now(), cut = now - 30 * 86400000, views = d.views || {}, clients = d.clients || [];
+  return (d.products || []).filter(function (p) { return p.status === "active"; }).map(function (p) {
+    var v = views[p.id] || [];
+    return { id: p.id, name: p.name, total: v.length, last30: v.filter(function (x) { var t = Date.parse(x + "T12:00:00"); return isFinite(t) && t >= cut; }).length,
+      contacts: clients.filter(function (c) { return c.productId === p.id; }).length };
+  });
+}
+
+/* I: a merged, newest-first activity list. */
+function buildTimeline(d, limit) {
+  var ev = [], products = d.products || [], now = d.now || Date.now();
+  products.forEach(function (p) {
+    var t = Date.parse(p.created_at); if (isFinite(t)) ev.push({ k: "created", ts: t, name: p.name });
+  });
+  (d.events || []).forEach(function (e) {
+    var t = Date.parse(e.created_at); if (isFinite(t)) ev.push({ k: e.kind, ts: t, name: dashProductName(products, e.product_id) });
+  });
+  var docs = d.docs || {};
+  Object.keys(docs).forEach(function (pid) {
+    docs[pid].forEach(function (doc) { var t = Date.parse(doc.created_at); if (isFinite(t)) ev.push({ k: "doc", ts: t, name: dashProductName(products, pid), file: doc.file_name }); });
+  });
+  (d.clients || []).forEach(function (c) {
+    if (c.initiatedBy === "buyer" && isFinite(c.ts)) ev.push({ k: "inquiry", ts: c.ts, buyer: c.name });
+    (c.messages || []).forEach(function (m) {
+      if (m.role === "buyer") ev.push({ k: "buyerMsg", ts: m.ts, buyer: c.name });
+      else if (m.readAt) { var t = Date.parse(m.readAt); if (isFinite(t)) ev.push({ k: "seen", ts: t, buyer: c.name }); }
+    });
+  });
+  return ev.filter(function (e) { return isFinite(e.ts) && e.ts <= now + 60000; }).sort(function (a, b) { return b.ts - a.ts; }).slice(0, limit || 8);
+}
+
+/* J: documents that need a look. */
+function buildDocHealth(d) {
+  var now = d.now || Date.now(), out = { optional: [], expiring: [], noDocs: [] };
+  (d.products || []).forEach(function (p) {
+    if (p.status === "archived") return;
+    var det = p.details || {}, got = det.docs_done || [];
+    (det.suggested_documents || []).forEach(function (t) { if (got.indexOf(t) === -1) out.optional.push({ id: p.id, name: p.name, doc: t }); });
+    var list = (d.docs || {})[p.id] || [];
+    if (!list.length && ((d.docCounts || {})[p.id] || 0) === 0 && (productHasSheetContent(p))) out.noDocs.push({ id: p.id, name: p.name });
+    list.forEach(function (doc) {
+      var st = docExpiryState(doc, now);
+      if (st) out.expiring.push({ id: p.id, name: p.name, file: doc.file_name, state: st, date: String(doc.expires_on).slice(0, 10) });
+    });
+  });
+  out.expiring.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  out.ok = !out.optional.length && !out.expiring.length && !out.noDocs.length;
+  return out;
+}
+// Has the sheet anything in it yet (so "no documents" is worth saying)?
+function productHasSheetContent(p) {
+  return !!p && (Object.keys(p.details || {}).filter(function (k) { return k !== "suggested"; }).length > 0 || !!p.ai_category);
+}
+
 /* ---------- "My products" list filters (ROADMAP item 32 pass E) ----------
    status filter: "open" = drafts and active (the default; archived are tucked
    away), "all", or one status. kind and category "" mean any. */
@@ -689,7 +894,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     productRoadmap: productRoadmap, groupChatRail: groupChatRail,
-    sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
+    dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildPipeline: buildPipeline, buildConversationPreview: buildConversationPreview, buildBestBuyers: buildBestBuyers, buildMonthStrip: buildMonthStrip, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };

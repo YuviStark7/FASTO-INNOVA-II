@@ -46,6 +46,8 @@ let state = {
   contactProductId: null,   // the launched product whose Contact box is open
   productFilter: { kind: "", status: "open", category: "" },
   productSort: "new",     // My products order: "new" | "old" | "az"
+  productViews: {},       // dashboard: { productId: ["2026-10-02", ...] }, counts only (no viewer)
+  productEvents: [],      // dashboard: launched / withdrawn / archived / restored, newest first
   offerFeed: [],        // what a buyer can browse: published offers
   offerFilter: { category: "", maxKm: "", month: "" },
   contactOfferId: null, // the offer whose Contact box is open
@@ -511,6 +513,7 @@ async function loadFarmerData(uid) {
     return { id: o.id, buyerId: o.buyer_id, chatId: o.chat_id, name: b.name || o.buyer_id, type: b.type || "", zone: b.zone || "",
       message_it: o.message_it || "", message_en: o.message_en || "", flagged: o.flagged, status: o.status,
       initiatedBy: o.initiated_by === "buyer" ? "buyer" : "farmer", offerId: o.offer_id || null, productId: o.product_id || null, summary: o.farmer_summary || null,
+      seenAt: o.farmer_seen_at ? new Date(o.farmer_seen_at).getTime() : null,
       ts: new Date(o.created_at).getTime(), extra: [], messages: [] };
   });
   try {
@@ -1183,6 +1186,7 @@ async function attachOne(chat, file, u) {
     chat.docs.push(rec.data); loadThumb(chat, rec.data);
     if (u.stage) { chat.staged = chat.staged || []; chat.staged.push(rec.data.id); }
     state.productDocCounts[product.id] = (state.productDocCounts[product.id] || 0) + 1;
+    (state.productDocs[product.id] = state.productDocs[product.id] || []).push(rec.data);   // the Dashboard reads this list
     chat.uploads = (chat.uploads || []).filter(x => x !== u);
     toast(T("attach.added", { name: file.name }));
     savedDoc = rec.data;
@@ -1238,7 +1242,10 @@ async function removeAttachment(id) {
     chat.docs = chat.docs.filter(x => x.id !== id);
     chat.staged = (chat.staged || []).filter(x => x !== id);
     syncSheetComplete(chat, false);
-    if (chat.product) state.productDocCounts[chat.product.id] = Math.max(0, (state.productDocCounts[chat.product.id] || 1) - 1);
+    if (chat.product) {
+      state.productDocCounts[chat.product.id] = Math.max(0, (state.productDocCounts[chat.product.id] || 1) - 1);
+      state.productDocs[chat.product.id] = (state.productDocs[chat.product.id] || []).filter(x => x.id !== id);
+    }
     DataStore.removeProductFile(d.storage_path).catch(() => {}); // the record is the truth; a stray file is invisible and private
     toast(T("attach.removed", { name: d.file_name }));
   } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") }));}
@@ -1479,12 +1486,46 @@ function fileRowHTML(o) {
   const rm = o.kind === "saved" ? `onclick="removeAttachment('${esc(o.id)}')"` : o.kind === "failed" ? `onclick="dismissUpload('${esc(o.key)}')"` : "disabled";
   const name = o.kind === "saved" ? `<button type="button" class="pp-file-name link" onclick="openProductDoc('${esc(o.id)}')">${esc(o.name)}</button>` : `<div class="pp-file-name">${esc(o.name)}</div>`;
   return `<li class="pp-file ${o.kind}"><span class="pp-file-ic">${railIcon("file-text", 18)}</span><div class="pp-file-main">${name}<div class="pp-file-meta">${esc(o.meta)}</div>${bar}</div>` +
-    `<div class="pp-file-actions">${status}<button type="button" class="pp-ico-btn" ${rm} aria-label="${escAttr(T("attach.remove", { name: o.name }))}">${railIcon("x", 16)}</button></div></li>`;
+    `<div class="pp-file-actions">${status}<button type="button" class="pp-ico-btn" ${rm} aria-label="${escAttr(T("attach.remove", { name: o.name }))}">${railIcon("x", 16)}</button></div>${o.extra || ""}</li>`;
+}
+/* What kind of document a saved file is, and (for a certificate) the day it stops being valid. The Dashboard warns about
+   certificates that have expired or will within 60 days. */
+const DOC_KINDS = ["label", "nutrition", "certificate", "datasheet", "other"];
+function docControlsHTML(d) {
+  const kind = DOC_KINDS.indexOf(d.doc_kind) !== -1 ? d.doc_kind : "other";
+  const opts = DOC_KINDS.map(k => `<option value="${k}"${k === kind ? " selected" : ""}>${esc(T("dk." + k))}</option>`).join("");
+  return `<div class="pp-file-ctl"><label class="pp-ctl"><span>${esc(T("prodpanel.docType"))}</span><select onchange="setDocKind('${esc(d.id)}', this.value)" aria-label="${escAttr(T("prodpanel.docTypeFor", { name: d.file_name }))}">${opts}</select></label>` +
+    (kind === "certificate" ? `<label class="pp-ctl"><span>${esc(T("prodpanel.expires"))}</span><input type="date" value="${escAttr(d.expires_on ? String(d.expires_on).slice(0, 10) : "")}" onchange="setDocExpiry('${esc(d.id)}', this.value)" aria-label="${escAttr(T("prodpanel.expiresFor", { name: d.file_name }))}"></label>` : "") + `</div>`;
+}
+// Keeps the open chat's list and the Dashboard's list (state.productDocs) in step with what was just saved.
+function patchDocLocally(id, patch) {
+  const apply = d => { if (d && d.id === id) Object.assign(d, patch); };
+  state.chats.forEach(c => (c.docs || []).forEach(apply));
+  Object.keys(state.productDocs || {}).forEach(pid => (state.productDocs[pid] || []).forEach(apply));
+}
+async function saveDocPatch(id, patch) {
+  try {
+    const r = await DataStore.updateProductDocument(id, patch);
+    if (r.error) throw r.error;
+    patchDocLocally(id, patch);
+    return true;
+  } catch (e) { saveFailedWithOwnMessage("save.file", e, T("save.couldnt", { what: T("save.file") })); return false; }
+}
+async function setDocKind(id, kind) {
+  if (DOC_KINDS.indexOf(kind) === -1) return;
+  const patch = { doc_kind: kind };
+  if (kind !== "certificate") patch.expires_on = null;   // only a certificate has a valid-until date
+  if (await saveDocPatch(id, patch)) { renderProductPanel(); if (state.screen === "dashboard") renderDashboard(); }
+  else renderProductPanel();
+}
+async function setDocExpiry(id, value) {
+  const v = /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null;
+  if (await saveDocPatch(id, { expires_on: v })) { renderProductPanel(); if (state.screen === "dashboard") renderDashboard(); }
 }
 function documentsPaneHTML(chat) {
   const up = (chat.uploads || []).map(u => fileRowHTML({ kind: u.status === "failed" ? "failed" : "uploading", name: u.name, key: u.key,
     meta: productFileLabel(u.mime) + " · " + formatBytes(u.size) + (u.status === "failed" ? " · " + T("attach.failedShort") : "") }));
-  const saved = (chat.docs || []).map(d => fileRowHTML({ kind: "saved", name: d.file_name, id: d.id, meta: productFileLabel(d.mime_type) + " · " + formatBytes(d.size_bytes) }));
+  const saved = (chat.docs || []).map(d => fileRowHTML({ kind: "saved", name: d.file_name, id: d.id, meta: productFileLabel(d.mime_type) + " · " + formatBytes(d.size_bytes), extra: docControlsHTML(d) }));
   return `<div class="pp-drop" id="ppDrop"><span class="pp-drop-icon">${railIcon("cloud-upload", 26)}</span><strong>${esc(T("prodpanel.dropTitle"))}</strong><small>${esc(T("prodpanel.dropHint"))}</small>
     <button type="button" class="pp-browse" id="ppBrowse" onclick="pickAnyFile()">${esc(T("prodpanel.browse"))}</button></div>
     ${up.length + saved.length ? `<ul class="pp-files">${up.join("")}${saved.join("")}</ul>` : `<p class="pp-empty">${esc(T("prodpanel.emptyDocs"))}</p>`}`;
@@ -1685,7 +1726,23 @@ async function loadProducts() {
     ((dr && dr.data) || []).forEach(d => { counts[d.product_id] = (counts[d.product_id] || 0) + 1; (docs[d.product_id] = docs[d.product_id] || []).push(d); });
     state.productDocCounts = counts; state.productDocs = docs;
   } catch (e) { noteSaveFailure("save.product", e); }
+  await loadDashboardExtras();
   if (state.screen === "products") renderProducts();
+  if (state.screen === "dashboard") renderDashboard();
+}
+/* Interest counts and the activity log for the dashboard. They are extras: a failure here only leaves those two cards empty. */
+async function loadDashboardExtras() {
+  try {
+    const live = (state.products || []).filter(p => p.status === "active").map(p => p.id);
+    const views = {};
+    if (live.length) {
+      const vr = await DataStore.listMyProductViews(live);
+      ((vr && !vr.error && vr.data) || []).forEach(v => { (views[v.product_id] = views[v.product_id] || []).push(v.viewed_on); });
+    }
+    state.productViews = views;
+    const er = await DataStore.listMyProductEvents(state.farmerId);
+    state.productEvents = (er && !er.error && er.data) || [];
+  } catch (e) { console.warn("couldn't load dashboard extras", e); }
 }
 function productStatusLabel(st) {
   return st === "active" ? T("products.statusActive") : st === "archived" ? T("products.statusArchived") : T("products.statusDraft");
@@ -2772,6 +2829,7 @@ async function adjustPrice(cat) {
 function renderDashboard() {
   renderBell();
   if (!$("dashboardScreen")) return;
+  if (typeof renderDashHome === "function") renderDashHome();   // the nine cards (js/dashboard.js)
   const all = state.chats.filter(c => c.profile).sort((a, b) => b.ts - a.ts);
   const q = normalizeQuery(state.search);
   const rows = q ? filterResearch(all, q) : all;
@@ -3146,6 +3204,18 @@ function renderChats() {
 }
 function selectClient(id) { state.activeClientId = id; renderChats(); }
 
+/* The Dashboard's unread count: remember the newest buyer message the farmer has now had on screen. The time written is
+   that message's own time (never this computer's clock), so a wrong clock can not hide a real reply. A failed save is
+   kept quiet on purpose: the worst case is that a dot comes back on the next visit. */
+function markClientSeen(c) {
+  if (!c || state.screen !== "clients") return;
+  const newest = (c.messages || []).reduce((n, m) => (m.role === "buyer" && m.ts > n ? m.ts : n), 0);
+  if (!newest || newest <= (c.seenAt || 0)) return;
+  c.seenAt = newest;
+  if (isLocalId(c.id)) return;
+  Promise.resolve(DataStore.updateOutreach(c.id, { farmer_seen_at: new Date(newest).toISOString() })).catch(e => console.warn("couldn't save the read mark", e));
+}
+
 function renderThread() {
   const c = state.clients.find(x => x.id === state.activeClientId);
   const pane = $("threadPane");
@@ -3187,6 +3257,7 @@ function renderThread() {
   $("clientSendBtn").onclick = () => sendClientNote(c.id);
   $("clientLogisticsBtn").onclick = () => openLogistics(c.id);
   $("clientInput").addEventListener("keydown", e => { if (e.key === "Enter") sendClientNote(c.id); });
+  markClientSeen(c);
 }
 async function sendClientNote(id) {
   // A real, user-authored follow-up, never a fabricated buyer reply. Saved
@@ -5113,8 +5184,18 @@ function renderBuyerProducts() {
   el.innerHTML = (feed.length ? `<div class="offers-list">${feed.map(buyerProductCardHTML).join("")}</div>`
     : `<div class="empty-state">${esc(T("buyer.productsEmpty"))}</div>`) + `<p class="buyer-lead">${esc(T("buyer.productsFoot"))}</p>`;
 }
+/* A buyer opening a product sheet counts as one look for that day. The farmer only ever sees a number (Dashboard,
+   "Buyer interest"): the database stores who looked but nobody can read it. Once per product per visit; a repeat on the same day
+   is refused by the unique index, which is fine. */
+const viewLogged = new Set();
+function logProductView(id) {
+  if (viewLogged.has(id)) return;
+  viewLogged.add(id);
+  Promise.resolve(DataStore.logProductView(id)).catch(e => console.warn("couldn't log the view", e));
+}
 async function toggleFeedProduct(id) {
   state.openFeedProductId = state.openFeedProductId === id ? null : id;
+  if (state.openFeedProductId === id) logProductView(id);
   renderBuyerProducts();
   if (state.openFeedProductId === id && !state.feedDocs[id]) {
     try {

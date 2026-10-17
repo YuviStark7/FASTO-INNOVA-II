@@ -188,7 +188,7 @@ function loadApp(root) {
      that declares them, so evaluating these files separately would leave
      app.js unable to see DataStore or DB. */
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
-  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/icons.js", "js/app.js"];
+  const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/icons.js", "js/dashboard.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
 ;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, openRailMenu, closeRailMenu, railMenuKey, moveChatToProject, newProjectFor, createProject, renameProject, togglePinProject, deleteProject, toggleProjectOpen, toggleRailMore, groupChatRail, chatRowHTML, mapProject, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
@@ -214,7 +214,10 @@ function loadApp(root) {
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
   launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
-  scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot };`;
+  scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
+  buildAttention, buildShopTiles, buildPipeline, buildConversationPreview, buildBestBuyers, buildMonthStrip, buildGaps, buildInterest, buildTimeline, buildDocHealth,
+  docExpiryState, dashUnread, dashInput, dashSubjects, dashGo, renderDashHome, dashAttentionHTML, dashDocsHTML, timelineText, attentionText,
+  markClientSeen, logProductView, viewLogged, setDocKind, setDocExpiry, docControlsHTML, DOC_KINDS, loadDashboardExtras, patchDocLocally };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
   return { app: sandbox.__t, sb, els, logs, storage: sandbox.localStorage, doc: sandbox.document, box: sandbox };
 }
@@ -3740,6 +3743,196 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("live: a connected globe with a green dot, the model name, and the pill marked live", els.modeIcon.innerHTML.includes("lucide-globe") && els.modeIcon.innerHTML.includes("mode-dot") && /^Live · /.test(els.modePill.textContent) && els.modeItem.has("live"));
     st.offline = savedOff; a.paintModePill();
     st.products = saved.products; st.productFilter = saved.filter; st.productSort = saved.sort; st.search = saved.search; st.productDocCounts = saved.counts; st.productDocs = saved.docs;
+  }
+
+  /* ============================================================
+     Dashboard home (2026-10-17): the nine cards, the unread mark, view counts, document type and expiry
+     ============================================================ */
+  console.log("== Dashboard home ==");
+  {
+    const a = app, st = a.state, DAY = 86400000, NOW = Date.parse("2026-10-17T12:00:00Z");
+    const sheet = { ingredients: ["flour"], allergens: ["gluten"], shelf_life_days: 3, storage: "cool", pack_sizes: ["6"], min_order: "5", suggested: [] };
+    const nutr = { energy_kcal: 420, fat_g: 20, saturated_fat_g: 9, carbs_g: 50, sugars_g: 20, protein_g: 6, salt_g: 0.5 };
+    const P = o => Object.assign({ id: "p", name: "X", kind: "packaged", status: "draft", ai_category: "donuts", details: {}, nutrition: {}, created_at: "2026-10-01T10:00:00Z", source_chat_id: "c1" }, o);
+    const ready = P({ id: "p1", name: "Donuts", details: Object.assign({}, sheet, { suggested_documents: ["HACCP plan", "Bio certificate"], docs_done: ["Bio certificate"] }), nutrition: nutr });
+    const live = P({ id: "p2", name: "Biscotti", status: "active", ai_category: "biscuits", details: sheet, nutrition: nutr, source_chat_id: "c2" });
+    const almost = P({ id: "p3", name: "Brie", ai_category: "soft cheese", details: { ingredients: ["milk"], allergens: ["milk"], shelf_life_days: 20, storage: "fridge", pack_sizes: ["200 g"], min_order: "10", suggested: [] }, source_chat_id: "c3" });
+    const archived = P({ id: "p4", name: "Old jam", status: "archived" });
+    const products = [ready, live, almost, archived];
+    const docCounts = { p1: 3, p2: 1, p3: 0 };
+    const docs = { p1: [{ id: "d1", file_name: "HACCP.pdf", doc_kind: "certificate", expires_on: "2026-10-01", created_at: "2026-10-12T09:00:00Z" },
+                        { id: "d2", file_name: "Bio.pdf", doc_kind: "certificate", expires_on: "2026-11-20", created_at: "2026-10-05T09:00:00Z" },
+                        { id: "d3", file_name: "Label.png", doc_kind: "label", expires_on: null, created_at: "2026-10-03T09:00:00Z" }],
+                   p2: [{ id: "d4", file_name: "Far.pdf", doc_kind: "certificate", expires_on: "2027-03-01", created_at: "2026-10-04T09:00:00Z" }], p3: [] };
+    const msg = (role, ts, text, readAt) => ({ role, ts, text: text || role + " " + ts, readAt: readAt || null });
+    const clients = [
+      { id: "o1", name: "Bar Uno", status: "sent", initiatedBy: "farmer", chatId: "c1", buyerId: "b1", productId: null, seenAt: NOW - 2 * DAY, ts: NOW - 4 * DAY,
+        messages: [msg("farmer", NOW - 3 * DAY, "Ciao", "2026-10-15T08:00:00Z"), msg("buyer", NOW - 1 * DAY, "Interessato!")] },
+      { id: "o2", name: "Pasticceria Due", status: "sent", initiatedBy: "farmer", chatId: "c1", buyerId: "b2", productId: null, seenAt: NOW - DAY, ts: NOW - 6 * DAY,
+        messages: [msg("farmer", NOW - 5 * DAY, "Buongiorno"), msg("buyer", NOW - 4 * DAY, "Quanto costa?")] },
+      { id: "o3", name: "Deli Tre", status: "draft", initiatedBy: "farmer", chatId: "c1", buyerId: "b3", productId: null, seenAt: null, ts: NOW - 2 * DAY, messages: [] },
+      { id: "o4", name: "Caffè Quattro", status: "sent", initiatedBy: "buyer", chatId: null, buyerId: "b4", productId: "p2", seenAt: null, ts: NOW - DAY / 2,
+        messages: [msg("buyer", NOW - DAY / 2, "Do you deliver?")] }
+    ];
+    const chats = [{ id: "c1", title: "Donuts chat", hasWork: true, matched: true }, { id: "c2", title: "Biscotti chat", hasWork: true, matched: false }, { id: "c9", title: "Empty", hasWork: false, matched: false }];
+    const D = { now: NOW, month: 10, clients, products, docCounts, docs, chats, views: {}, events: [] };
+
+    // ---- A. needs your attention
+    check("a document that ran out jumps to the top, and 'soon' means within 60 days", a.docExpiryState({ expires_on: "2026-10-01" }, NOW) === "expired" && a.docExpiryState({ expires_on: "2026-11-20" }, NOW) === "soon" &&
+      a.docExpiryState({ expires_on: "2027-03-01" }, NOW) === null && a.docExpiryState({ expires_on: "2026-12-10" }, NOW) === "soon" && a.docExpiryState({ expires_on: "2026-12-31" }, NOW) === null &&
+      a.docExpiryState({}, NOW) === null && a.docExpiryState(null, NOW) === null && a.docExpiryState({ expires_on: "not a date" }, NOW) === null);
+    const att = a.buildAttention(D);
+    check("attention lists expired, unread, awaiting, ready, almost, drafts, soon, in that order", att.map(x => x.k).join() === "expired,unread,awaiting,ready,almost,drafts,soon", att.map(x => x.k).join());
+    check("unread counts buyer messages newer than the last time the thread was opened, across threads", att.find(x => x.k === "unread").n === 2 && a.dashUnread(clients[0]) === 1 && a.dashUnread(clients[1]) === 0 && a.dashUnread(clients[2]) === 0);
+    check("unread opens the thread with the newest message; awaiting opens the read one the buyer last wrote in", att.find(x => x.k === "unread").go.id === "o4" && att.find(x => x.k === "awaiting").go.id === "o2");
+    check("a complete draft is 'ready', one missing at most two steps is 'almost', archived products never appear",
+      att.find(x => x.k === "ready").name === "Donuts" && att.find(x => x.k === "almost").name === "Brie" && att.find(x => x.k === "almost").done === 4 && att.find(x => x.k === "almost").total === 6 && !att.some(x => x.name === "Old jam"));
+    check("the expired and soon items point at the Documents tab of their product", att[0].go.to === "product" && att[0].go.tab === "documents" && att[0].file === "HACCP.pdf" && att[0].date === "2026-10-01" && att.find(x => x.k === "soon").file === "Bio.pdf");
+    check("nothing to do gives an empty list", a.buildAttention({ now: NOW, clients: [], products: [], docCounts: {}, docs: {} }).length === 0);
+
+    // ---- B. shop tiles
+    const tiles = a.buildShopTiles(D);
+    check("shop tiles count live, drafts, ready and archived, and average the roadmap over what is not archived", tiles.live === 1 && tiles.draft === 2 && tiles.ready === 1 && tiles.archived === 1 && tiles.total === 4 && tiles.avgPct === 89, JSON.stringify(tiles));
+    check("an empty shop has total 0 and 0%", a.buildShopTiles({ products: [] }).total === 0 && a.buildShopTiles({ products: [] }).avgPct === 0);
+
+    // ---- C. pipeline
+    const pipe = a.buildPipeline(D);
+    check("the pipeline counts chats with work, matched, sent and replied, and shows buyer-started separately", pipe.steps.map(s => s.n).join() === "2,1,2,2" && pipe.byBuyers === 1 && pipe.steps.map(s => s.pct).join() === "100,50,100,100", JSON.stringify(pipe));
+    check("an empty pipeline never divides by zero", a.buildPipeline({}).steps.every(s => s.n === 0 && s.pct === 0));
+
+    // ---- D. conversations
+    const conv = a.buildConversationPreview(D, 3);
+    check("the conversation preview is newest first, skips threads with no messages, and names the product or chat", conv.map(r => r.id).join() === "o4,o1,o2" && conv[0].what === "Biscotti" && conv[1].what === "Donuts chat" && conv[0].unread === true && conv[2].unread === false);
+    const mine = a.buildConversationPreview({ clients: [{ id: "x", name: "Bar", messages: [msg("buyer", 1, "hi"), msg("farmer", 2, "  Thanks\n for   asking ", "2026-10-15T08:00:00Z")] }, { id: "y", name: "Bar2", messages: [msg("farmer", 3, "Sent")] }] }, 3);
+    check("...and shows who wrote last, whether the buyer has opened a message of yours, and tidies the text", conv[0].who === "buyer" && mine[0].id === "y" && mine[0].who === "farmer" && mine[0].seen === false && mine[1].seen === true && mine[1].text === "Thanks for asking");
+
+    // ---- E. best buyers
+    const subj = [{ name: "Donuts", chatId: "c1", rows: [{ id: "b1", name: "Bar Uno", score: 80, distance_km: "3" }, { id: "b2", name: "Pasticceria Due", score: 50, distance_km: 2 }] },
+                  { name: "Zucchine", chatId: "c9", rows: [{ id: "b1", name: "Bar Uno", score: 90, distance_km: "3" }, { id: "b3", name: "Deli Tre", score: 60, distance_km: 4 }] }];
+    const best = a.buildBestBuyers(subj, 2);
+    check("best buyers: one row per business, its highest score, and what it fits best", best.length === 2 && best[0].id === "b1" && best[0].score === 90 && best[0].forName === "Zucchine" && best[1].id === "b3");
+
+    // ---- F. months
+    const mchats = [{ id: "c9", months: [6, 7, 8, 9, 10], items: ["pomodori", "zucchine"] }, { id: "c8", months: [], items: ["x"] }, { id: "c7", months: [3], items: [] }];
+    const mon = a.buildMonthStrip({ chats: mchats, month: 10 });
+    check("the month strip has 12 flags per product, lists what is in season now, and skips chats with no months", mon.rows.length === 2 && mon.rows[0].flags.length === 12 && mon.rows[0].flags[9] === true && mon.rows[0].flags[10] === false && mon.now.join() === "pomodori,zucchine");
+    check("...and says nothing is in season when it is not, and shows at most five products", a.buildMonthStrip({ chats: mchats, month: 2 }).now.length === 0 &&
+      a.buildMonthStrip({ chats: [{ months: [1], items: ["a", "b", "c", "d", "e", "f", "g"] }], month: 1 }).rows.length === 5);
+
+    // ---- G. market gaps
+    const gsub = [{ name: "Donuts", chatId: "c1", rows: [{ id: "b1", score: 80, distance_km: "3" }, { id: "b2", score: 30, distance_km: 2 }, { id: "b3", score: 90, distance_km: 25 }, { id: "b4", score: 70, distance_km: 9 }] },
+                  { name: "Nothing near", chatId: "c2", rows: [{ id: "b5", score: 90, distance_km: 40 }] }];
+    const gaps = a.buildGaps(gsub, [{ initiatedBy: "farmer", chatId: "c1", buyerId: "b1" }, { initiatedBy: "buyer", chatId: "c1", buyerId: "b4" }, { initiatedBy: "farmer", chatId: "c2", buyerId: "b4" }], 10, 40);
+    check("gaps: good-fit buyers within 10 km versus the ones you have written to; far, weak or buyer-started ones do not count", gaps.length === 1 && gaps[0].fit === 2 && gaps[0].contacted === 1 && gaps[0].km === 10 && gaps[0].name === "Donuts", JSON.stringify(gaps));
+
+    check("the default bar for a good fit is a score of 60 within 10 km", a.buildGaps(gsub, []).length === 1 && a.buildGaps(gsub, [])[0].fit === 2 && a.buildGaps([{ name: "x", rows: [{ id: "q", score: 50, distance_km: 1 }] }], []).length === 0);
+
+    // ---- H. interest
+    const intr = a.buildInterest(Object.assign({}, D, { views: { p2: ["2026-10-16", "2026-10-01", "2026-08-01"], p1: ["2026-10-16"] } }));
+    check("interest covers launched products only: looks in the last 30 days, all time, and conversations started", intr.length === 1 && intr[0].name === "Biscotti" && intr[0].last30 === 2 && intr[0].total === 3 && intr[0].contacts === 1, JSON.stringify(intr));
+
+    // ---- I. timeline
+    const events = [{ product_id: "p2", kind: "launched", created_at: "2026-10-16T09:00:00Z" }, { product_id: "p4", kind: "archived", created_at: "2026-10-10T09:00:00Z" }, { product_id: "p2", kind: "withdrawn", created_at: "2027-01-01T09:00:00Z" }];
+    const tl = a.buildTimeline(Object.assign({}, D, { events }), 50);
+    check("the timeline is newest first, skips anything dated in the future, and carries the right kind", tl.every((e, i) => i === 0 || tl[i - 1].ts >= e.ts) && !tl.some(e => e.k === "withdrawn") &&
+      tl.some(e => e.k === "launched" && e.name === "Biscotti") && tl.some(e => e.k === "doc" && e.file === "HACCP.pdf") && tl.some(e => e.k === "buyerMsg" && e.buyer === "Bar Uno") &&
+      tl.some(e => e.k === "seen" && e.buyer === "Bar Uno") && tl.some(e => e.k === "inquiry" && e.buyer === "Caffè Quattro") && tl.some(e => e.k === "created" && e.name === "Donuts"));
+    check("...and respects the limit", a.buildTimeline(Object.assign({}, D, { events }), 3).length === 3);
+
+    // ---- J. document health
+    const dh = a.buildDocHealth(D);
+    check("document health lists optional documents not ticked, expired or expiring files, and products that have no document at all",
+      dh.ok === false && dh.optional.length === 1 && dh.optional[0].doc === "HACCP plan" && dh.expiring.length === 2 && dh.expiring[0].state === "expired" && dh.noDocs.length === 1 && dh.noDocs[0].name === "Brie", JSON.stringify(dh));
+    check("a shop with nothing outstanding is healthy", a.buildDocHealth({ now: NOW, products: [live], docs: { p2: docs.p2 }, docCounts: { p2: 1 } }).ok === true);
+
+    // ---- the page
+    const dash = fakeEl("dashHome"); els.dashHome = dash;
+    const keep = { clients: st.clients, products: st.products, counts: st.productDocCounts, docs: st.productDocs, chats: st.chats, views: st.productViews, events: st.productEvents, screen: st.screen, active: st.activeClientId, farmerId: st.farmerId };
+    st.clients = clients.map(c => Object.assign({}, c)); st.products = products.map(p => Object.assign({}, p)); st.productDocCounts = docCounts; st.productDocs = JSON.parse(JSON.stringify(docs));
+    st.chats = [{ id: "c1", title: "Donuts chat", ts: NOW, profile: null, product: null, phase: "interview" }, { id: "c2", title: "Biscotti chat", ts: NOW, profile: null, product: null, phase: "interview" }];
+    st.productViews = { p2: [new Date().toISOString().slice(0, 10)] }; st.productEvents = [];
+    a.renderDashHome();
+    const html = dash.innerHTML;
+    check("the page draws all ten blocks, each a section named by its own heading", (html.match(/<section class="dash-card/g) || []).length === 10 && ["attention", "shop", "pipeline", "convs", "best", "month", "gaps", "interest", "docs", "timeline"].every(k => html.includes('aria-labelledby="dh-' + k + '"') && html.includes('id="dh-' + k + '"')));
+    check("every pressable row is a real button, never a clickable div", !/<(div|span|li|p)\b[^>]*onclick=/.test(html) && /<button type="button" class="dash-row"/.test(html));
+    check("the attention rows say it in words (English)", html.includes("Unread messages from buyers: 2") && html.includes("Donuts is ready to launch") && html.includes("Brie is nearly ready (4 of 6 steps)") && html.includes("HACCP.pdf (Donuts) expired on"));
+    check("the shop card shows the tiles and the archived note", html.includes("<b>89%</b>") && html.includes("1 archived, not counted above"));
+    check("the pipeline card shows the four steps and the buyer-started count", html.includes("Chats with details") && html.includes("Buyers who replied") && html.includes("Started by buyers: 1"));
+    check("a buyer-started conversation is marked unread by a dot, and the row opens that conversation by its id", /dashGo\('client','o4',''\)/.test(html) && html.includes("dash-dot"));
+    check("the interest card says only counts, never who", html.includes("Only counts. You never see who looked."));
+    st.products[1].name = '<img src=x onerror=alert(1)>'; a.renderDashHome();
+    check("a product name typed as markup is escaped everywhere on the dashboard", !dash.innerHTML.includes("<img src=x") && dash.innerHTML.includes("&lt;img src=x"));
+    st.products[1].name = "Biscotti";
+
+    // Italian
+    a.setLangValue("it"); a.renderDashHome();
+    check("the dashboard follows the language switch", dash.innerHTML.includes("Messaggi non letti dagli acquirenti: 2") && dash.innerHTML.includes("Il tuo negozio") && !dash.innerHTML.includes("Needs your attention"));
+    a.setLangValue("en");
+    const enKeys = Object.keys(a.STRINGS.en).filter(k => /^(dh|dk)\./.test(k)), itKeys = Object.keys(a.STRINGS.it).filter(k => /^(dh|dk)\./.test(k));
+    check("every dashboard string exists in both languages", enKeys.length > 60 && enKeys.length === itKeys.length && enKeys.every(k => a.STRINGS.it[k] && a.STRINGS.it[k] !== "") && ["prodpanel.docType", "prodpanel.expires", "prodpanel.docTypeFor", "prodpanel.expiresFor"].every(k => a.STRINGS.en[k] && a.STRINGS.it[k]));
+
+    // an empty account says so, and does not pretend
+    st.clients = []; st.products = []; st.productDocCounts = {}; st.productDocs = {}; st.chats = []; st.productViews = {};
+    a.renderDashHome();
+    check("with nothing yet every card shows a plain empty message", dash.innerHTML.includes("Nothing needs you right now") && dash.innerHTML.includes("You have no products yet") && dash.innerHTML.includes("Start a chat with Fasto-AI") && dash.innerHTML.includes("No conversations yet"));
+    // while the account is still loading it says nothing rather than something false
+    els.app = fakeEl("app"); els.app.classList.add("booting"); a.renderDashHome();
+    check("while the account loads the cards are left empty (an empty list would be a false 'nothing yet')", dash.innerHTML === ""); els.app = undefined;
+
+    // ---- where the rows lead
+    st.clients = clients.map(c => Object.assign({}, c)); st.products = products.map(p => Object.assign({}, p)); st.productDocCounts = docCounts; st.productDocs = JSON.parse(JSON.stringify(docs));
+    st.chats = [{ id: "c1", title: "Donuts chat", ts: NOW, profile: null, product: null, phase: "interview", messages: [], apiMessages: [] }];
+    await a.dashGo("client", "o2");
+    check("a conversation row opens that buyer in Clients", st.activeClientId === "o2" && st.screen === "clients");
+    await a.dashGo("shop");
+    check("a shop row opens My shop", st.screen === "products");
+    await a.dashGo("product", "p1", "documents");
+    check("a document row opens the product's own chat with its Documents tab showing", st.screen === "assistant" && st.activeChatId === "c1" && st.chats[0].panelTab === "documents");
+
+    // ---- the unread mark
+    st.screen = "clients";
+    const rd = JSON.parse(JSON.stringify(clients[0])); rd.id = "o1"; st.clients = [rd];
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    a.markClientSeen(rd); await Promise.resolve();
+    const upd = sb.chains.find(c => c.table === "outreach");
+    check("opening a thread records the newest buyer message's own time as the seen time (not the clock)", upd && upd.ops[0].op === "update" && upd.ops[0].args[0].farmer_seen_at === new Date(NOW - DAY).toISOString() && upd.ops.some(o => o.op === "eq" && o.args[1] === "o1") && rd.seenAt === NOW - DAY);
+    sb.chains.length = 0; a.markClientSeen(rd);
+    check("...and does nothing again until a newer buyer message arrives", sb.chains.length === 0);
+    rd.messages.push({ role: "buyer", ts: NOW, text: "ping" }); a.markClientSeen(rd);
+    check("a newer buyer message is marked the next time", sb.chains.length === 1 && rd.seenAt === NOW);
+    st.screen = "dashboard"; rd.messages.push({ role: "buyer", ts: NOW + 1000, text: "again" }); sb.chains.length = 0; a.markClientSeen(rd);
+    check("the mark is only written while the Clients screen is showing", sb.chains.length === 0 && rd.seenAt === NOW);
+    st.screen = "clients"; const loc = { id: "local-1", seenAt: null, messages: [{ role: "buyer", ts: 5 }] }; a.markClientSeen(loc);
+    check("a thread that only exists on this device is never sent to the database", sb.chains.length === 0 && loc.seenAt === 5);
+
+    // ---- buyer views
+    sb.reset(); sb.router = () => ({ data: null, error: null });
+    a.viewLogged.clear(); a.logProductView("p2"); a.logProductView("p2"); a.logProductView("p3");
+    const vchains = sb.chains.filter(c => c.table === "product_views");
+    check("opening a product sheet logs one look per product per visit, and nothing else is stored", vchains.length === 2 && vchains[0].ops[0].op === "insert" && vchains[0].ops[0].args[0].product_id === "p2" && Object.keys(vchains[0].ops[0].args[0]).join() === "product_id");
+    const rv = await app.DataStore.listMyProductViews(["p2"]);
+    const vq = sb.last();
+    check("the farmer's count reads only the day, never who viewed (viewer_id is not selected)", vq.table === "product_views" && vq.ops[0].op === "select" && vq.ops[0].args[0] === "product_id, viewed_on" && !/viewer/.test(JSON.stringify(vq.ops)));
+
+    // ---- document type and expiry
+    st.chats = [{ id: "c1", title: "Donuts chat", ts: NOW, product: st.products[0], docs: st.productDocs.p1, messages: [], apiMessages: [], panelOpen: true }]; st.activeChatId = "c1";
+    st.productDocs.p1 = st.chats[0].docs;
+    const ctl = a.docControlsHTML(st.chats[0].docs[2]);
+    check("a saved file shows a Type menu with the five kinds, and a date only for a certificate", ["label", "nutrition", "certificate", "datasheet", "other"].every(k => ctl.includes('value="' + k + '"')) && ctl.includes('<option value="label" selected>') && ctl.indexOf('type="date"') === -1 &&
+      a.docControlsHTML(st.chats[0].docs[0]).includes('type="date" value="2026-10-01"'));
+    sb.reset(); sb.router = ch => ({ data: Object.assign({ id: "d3" }, ch.ops[0].args[0]), error: null });
+    await a.setDocKind("d3", "certificate");
+    const u1 = sb.chains.find(c => c.table === "product_documents");
+    check("changing the type saves it and updates the list the dashboard reads", u1 && u1.ops[0].op === "update" && u1.ops[0].args[0].doc_kind === "certificate" && st.productDocs.p1[2].doc_kind === "certificate" && !("expires_on" in u1.ops[0].args[0]));
+    sb.chains.length = 0; await a.setDocExpiry("d3", "2027-01-31");
+    check("a certificate's valid-until date is saved as a plain date", sb.chains[0].ops[0].args[0].expires_on === "2027-01-31" && st.productDocs.p1[2].expires_on === "2027-01-31");
+    sb.chains.length = 0; await a.setDocKind("d3", "other");
+    check("turning it back into another type clears the date", sb.chains[0].ops[0].args[0].expires_on === null && st.productDocs.p1[2].expires_on === null && st.productDocs.p1[2].doc_kind === "other");
+    sb.chains.length = 0; await a.setDocKind("d3", "hacked"); await a.setDocExpiry("d3", "tomorrow");
+    check("an unknown type is ignored, and a date that is not a date is saved as no date", sb.chains.length === 1 && sb.chains[0].ops[0].args[0].expires_on === null);
+
+    st.clients = keep.clients; st.products = keep.products; st.productDocCounts = keep.counts; st.productDocs = keep.docs; st.chats = keep.chats; st.productViews = keep.views; st.productEvents = keep.events; st.screen = keep.screen; st.activeClientId = keep.active; st.farmerId = keep.farmerId;
+    delete els.dashHome;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

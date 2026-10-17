@@ -127,7 +127,17 @@ const DataStore = {
   linkProductToChat(productId, chatId) { return sb.from("product_chat_links").insert({ product_id: productId, chat_id: chatId }); },
   linkedProductForChat(chatId) { return sb.from("product_chat_links").select("product_id, farmer_products(*)").eq("chat_id", chatId).limit(1); },
   // The farmer's documents (names only, never file contents), to draw the files in each product folder.
-  listMyProductDocs(uid) { return sb.from("product_documents").select("id, product_id, file_name, mime_type, size_bytes, storage_path").eq("owner_id", uid).order("created_at", { ascending: true }); },
+  listMyProductDocs(uid) { return sb.from("product_documents").select("id, product_id, file_name, mime_type, size_bytes, storage_path, doc_kind, expires_on, created_at").eq("owner_id", uid).order("created_at", { ascending: true }); },
+  // The owner can set a document's type and (for a certificate) its expiry date, nothing else (column grant + policy).
+  updateProductDocument(id, patch) { return sb.from("product_documents").update(patch).eq("id", id).select().single(); },
+
+  /* ---------- dashboard data (2026-10-17) ----------
+     product_views: an approved buyer opening a launched product's full sheet counts once per day.
+     The producer can count them but never see who (viewer_id has no select grant): always name the columns.
+     product_events: launched / withdrawn / archived / restored, written by a database trigger only. */
+  logProductView(productId) { return sb.from("product_views").insert({ product_id: productId }); },
+  listMyProductViews(productIds) { return sb.from("product_views").select("product_id, viewed_on").in("product_id", productIds); },
+  listMyProductEvents(uid) { return sb.from("product_events").select("product_id, kind, created_at").eq("owner_id", uid).order("created_at", { ascending: false }).limit(60); },
   // The draft product a chat created (a chat makes at most one).
   productForChat(chatId) { return sb.from("farmer_products").select("*").eq("source_chat_id", chatId).order("created_at", { ascending: true }).limit(1); },
   // Files live in the private "farmer-files" bucket; RLS limits each user to their own folder.
