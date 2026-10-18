@@ -53,6 +53,18 @@ const vm = require("vm");
 const path = process.argv[2] || __dirname;
 
 let pass = 0, fail = 0;
+function DASH_IDS_OK(html, a) {
+  const ids = (html.match(/data-tile="(\w+)"/g) || []).map(x => x.slice(11, -1));
+  const d = a.DASH_TILE_IDS, same = a.dashTileOrder(null).join() === d.join();
+  const order = a.dashTileOrder(["timeline", "bogus", "timeline", "shop"]);
+  const moved = a.moveDashTile(d, "attention", "docs"), shifted = a.shiftDashTile(d, "shop", -1);
+  return ids.slice().sort().join() === d.slice().sort().join() && same
+    && order.join() === "timeline,shop,attention,best,interest,docs,gaps"
+    && moved.join() === "shop,best,interest,docs,attention,gaps,timeline"
+    && shifted.join() === "shop,attention,best,interest,docs,gaps,timeline"
+    && a.shiftDashTile(d, "attention", -1).join() === d.join() && a.shiftDashTile(d, "timeline", 1).join() === d.join()
+    && a.moveDashTile(d, "nope", "docs").join() === d.join() && a.dashOrderIsDefault(null) && !a.dashOrderIsDefault(shifted);
+}
 function check(name, cond, extra) {
   if (cond) { pass++; console.log("  ✓", name); }
   else { fail++; console.log("  ✗ FAIL:", name, extra === undefined ? "" : extra); }
@@ -216,6 +228,7 @@ function loadApp(root) {
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
   buildAttention, buildShopTiles, buildBestBuyers, buildGaps, buildInterest, buildTimeline, buildDocHealth,
+  DASH_TILE_IDS, dashTileOrder, moveDashTile, shiftDashTile, dashOrderIsDefault, dashOrderLoad, dashOrderSave, DASH_ORDER_KEY,
   docExpiryState, dashUnread, dashInput, dashSubjects, dashGo, renderDashHome, dashAttentionHTML, dashDocsHTML, timelineText, attentionText,
   markClientSeen, logProductView, viewLogged, setDocKind, setDocExpiry, docControlsHTML, DOC_KINDS, loadDashboardExtras, patchDocLocally };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
@@ -3841,7 +3854,8 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       ["dh.title.pipeline", "dh.title.convs", "dh.title.month"].every(k => !(k in a.STRINGS.en) && !(k in a.STRINGS.it)) && typeof a.buildPipeline === "undefined" && typeof a.buildConversationPreview === "undefined" && typeof a.buildMonthStrip === "undefined");
     check("icons wherever possible: every tile has an icon chip, every attention and document row has one, and the icons are decoration only (hidden from screen readers)",
       (html.match(/class="dash-ico /g) || []).length >= 7 + 6 + 4 + 4 && !/<span class="dash-ico[^>]*>(?:(?!aria-hidden)[^<])*</.test(html.replace(/<span class="dash-ico t-\w+" aria-hidden="true">/g, "")) && /<svg class="lucide lucide-bell/.test(html) && /lucide-target/.test(html) && /lucide-shield-check/.test(html) && /lucide-history/.test(html) && /lucide-map-pin/.test(html) && /lucide-eye/.test(html));
-    check("the four shop numbers are four separate tiles (one button each) inside one labelled group", (html.match(/class="dash-card dash-bento dash-stat/g) || []).length === 4 && /class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop"/.test(html) && html.includes('stroke-dasharray="89 100"'));
+    check("the four shop numbers are four separate tiles (one button each) inside one labelled group", (html.match(/class="dash-card dash-bento dash-stat/g) || []).length === 4 && /class="dash-shop dash-span-6 dash-rows-2" data-tile="shop" aria-labelledby="dh-shop"/.test(html) && html.includes('stroke-dasharray="89 100"'));
+    check("every dashboard tile carries data-tile and the order follows the saved one", DASH_IDS_OK(html, a));
     check("the attention tile is the hero (brick red), shows how many things need you, and the map starts hidden until it can be drawn", /dash-attn/.test(html) && html.includes('<span class="dash-count" aria-hidden="true">7</span>') && (html.match(/class="dash-row"/g) || []).length >= 7 && /id="dashMapHost" role="group"[^>]*hidden/.test(html));
     check("every pressable row is a real button, never a clickable div", !/<(div|span|li|p)\b[^>]*onclick=/.test(html) && /<button type="button" class="dash-row"/.test(html));
     check("the attention rows say it in words (English)", html.includes("Unread messages from buyers: 2") && html.includes("Donuts is ready to launch") && html.includes("Brie is nearly ready (4 of 6 steps)") && html.includes("HACCP.pdf (Donuts) expired on"));

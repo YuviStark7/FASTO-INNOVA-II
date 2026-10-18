@@ -53,7 +53,7 @@ function dashIcon(name, size) { return typeof lucide === "function" ? lucide(nam
 function dashChip(icon, tone, size) { return `<span class="dash-ico t-${tone || "plain"}" aria-hidden="true">${dashIcon(icon, size || 18)}</span>`; }
 /* One bento tile: an icon chip and a title across the top, then whatever the tile holds. */
 function dashTile(id, icon, tone, titleKey, body, cls, badge) {
-  return `<section class="dash-card glass-45 dash-bento ${cls || ""}" aria-labelledby="dh-${id}"><header class="dash-head">${dashChip(icon, tone)}<h3 class="dash-h" id="dh-${id}">${esc(T(titleKey))}</h3>${badge || ""}</header>${body}</section>`;
+  return `<section class="dash-card glass-45 dash-bento ${cls || ""}" data-tile="${id}" aria-labelledby="dh-${id}"><header class="dash-head">${dashChip(icon, tone)}<h3 class="dash-h" id="dh-${id}">${esc(T(titleKey))}</h3>${badge || ""}</header>${body}</section>`;
 }
 function dashEmpty(key, icon, tone) {
   return `<div class="dash-empty">${icon ? dashChip(icon, tone || "plain", 26) : ""}<p>${esc(T(key))}</p></div>`;
@@ -97,12 +97,12 @@ function dashAttentionHTML(d) {
 function dashShopHTML(d) {
   const t = buildShopTiles(d);
   const label = `<h3 class="sr-only" id="dh-shop">${esc(T("dh.title.shop"))}</h3>`;
-  if (!t.total) return `<section class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop">${label}<div class="dash-card glass-45 dash-bento dash-shop-empty">${dashEmpty("dh.t.none", "store")}</div></section>`;
+  if (!t.total) return `<section class="dash-shop dash-span-6 dash-rows-2" data-tile="shop" aria-labelledby="dh-shop">${label}<div class="dash-card glass-45 dash-bento dash-shop-empty">${dashEmpty("dh.t.none", "store")}</div></section>`;
   const tile = (icon, tone, n, key) => `<button type="button" class="dash-card dash-bento dash-stat" onclick="dashGo('shop')">${dashChip(icon, tone)}<b>${esc(n)}</b><span class="dash-stat-label">${esc(T(key))}</span></button>`;
   const ring = `<svg class="dash-ring" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle class="bg" cx="18" cy="18" r="15.9155" pathLength="100"/><circle class="fg" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="${t.avgPct} 100"/></svg>`;
   const gauge = `<button type="button" class="dash-card dash-bento dash-stat dash-gauge" onclick="dashGo('shop')"><span class="dash-ring-wrap">${ring}<b>${t.avgPct}%</b></span><span class="dash-stat-label">${esc(T("dh.t.complete"))}</span>` +
     (t.archived ? `<small>${esc(T("dh.t.archived", { n: t.archived }))}</small>` : "") + `</button>`;
-  return `<section class="dash-shop dash-span-6 dash-rows-2" aria-labelledby="dh-shop">${label}${tile("rocket", "green", t.live, "dh.t.live")}${tile("pencil", "amber", t.draft, "dh.t.drafts")}${tile("circle-check", "blue", t.ready, "dh.t.ready")}${gauge}</section>`;
+  return `<section class="dash-shop dash-span-6 dash-rows-2" data-tile="shop" aria-labelledby="dh-shop">${label}${tile("rocket", "green", t.live, "dh.t.live")}${tile("pencil", "amber", t.draft, "dh.t.drafts")}${tile("circle-check", "blue", t.ready, "dh.t.ready")}${gauge}</section>`;
 }
 function dashBestHTML(subjects) {
   const best = buildBestBuyers(subjects, 3);
@@ -170,7 +170,11 @@ function renderDashHome() {
   // While the account is still loading the tiles would only say "nothing yet", which is not true.
   const app = $("app"); if (app && app.classList && app.classList.contains("booting")) { host.innerHTML = ""; return; }
   const d = dashInput(), subjects = dashSubjects();
-  host.innerHTML = dashAttentionHTML(d) + dashShopHTML(d) + dashBestHTML(subjects) + dashInterestHTML(d) + dashDocsHTML(d) + dashGapsHTML(subjects, d) + dashTimelineHTML(d);
+  const parts = { attention: dashAttentionHTML(d), shop: dashShopHTML(d), best: dashBestHTML(subjects), interest: dashInterestHTML(d),
+    docs: dashDocsHTML(d), gaps: dashGapsHTML(subjects, d), timeline: dashTimelineHTML(d) };
+  dashOrder = dashTileOrder(dashOrderLoad());
+  host.innerHTML = dashOrder.map(id => parts[id]).join("");
+  dashDragSetup(host);
   paintDashMap(buildBestBuyers(subjects, 6));
 }
 
@@ -200,4 +204,155 @@ async function paintDashMap(best) {
   } catch (e) {
     const n = $("dashMapNote"); if (n) n.hidden = false;
   }
+}
+
+/* ---------- drag to rearrange (plain-JS port of the idea in 21st.dev's "Draggable Widget Grid") ----------
+   The tiles are the grid's children; their order in the DOM is the layout, so moving a tile means moving its element
+   (the Leaflet map inside "Best buyers" travels with it). Mouse and pen drag after 6 px of movement; touch needs a long
+   press so the page can still scroll; keyboard: focus a tile, hold Alt, press an arrow key. The order is kept on this
+   device only (localStorage), because it is a view preference, not business data. */
+const DASH_ORDER_KEY = "fasto_dash_order";
+let dashOrder = DASH_TILE_IDS.slice();
+let dashDrag = null;           // the drag in progress, if any
+let dashSwallowUntil = 0;      // ignore the click that follows a drop
+
+function dashOrderLoad() {
+  try { return JSON.parse(localStorage.getItem(DASH_ORDER_KEY) || "null"); } catch (e) { return null; }
+}
+function dashOrderSave(order) {
+  try {
+    if (dashOrderIsDefault(order)) localStorage.removeItem(DASH_ORDER_KEY);
+    else localStorage.setItem(DASH_ORDER_KEY, JSON.stringify(order));
+  } catch (e) { /* private window or blocked storage: the order just lasts until the page is reloaded */ }
+}
+function dashTiles(host) { return Array.from((host && host.children) || []).filter(n => n.dataset && n.dataset.tile); }
+function dashTileName(el) {
+  const h = el.querySelector("h3,.dash-shop-label,[id^='dh-']"); return h ? h.textContent.trim() : (el.dataset.tile || "");
+}
+function dashReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function dashSay(text) { const n = $("dashLayoutLive"); if (n) n.textContent = text; }
+function dashPaintLayoutBar() {
+  const bar = $("dashLayoutBar"); if (!bar) return;
+  const host = $("dashHome");
+  bar.hidden = !host || !(host.children && host.children.length);
+  const reset = $("dashResetBtn"); if (reset) reset.hidden = dashOrderIsDefault(dashOrder);
+}
+
+/* Put the tiles in `order`, sliding each one from where it was (FLIP). The tile being dragged is left alone. */
+function dashApplyOrder(host, order, skip) {
+  const tiles = dashTiles(host), before = new Map();
+  tiles.forEach(t => before.set(t, { x: t.offsetLeft, y: t.offsetTop }));
+  order.forEach(id => { const t = tiles.find(x => x.dataset.tile === id); if (t) host.appendChild(t); });
+  dashOrder = order.slice();
+  if (!dashReducedMotion()) tiles.forEach(t => {
+    if (t === skip || !t.animate) return;
+    const b = before.get(t), dx = b.x - t.offsetLeft, dy = b.y - t.offsetTop;
+    if (dx || dy) t.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+  });
+}
+
+function dashDragSetup(host) {
+  dashPaintLayoutBar();
+  if (!host.addEventListener || !host.dataset) return;   // not a real element (a test double)
+  if (host.dataset.dragReady) { dashTiles(host).forEach(t => { t.tabIndex = 0; }); return; }   // listeners live on the grid, which is never replaced
+  host.dataset.dragReady = "1";
+  dashTiles(host).forEach(t => { t.tabIndex = 0; });
+  host.addEventListener("pointerdown", dashPointerDown);
+  host.addEventListener("keydown", dashKeyDown);
+  host.addEventListener("click", e => { if (performance.now() < dashSwallowUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
+  host.addEventListener("touchmove", e => { if (dashDrag && dashDrag.active) e.preventDefault(); }, { passive: false });
+  host.addEventListener("contextmenu", e => { if (dashDrag) e.preventDefault(); });
+  const reset = $("dashResetBtn");
+  if (reset) reset.addEventListener("click", () => {
+    dashOrder = DASH_TILE_IDS.slice(); dashOrderSave(dashOrder); dashApplyOrder(host, dashOrder, null);
+    dashPaintLayoutBar(); dashSay(T("dh.drag.reset.done"));
+  });
+}
+
+function dashKeyDown(e) {
+  if (!e.altKey || e.target.closest("input,textarea,select")) return;
+  const tile = e.target.closest("[data-tile]"); if (!tile || e.target !== tile) return;   // only when the tile itself has the focus
+  const delta = (e.key === "ArrowRight" || e.key === "ArrowDown") ? 1 : (e.key === "ArrowLeft" || e.key === "ArrowUp") ? -1 : 0;
+  if (!delta) return;
+  e.preventDefault();
+  const host = tile.parentNode, next = shiftDashTile(dashOrder, tile.dataset.tile, delta);
+  if (next.join() === dashOrder.join()) return;
+  dashApplyOrder(host, next, null); dashOrderSave(next); dashPaintLayoutBar();
+  tile.focus();
+  dashSay(T("dh.drag.moved", { name: dashTileName(tile), n: next.indexOf(tile.dataset.tile) + 1, total: next.length }));
+  dashAfterMove();
+}
+
+function dashAfterMove() { if (dashMap) setTimeout(() => dashMap && dashMap.invalidateSize(), 300); }
+
+function dashPointerDown(e) {
+  if (dashDrag || e.button !== 0 || !e.isPrimary) return;
+  const tile = e.target.closest("[data-tile]"); if (!tile || tile.parentNode !== e.currentTarget) return;
+  if (e.target.closest(".leaflet-container,input,select,textarea")) return;   // the map pans, form fields type
+  const host = e.currentTarget;
+  const d = dashDrag = { tile, host, id: e.pointerId, sx: e.clientX, sy: e.clientY, touch: e.pointerType === "touch", active: false, timer: 0, lastSwap: 0, x: e.clientX, y: e.clientY };
+  const move = ev => { if (ev.pointerId === d.id) dashPointerMove(ev); };
+  const end = ev => { if (ev.pointerId === d.id) dashPointerEnd(ev); };
+  d.off = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
+  if (d.touch) d.timer = setTimeout(() => dashLift(d), 350);
+}
+
+function dashLift(d) {
+  if (!dashDrag || dashDrag !== d || d.active) return;
+  d.active = true;
+  d.ox = d.tile.offsetLeft; d.oy = d.tile.offsetTop;
+  d.tile.classList.add("dash-lifted"); d.host.classList.add("dash-dragging");
+  if (navigator.vibrate) navigator.vibrate(10);
+  dashFollow(d);
+}
+
+/* The lifted tile follows the pointer: its layout slot may change while it is held, so the offset is measured from there. */
+function dashFollow(d) {
+  const dx = d.ox + (d.x - d.sx) - d.tile.offsetLeft, dy = d.oy + (d.y - d.sy) - d.tile.offsetTop;
+  d.tile.style.transform = `translate(${dx}px,${dy}px) scale(1.02)`;
+}
+
+function dashPointerMove(e) {
+  const d = dashDrag; if (!d) return;
+  d.x = e.clientX; d.y = e.clientY;
+  if (!d.active) {
+    if (Math.hypot(d.x - d.sx, d.y - d.sy) <= (d.touch ? 8 : 6)) return;
+    if (d.touch) { clearTimeout(d.timer); dashCancel(); return; }   // the finger moved before the long press: that is a scroll
+    dashLift(d);
+  }
+  dashFollow(d);
+  const now = performance.now();
+  if (now - d.lastSwap < 160) return;                                  // let a swap settle before the next, so tiles don't flicker
+  const hr = d.host.getBoundingClientRect(), px = d.x - hr.left, py = d.y - hr.top;
+  const over = dashTiles(d.host).find(t => t !== d.tile && px >= t.offsetLeft && px <= t.offsetLeft + t.offsetWidth && py >= t.offsetTop && py <= t.offsetTop + t.offsetHeight);
+  if (!over) return;
+  const next = moveDashTile(dashOrder, d.tile.dataset.tile, over.dataset.tile);
+  if (next.join() === dashOrder.join()) return;
+  d.lastSwap = now; d.moved = true;
+  dashApplyOrder(d.host, next, d.tile);
+  dashFollow(d);
+}
+
+function dashCancel() {
+  const d = dashDrag; if (!d) return;
+  clearTimeout(d.timer); d.off();
+  d.tile.classList.remove("dash-lifted"); d.host.classList.remove("dash-dragging"); d.tile.style.transform = "";
+  dashDrag = null;
+}
+
+function dashPointerEnd() {
+  const d = dashDrag; if (!d) return;
+  const wasActive = d.active, tile = d.tile, moved = d.moved, held = tile.style.transform;
+  dashCancel();
+  if (!wasActive) return;
+  dashSwallowUntil = performance.now() + 300;                          // the click fired on release must not open a row under the pointer
+  if (!dashReducedMotion() && tile.animate && held) tile.animate([{ transform: held }, { transform: "none" }], { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" });   // settle into the slot
+  if (moved) {
+    dashOrderSave(dashOrder); dashPaintLayoutBar();
+    dashSay(T("dh.drag.moved", { name: dashTileName(tile), n: dashOrder.indexOf(tile.dataset.tile) + 1, total: dashOrder.length }));
+  }
+  dashAfterMove();
 }

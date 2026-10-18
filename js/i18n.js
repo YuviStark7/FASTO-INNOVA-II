@@ -1048,6 +1048,7 @@ var STRINGS = {
     "dh.t.live": "Live", "dh.t.drafts": "Drafts", "dh.t.ready": "Ready to launch", "dh.t.complete": "Average completeness",
     "dh.t.archived": "{n} archived, not counted above",
     "dh.t.none": "You have no products yet. Start one in Fasto-AI.",
+    "dh.drag.hint": "Drag a tile to rearrange it. On a touch screen press and hold first; with a keyboard hold Alt and press the arrow keys.", "dh.drag.reset": "Reset layout", "dh.drag.moved": "{name} moved to position {n} of {total}.", "dh.drag.reset.done": "Layout reset.",
     
     
     
@@ -2046,6 +2047,7 @@ var STRINGS = {
     "dh.t.live": "Pubblicati", "dh.t.drafts": "Bozze", "dh.t.ready": "Pronti al lancio", "dh.t.complete": "Completezza media",
     "dh.t.archived": "{n} archiviati, non conteggiati sopra",
     "dh.t.none": "Non hai ancora prodotti. Inizia da Fasto-AI.",
+    "dh.drag.hint": "Trascina un riquadro per spostarlo. Su touch screen tieni premuto prima; con la tastiera tieni premuto Alt e usa le frecce.", "dh.drag.reset": "Ripristina disposizione", "dh.drag.moved": "{name} spostato in posizione {n} di {total}.", "dh.drag.reset.done": "Disposizione ripristinata.",
     
     
     

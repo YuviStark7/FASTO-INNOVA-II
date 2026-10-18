@@ -159,6 +159,16 @@
    a quiet title and one clear thing to read. Tiles stay translucent black glass (the app's look); only the hero tile is tinted brick red. */
 .dash-grid{ display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); grid-auto-rows:minmax(150px, auto); gap:14px; }
 .dash-grid:empty{ display:none; }
+.dash-grid{ position:relative; }
+/* drag to rearrange: nothing changes at rest; a lifted tile rises with a deeper shadow, the grid stops selecting text */
+.dash-grid > [data-tile]{ touch-action:pan-y; cursor:grab; }
+.dash-grid > [data-tile]:focus-visible{ outline:2px solid #fff; outline-offset:3px; }
+.dash-grid.dash-dragging, .dash-grid.dash-dragging *{ user-select:none; -webkit-user-select:none; cursor:grabbing; }
+.dash-grid > .dash-lifted{ z-index:20; box-shadow:0 28px 60px -16px rgba(0,0,0,.55), 0 10px 24px -8px rgba(0,0,0,.4); -webkit-touch-callout:none; }
+.dash-layout-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin:0 0 12px; font-size:12px; line-height:1.5; color:var(--ink-50); }
+.dash-layout-bar[hidden], .dash-reset[hidden]{ display:none; }
+.dash-reset{ background:none; border:none; padding:2px 0; font:inherit; color:var(--ink-70); text-decoration:underline; cursor:pointer; }
+.dash-reset:hover{ color:#fff; }
 .dash-span-5{ grid-column:span 5; } .dash-span-6{ grid-column:span 6; } .dash-span-7{ grid-column:span 7; }
 .dash-rows-2{ grid-row:span 2; }
 

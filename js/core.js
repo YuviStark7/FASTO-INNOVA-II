@@ -840,6 +840,29 @@ function productFilePath(uid, name, stamp, rand) {
   return uid + "/products/" + stamp + "-" + rand + "-" + safe;
 }
 
+/* ---- Dashboard tile order (drag to rearrange) ----
+   Pure: the saved order may be old, partial or tampered with, so it is cleaned against the tiles that exist today. */
+var DASH_TILE_IDS = ["attention", "shop", "best", "interest", "docs", "gaps", "timeline"];
+function dashTileOrder(saved) {
+  var out = [];
+  (Array.isArray(saved) ? saved : []).forEach(function (id) { if (DASH_TILE_IDS.indexOf(id) >= 0 && out.indexOf(id) < 0) out.push(id); });
+  DASH_TILE_IDS.forEach(function (id) { if (out.indexOf(id) < 0) out.push(id); });   // new tiles join at the end
+  return out;
+}
+/* Moves `id` to where `target` is now (the others shift along). Unknown ids change nothing. */
+function moveDashTile(order, id, target) {
+  var from = order.indexOf(id), to = order.indexOf(target);
+  if (from < 0 || to < 0 || from === to) return order.slice();
+  var next = order.slice(); next.splice(from, 1); next.splice(to, 0, id); return next;
+}
+/* Keyboard: one step earlier (-1) or later (+1). */
+function shiftDashTile(order, id, delta) {
+  var from = order.indexOf(id), to = from + delta;
+  if (from < 0 || to < 0 || to >= order.length) return order.slice();
+  var next = order.slice(); next.splice(from, 1); next.splice(to, 0, id); return next;
+}
+function dashOrderIsDefault(order) { return dashTileOrder(order).join() === DASH_TILE_IDS.join(); }
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -850,6 +873,7 @@ if (typeof module !== "undefined" && module.exports) {
     guardianVerifyRecs: guardianVerifyRecs, guardianValidateBuyerProfile: guardianValidateBuyerProfile, guardianValidateAdminBuyer: guardianValidateAdminBuyer, QUALITY_TAGS: QUALITY_TAGS, adminMapPoints: adminMapPoints, clusterMapPoints: clusterMapPoints, villagePoint: villagePoint, VILLAGE_POINTS: VILLAGE_POINTS,
     guardianValidateProductSheet: guardianValidateProductSheet, mergeProductSheet: mergeProductSheet, productCompleteness: productCompleteness, PRODUCT_NUTRIENTS: PRODUCT_NUTRIENTS, PRODUCT_REQUIRED: PRODUCT_REQUIRED,
     productRoadmap: productRoadmap, groupChatRail: groupChatRail,
+    DASH_TILE_IDS: DASH_TILE_IDS, dashTileOrder: dashTileOrder, moveDashTile: moveDashTile, shiftDashTile: shiftDashTile, dashOrderIsDefault: dashOrderIsDefault,
     dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildBestBuyers: buildBestBuyers, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
