@@ -1995,17 +1995,78 @@ function matchSlot(chat, hasCards) {
   return Math.min(chat.matchAt, chat.messages.length);
 }
 
+/* ---------- Message scroller (after 21st.dev's "Message Scroller", plain JS) ----------
+   One short tick per message the farmer sent, down the right edge of the chat. Ticks of messages on screen are bright,
+   the one nearest the middle is the current one; hovering or focusing a tick swells it and its neighbours like a wave
+   and shows that message in a small bubble; pressing it scrolls the chat to that message. */
+const MSGNAV_WAVE_X = [2.8, 2.15, 1.55, 1.2], MSGNAV_WAVE_Y = [1.4, 1.22, 1.1, 1.04];
+let msgNavItems = [];   // [{ mi, text }] in the order they are drawn
+let msgNavBound = false;
+
+function paintMsgNav(chat) {
+  const nav = $("msgNav"), chatEl = $("assistChat"), tr = $("assistTranscript"); if (!nav || !tr) return;
+  msgNavItems = chat.messages.map((m, mi) => ({ mi, text: m.text })).filter((x, i) => chat.messages[i].role === "user" && x.text);
+  nav.hidden = !msgNavItems.length;
+  if (chatEl && chatEl.classList) chatEl.classList.toggle("has-msgnav", msgNavItems.length > 0);
+  nav.innerHTML = msgNavItems.map((x, i) => `<button type="button" class="msg-tick" data-i="${i}" aria-label="${escAttr(T("a11y.msgJump", { text: x.text.length > 80 ? x.text.slice(0, 80) + "…" : x.text }))}"><span class="msg-tick-bar" aria-hidden="true"></span></button>`).join("");
+  if (!msgNavBound && nav.addEventListener && tr.addEventListener) {
+    msgNavBound = true;
+    nav.addEventListener("pointerover", e => { const b = e.target.closest(".msg-tick"); if (b) msgNavHover(+b.dataset.i); });
+    nav.addEventListener("pointerleave", () => msgNavHover(null));
+    nav.addEventListener("focusin", e => { const b = e.target.closest(".msg-tick"); if (b) msgNavHover(+b.dataset.i); });
+    nav.addEventListener("focusout", () => msgNavHover(null));
+    nav.addEventListener("click", e => { const b = e.target.closest(".msg-tick"); if (b) msgNavJump(+b.dataset.i); });
+    let frame = 0;
+    const later = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; msgNavUpdate(); }); };
+    tr.addEventListener("scroll", later, { passive: true });
+    window.addEventListener("resize", later);
+  }
+  msgNavUpdate();
+}
+function msgNavEl(i) { const x = msgNavItems[i], tr = $("assistTranscript"); return x && tr ? tr.querySelector(`[data-umsg="${x.mi}"]`) : null; }
+function msgNavUpdate() {
+  const tr = $("assistTranscript"), nav = $("msgNav"); if (!tr || !nav || !tr.getBoundingClientRect) return;
+  const b = tr.getBoundingClientRect(), mid = b.top + tr.clientHeight / 2;
+  let near = -1, best = Infinity;
+  msgNavItems.forEach((x, i) => {
+    const el = msgNavEl(i), tick = nav.children[i]; if (!el || !tick) return;
+    const r = el.getBoundingClientRect();
+    tick.classList.toggle("seen", r.bottom > b.top && r.top < b.top + tr.clientHeight);
+    const d = Math.abs(r.top + r.height / 2 - mid); if (d < best) { best = d; near = i; }
+  });
+  Array.from(nav.children).forEach((t, i) => { t.classList.toggle("cur", i === near); if (i === near) t.setAttribute("aria-current", "true"); else t.removeAttribute("aria-current"); });
+}
+function msgNavHover(i) {
+  const nav = $("msgNav"), tip = $("msgTip"), chatEl = $("assistChat"); if (!nav) return;
+  Array.from(nav.children).forEach((t, k) => {
+    const bar = t.firstChild; if (!bar) return;
+    bar.style.transform = i == null ? "" : `scaleX(${MSGNAV_WAVE_X[Math.abs(k - i)] || 1}) scaleY(${MSGNAV_WAVE_Y[Math.abs(k - i)] || 1})`;
+    t.classList.toggle("hot", k === i);
+  });
+  if (!tip) return;
+  if (i == null || !msgNavItems[i]) { tip.hidden = true; return; }
+  tip.textContent = msgNavItems[i].text; tip.hidden = false;
+  const t = nav.children[i].getBoundingClientRect(), c = chatEl.getBoundingClientRect();
+  tip.style.right = Math.round(c.right - t.left + 10) + "px"; tip.style.top = Math.round(t.top - c.top + t.height / 2) + "px";
+}
+function msgNavJump(i) {
+  const tr = $("assistTranscript"), el = msgNavEl(i); if (!tr || !el) return;
+  const top = tr.scrollTop + el.getBoundingClientRect().top - tr.getBoundingClientRect().top - tr.clientHeight / 2 + el.offsetHeight / 2;
+  const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  tr.scrollTo({ top, behavior: calm ? "auto" : "smooth" });
+}
+
 function renderTranscript(keepScroll) {
   const chat = activeChat();
   const el = $("assistTranscript"); if (!el) return;
   if (!chat) { el.innerHTML = ""; renderAssistHead(); return; }
-  const bubbleList = chat.messages.map(m => {
+  const bubbleList = chat.messages.map((m, mi) => {
     // Notices from the app (a file was saved, details were updated...) read as ordinary replies in the chat.
     if (m.role === "sys") return `<div class="bubble in">${esc(m.text)}</div>`;
     if (m.role === "user") {
       // Files sent with a message sit above its bubble, on the same side.
       const files = msgFilesHTML(chat, m);
-      const bubble = m.text ? `<div class="bubble out">${esc(m.text)}</div>` : "";
+      const bubble = m.text ? `<div class="bubble out" data-umsg="${mi}">${esc(m.text)}</div>` : "";
       return files ? `<div class="msg-group out">${files}${bubble}</div>` : bubble;
     }
     return `<div class="bubble in">${esc(m.text)}</div>`;
@@ -2020,6 +2081,7 @@ function renderTranscript(keepScroll) {
   const cta = scanCardHTML(chat) + productPickerHTML(chat);
   const prev = el.scrollTop;
   el.innerHTML = bubbles + cta;
+  paintMsgNav(chat);
   refreshAttachStrip();
   el.scrollTop = keepScroll ? prev : el.scrollHeight;
 }

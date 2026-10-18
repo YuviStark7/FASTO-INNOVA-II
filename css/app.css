@@ -480,6 +480,20 @@
    "latest message visible" result without breaking scroll. */
 .assist-transcript{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:8px 8px 16px 4px; }
 .assist-transcript .bubble{ max-width:60%; }
+/* message scroller: the native scrollbar gives way to one tick per message you sent, on the right edge */
+.assist-chat.has-msgnav .assist-transcript{ scrollbar-width:none; padding-right:36px; }
+.assist-chat.has-msgnav .assist-transcript::-webkit-scrollbar{ display:none; }
+.msg-nav{ position:absolute; right:14px; top:64px; bottom:150px; z-index:5; width:26px; display:flex; flex-direction:column; justify-content:center; align-items:flex-end; gap:2px; overflow:hidden; }
+.msg-nav[hidden], .msg-tip[hidden]{ display:none; }
+.msg-tick{ flex:none; display:flex; align-items:center; justify-content:flex-end; width:26px; height:10px; padding:0; border:0; border-radius:4px; background:transparent; cursor:pointer; }
+.msg-tick:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.msg-tick-bar{ display:block; width:12px; height:2px; border-radius:2px; background:rgba(255,255,255,.35); opacity:.8; transform-origin:right center;
+  transition:transform .2s cubic-bezier(.23,1,.32,1), background-color .2s, opacity .2s; will-change:transform; }
+.msg-tick.seen .msg-tick-bar, .msg-tick.cur .msg-tick-bar, .msg-tick.hot .msg-tick-bar{ background:#fff; opacity:1; }
+.msg-tip{ position:absolute; z-index:6; transform:translateY(-50%); width:max-content; max-width:min(256px, calc(100% - 90px)); pointer-events:none; font-size:12px; line-height:1.45;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; overflow:hidden; word-break:break-word; animation:msg-tip-in .2s cubic-bezier(.23,1,.32,1); }
+@keyframes msg-tip-in{ from{ opacity:0; transform:translateY(-50%) scale(.97); } }
+@media (prefers-reduced-motion: reduce){ .msg-tick-bar{ transition:background-color .2s, opacity .2s; } .msg-tip{ animation:none; } }
 /* Scoped to this screen on purpose: the same .bubble.in in the Clients
    thread is already 9.0:1 over two stacked glass panels, and darkening it
    there would only flatten it against them. No backdrop-filter here —
