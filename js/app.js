@@ -1980,11 +1980,26 @@ function addMsg(chat, role, text, docIds) {
   if (!isLocalId(chat.id)) bgSave(DataStore.addMessage(chat.id, role, text, docIds), "save.message");
 }
 // keepScroll: redraw without jumping to the bottom (a preview finished loading).
+/* Where in the message list the match cards belong: the number of messages there were when they first showed up.
+   Kept in the chat for this session and in localStorage so a reopened chat keeps the same place (a chat opened on a
+   device that never saw it puts them at the end, as before). Returns null while there are no cards. */
+function matchSlot(chat, hasCards) {
+  const key = "fasto_matchat_" + chat.id;
+  if (!hasCards) { chat.matchAt = null; return null; }
+  if (chat.matchAt == null) {
+    let saved = null;
+    try { saved = parseInt(localStorage.getItem(key), 10); } catch (e) { /* storage blocked: fall through */ }
+    chat.matchAt = isFinite(saved) ? saved : chat.messages.length;
+    try { localStorage.setItem(key, String(chat.matchAt)); } catch (e) { /* the place just lasts for this session */ }
+  }
+  return Math.min(chat.matchAt, chat.messages.length);
+}
+
 function renderTranscript(keepScroll) {
   const chat = activeChat();
   const el = $("assistTranscript"); if (!el) return;
   if (!chat) { el.innerHTML = ""; renderAssistHead(); return; }
-  const bubbles = chat.messages.map(m => {
+  const bubbleList = chat.messages.map(m => {
     // Notices from the app (a file was saved, details were updated...) read as ordinary replies in the chat.
     if (m.role === "sys") return `<div class="bubble in">${esc(m.text)}</div>`;
     if (m.role === "user") {
@@ -1994,13 +2009,15 @@ function renderTranscript(keepScroll) {
       return files ? `<div class="msg-group out">${files}${bubble}</div>` : bubble;
     }
     return `<div class="bubble in">${esc(m.text)}</div>`;
-  }).join("");
-  // Once matching has produced something the transcript ends with the best
-  // buyers as cards, and (if the farmer wants it) a way to publish an offer.
-  // There is no "edit details" button on purpose: changes are made by asking in
-  // the chat, and the cards below are redrawn when the ranking changes. The
-  // product sheet itself lives in the side panel, not here.
-  const cta = matchCardsHTML(chat) + scanCardHTML(chat) + productPickerHTML(chat);
+  });
+  // The best buyers appear as cards (and, if the farmer wants it, a way to publish an offer). They are part of the
+  // conversation: they sit where the chat was when they first appeared, so anything said afterwards comes AFTER them.
+  // There is no "edit details" button on purpose: changes are made by asking in the chat, and the cards are redrawn
+  // when the ranking changes. The product sheet itself lives in the side panel, not here.
+  const matches = matchCardsHTML(chat);
+  const at = matchSlot(chat, !!matches);
+  const bubbles = at == null ? bubbleList.join("") : bubbleList.slice(0, at).join("") + matches + bubbleList.slice(at).join("");
+  const cta = scanCardHTML(chat) + productPickerHTML(chat);
   const prev = el.scrollTop;
   el.innerHTML = bubbles + cta;
   refreshAttachStrip();

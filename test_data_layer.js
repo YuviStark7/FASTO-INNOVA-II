@@ -228,7 +228,7 @@ function loadApp(root) {
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
   buildAttention, buildShopTiles, buildBestBuyers, buildGaps, buildInterest, buildTimeline, buildDocHealth,
-  DASH_TILE_IDS, dashTileOrder, moveDashTile, shiftDashTile, dashOrderIsDefault, dashOrderLoad, dashOrderSave, DASH_ORDER_KEY,
+  matchSlot, DASH_TILE_IDS, dashTileOrder, moveDashTile, shiftDashTile, dashOrderIsDefault, dashOrderLoad, dashOrderSave, DASH_ORDER_KEY,
   docExpiryState, dashUnread, dashInput, dashSubjects, dashGo, renderDashHome, dashAttentionHTML, dashDocsHTML, timelineText, attentionText,
   markClientSeen, logProductView, viewLogged, setDocKind, setDocExpiry, docControlsHTML, DOC_KINDS, loadDashboardExtras, patchDocLocally };`;
   vm.runInContext(src, sandbox, { filename: "fasto-bundle.js" });
@@ -3855,6 +3855,9 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("icons wherever possible: every tile has an icon chip, every attention and document row has one, and the icons are decoration only (hidden from screen readers)",
       (html.match(/class="dash-ico /g) || []).length >= 7 + 6 + 4 + 4 && !/<span class="dash-ico[^>]*>(?:(?!aria-hidden)[^<])*</.test(html.replace(/<span class="dash-ico t-\w+" aria-hidden="true">/g, "")) && /<svg class="lucide lucide-bell/.test(html) && /lucide-target/.test(html) && /lucide-shield-check/.test(html) && /lucide-history/.test(html) && /lucide-map-pin/.test(html) && /lucide-eye/.test(html));
     check("the four shop numbers are four separate tiles (one button each) inside one labelled group", (html.match(/class="dash-card dash-bento dash-stat/g) || []).length === 4 && /class="dash-shop dash-span-6 dash-rows-2" data-tile="shop" aria-labelledby="dh-shop"/.test(html) && html.includes('stroke-dasharray="89 100"'));
+    { const ch = { id: "c-slot", messages: [1, 2, 3] };
+      const first = a.matchSlot(ch, true); ch.messages.push(4, 5);
+      check("match cards keep the place they first appeared, so later messages come after them", first === 3 && a.matchSlot(ch, true) === 3 && a.matchSlot(ch, false) === null && ch.matchAt === null); }
     check("every dashboard tile carries data-tile and the order follows the saved one", DASH_IDS_OK(html, a));
     check("the attention tile is the hero (brick red), shows how many things need you, and the map starts hidden until it can be drawn", /dash-attn/.test(html) && html.includes('<span class="dash-count" aria-hidden="true">7</span>') && (html.match(/class="dash-row"/g) || []).length >= 7 && /id="dashMapHost" role="group"[^>]*hidden/.test(html));
     check("every pressable row is a real button, never a clickable div", !/<(div|span|li|p)\b[^>]*onclick=/.test(html) && /<button type="button" class="dash-row"/.test(html));
