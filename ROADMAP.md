@@ -89,6 +89,15 @@ Batch 1 (items 1–13) was approved 2026-08-20 and is fully shipped — see Done
 39. **[S] Italian wording pass.** A read-through of every Italian string by a native speaker, with a list of changes to apply to `js/i18n.js`.
 40. **[M] Export a product sheet as PDF.** A print stylesheet so a producer can save a launched product's sheet (no phone, address or VAT) to share outside the app.
 
+**More ideas, drafted by the daily run 2026-10-19 (queue still empty apart from item 16, which waits on your decision; none approved, do not build yet):**
+
+41. **[S] "Last updated" on launched products.** Show buyers a plain "Sheet updated on <date>" line on the product sheet, so they can tell a stale sheet from a fresh one (date comes from `farmer_products.updated_at`; nothing new stored).
+42. **[S] Near-duplicate category merge.** Pass E left "jam" and "jams" as two filter entries. A pure, tested function in `core.js` that folds simple plurals and case when building the category list (display only, no data changed).
+43. **[M] Buyer saved searches.** A buyer can save a filter on the Products page (category, shelf life) and see a small "new since your last visit" count; stored per buyer, counts only.
+44. **[S] Keyboard shortcut help.** A "?" key opens a small sheet listing the shortcuts that exist (Enter/Shift+Enter in chat, Alt+arrows on Dashboard tiles, Escape), in IT/EN.
+45. **[M] Offline-friendly drafts.** Keep the unsent text in the Fasto-AI message box in `localStorage` per chat so a refresh or lost connection does not lose it (cleared on send).
+46. **[S] Remove unused profile-edit sheet code.** CLAUDE.md notes the profile-edit sheet in `app.js` is unreachable from the UI; a cleanup that moves its rule tests onto `applyProfileEdit` and deletes the dead sheet markup.
+
 **Dashboard ideas A to J: all shipped on 2026-10-17 at Yuvi's request ("add 1 to 9 all of them"). See Done. Nothing from that list is left here.**
 
 Batch 2 was drafted by the daily run on **2026-09-05** and reviewed by Yuvi on **2026-09-06**: 15, 16, 17, 18, 19 and 21 were approved and have moved up to the queue, along with a new item 22 for the contrast decision item 11 had been holding open. Only item 20 was left here.
