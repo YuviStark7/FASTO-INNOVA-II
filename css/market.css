@@ -3,10 +3,10 @@
    ------------------------------------------------------------
    Yuvi's card design: translucent dark fill, brick-red chips and button,
    bold-then-light capital titles. The light that follows the pointer is
-   js/spotlight.js. A market card expands in place on hover or keyboard
-   focus (js: mkPlace decides which side has room); it never moves its
-   neighbours, because the grid cell keeps its size and the card simply
-   grows over the empty side.
+   js/spotlight.js. A market card widens on hover or keyboard focus: its
+   grid cell takes two columns and the other cards are pushed along (js:
+   mkExpand, mkReflow). The offer cards instead grow over the free side
+   while a message is written.
    ============================================================ */
 .buyer-body.mk-body{ max-width:none; }
 
@@ -46,15 +46,14 @@
 .mk-reply input{ flex:1 1 auto; min-width:0; }
 /* ----- Open market grid and the expanding card ----- */
 .mk-grid{ --mk-gap:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(236px, 1fr)); gap:var(--mk-gap); }
-/* The cell is the grid item and keeps its size always. The card is an absolutely positioned layer inside it, so nothing
-   the card does (growing, shrinking) can touch the grid: the other cards cannot move. Growing to the left anchors the card
-   to the cell's right edge (mk-x-l), growing to the right to its left edge. */
+/* The cell is the grid item (fixed height) and the card fills it. A hovered or focused card gets class mk-wide from
+   js (mkExpand): its cell then takes two columns and the grid pushes the other cards along (mkReflow slides them). The
+   card text keeps the one-column width (100cqw is the cell's width, so a wide cell halves it again). */
 .mk-cell{ position:relative; height:282px; container-type:inline-size; }
-.mk-cell:hover, .mk-cell.mk-lift{ z-index:6; }
-.mk-card{ position:absolute; top:0; bottom:0; left:0; width:100%; display:flex; box-shadow:0 14px 30px -18px rgba(0,0,0,.7);
-  transition:width .38s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background-color .3s; }
-.mk-x-l .mk-card{ left:auto; right:0; }
+.mk-cell.mk-wide{ z-index:2; }
+.mk-card{ position:absolute; inset:0; display:flex; box-shadow:0 14px 30px -18px rgba(0,0,0,.7); transition:box-shadow .3s; }
 .mk-main{ flex:0 0 calc(100cqw - 2px); min-width:0; padding:16px; display:flex; flex-direction:column; }
+.mk-wide .mk-main{ flex-basis:calc((100cqw - var(--mk-gap)) / 2 - 2px); }
 .mk-main > *{ flex:none; }
 .mk-main > .mk-act{ margin-top:auto; }
 .mk-main .mk-title{ padding-right:64px; }       /* the share and bookmark buttons sit at the card's top right */
@@ -94,15 +93,11 @@
 .mk-extra b{ color:var(--ink); font-weight:700; }
 .mk-extra span{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 
-/* expanded: the card is darker and blurs what it covers (the neighbour under it), so it stays readable */
-.mk-card{ -webkit-backdrop-filter:blur(0); backdrop-filter:blur(0); }
-/* expanded: toward the right (mk-x-r) or the left (mk-x-l), whichever has room */
-.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ width:calc(200% + var(--mk-gap)); box-shadow:0 22px 44px -18px rgba(0,0,0,.8); }
-.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ background:rgba(14,10,10,.95); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); }
-.mk-x-r:hover .mk-art, .mk-x-r.mk-lift .mk-art, .mk-x-l:hover .mk-art, .mk-x-l.mk-lift .mk-art{ flex:1 1 0; margin:12px 0 12px 12px; opacity:1; }
-.mk-x-r:hover .mk-main .mk-avatar, .mk-x-r.mk-lift .mk-main .mk-avatar, .mk-x-l:hover .mk-main .mk-avatar, .mk-x-l.mk-lift .mk-main .mk-avatar{ height:0; margin-bottom:0; opacity:0; }
-.mk-x-r:hover .mk-extra, .mk-x-r.mk-lift .mk-extra, .mk-x-l:hover .mk-extra, .mk-x-l.mk-lift .mk-extra{ max-height:70px; opacity:1; margin-top:10px; }
-@media (hover:none){ .mk-card{ transition:none; } }
+/* expanded (class mk-wide): a picture tile on the left, the round avatar gone, the ingredients shown */
+.mk-wide .mk-card{ box-shadow:0 22px 44px -18px rgba(0,0,0,.8); }
+.mk-wide .mk-art{ flex:1 1 0; margin:12px 0 12px 12px; opacity:1; }
+.mk-wide .mk-main .mk-avatar{ height:0; margin-bottom:0; opacity:0; }
+.mk-wide .mk-extra{ max-height:70px; opacity:1; margin-top:10px; }
 @media (prefers-reduced-motion: reduce){ .mk-card, .mk-art, .mk-main .mk-avatar, .mk-extra{ transition:none; } }
 
 /* ----- Offers ----- */

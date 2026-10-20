@@ -5371,8 +5371,8 @@ function mkToolsHTML(p) {
   return `<button type="button" class="mk-tool" aria-label="${escAttr(T("mk.shareFor", { name: p.name }))}" onclick="shareProduct('${esc(p.id)}')">${lucide("share", 16)}</button>` +
     `<button type="button" class="mk-tool${on ? " on" : ""}" data-bm="${escAttr(p.id)}" aria-pressed="${on ? "true" : "false"}" aria-label="${escAttr(T("mk.bookmarkFor", { name: p.name }))}" onclick="toggleBookmark('${esc(p.id)}')">${lucide("bookmark", 16)}</button>`;
 }
-/* The Open market card (Yuvi's design, 2026-10-20). A card is a grid cell that keeps its size; on hover or keyboard focus
-   the card grows over the empty side (mkPlace picks it) and shows a picture tile and the ingredients. Pressing it opens
+/* The Open market card (Yuvi's design, 2026-10-20). A card is a grid cell; on hover or keyboard focus the cell takes two
+   columns, pushing the other cards along (mkExpand), and the card shows a picture tile and the ingredients. Pressing it opens
    the full sheet. The title is the one real button (stretched over the card with CSS), so the card is keyboard
    reachable, and Get in touch sits above it. Only facts the producer gave are shown: there is no rating, because there
    is no such data. */
@@ -5428,28 +5428,77 @@ function renderBuyerProducts() {
   const foot = $("marketFoot"); if (foot) foot.hidden = !!gate;
   if (gate) { el.innerHTML = gate; return; }
   const rows = marketRows();
-  el.innerHTML = rows.length ? `<div class="mk-grid">${rows.map(buyerProductCardHTML).join("")}</div>`
+  clearTimeout(mkOpenTimer); clearTimeout(mkCloseTimer); mkOpenCell = null;     // the cards are about to be redrawn
+  el.innerHTML = rows.length ?`<div class="mk-grid">${rows.map(buyerProductCardHTML).join("")}</div>`
     : `<div class="empty-state">${esc(T(state.marketView === "bookmarks" && (state.productFeed || []).length ? "mk.noBookmarks" : "buyer.productsEmpty"))}</div>`;
 }
-/* Hover and keyboard focus grow a card toward whichever side of the grid has a free column; with none (a phone's one
-   column) the card stays as it is. Decided here, not in CSS, because only the page knows where the cell sits. */
-function mkPlace(cell) {
-  const grid = cell && cell.parentElement; if (!grid || !grid.getBoundingClientRect) return;
-  const c = cell.getBoundingClientRect(), g = grid.getBoundingClientRect();
-  const gap = parseFloat((window.getComputedStyle(grid) || {}).columnGap) || 14, step = c.width + gap;
-  cell.classList.remove("mk-x-r", "mk-x-l");
-  if (g.right - c.right + 1 >= step) cell.classList.add("mk-x-r");
-  else if (c.left - g.left + 1 >= step) cell.classList.add("mk-x-l");
+/* Hovering (or keyboard-focusing) a card widens it: its grid cell takes two columns (marketExpandPlacement in core.js says
+   where) and the grid pushes the other cards along, so nothing is covered. At most one card is wide at a time. mkReflow
+   records where every card is, makes the change, and slides each card from its old place to its new one (the card that
+   widens is revealed from its old footprint). Hover has a short delay in both directions so that moving the pointer
+   across the grid does not make the cards jump about. With one column (a phone) there is nothing to widen into. */
+let mkOpenCell = null, mkOpenTimer = 0, mkCloseTimer = 0;
+const MK_OPEN_DELAY = 120, MK_CLOSE_DELAY = 100;
+function mkReflow(grid, change) {
+  const cells = Array.prototype.slice.call(grid.children), before = cells.map(c => c.getBoundingClientRect());
+  change();
+  if (!(window.matchMedia && !window.matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+  cells.forEach((c, i) => {
+    if (!c.animate) return;
+    const r = c.getBoundingClientRect(), b = before[i], dx = b.left - r.left, dy = b.top - r.top;
+    if (c.classList.contains("mk-wide") && Math.abs(r.width - b.width) > 1) {
+      const card = c.firstElementChild, over = (r.width - b.width) + "px";
+      if (card) card.animate([{ clipPath: dx > 1 ? "inset(0 0 0 " + over + ")" : "inset(0 " + over + " 0 0)" }, { clipPath: "inset(0 0 0 0)" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
+    } else if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      c.animate([{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "none" }], { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+  });
+}
+function mkCollapseNow() {
+  const c = mkOpenCell; if (!c) return;
+  c.classList.remove("mk-wide"); c.style.gridColumn = ""; c.style.gridRow = ""; mkOpenCell = null;
+}
+function mkCollapse() {
+  clearTimeout(mkCloseTimer);
+  const c = mkOpenCell; if (!c) return;
+  if (!c.isConnected) { mkOpenCell = null; return; }
+  mkReflow(c.parentElement, mkCollapseNow);
+}
+function mkExpand(cell) {
+  clearTimeout(mkOpenTimer);
+  if (!cell || cell === mkOpenCell || !cell.isConnected || !cell.parentElement) return;
+  const grid = cell.parentElement;
+  const cols = String((window.getComputedStyle(grid) || {}).gridTemplateColumns || "").split(" ").filter(Boolean).length;
+  const index = Array.prototype.indexOf.call(grid.children, cell);
+  mkReflow(grid, () => {
+    mkCollapseNow();                                      // another card is wide: close it in the same move
+    const place = marketExpandPlacement(index, cols); if (!place) return;
+    cell.style.gridColumn = place.column; if (place.row) cell.style.gridRow = place.row;
+    cell.classList.add("mk-wide"); mkOpenCell = cell;
+  });
 }
 function wireMarketCards() {
   const cellOf = t => (t && t.closest ? t.closest(".mk-cell") : null);
-  document.addEventListener("pointerover", e => { const c = cellOf(e.target); if (c) mkPlace(c); });
+  document.addEventListener("pointerover", e => {
+    if (e.pointerType === "touch") return;                // a finger has no hover: a tap just opens the sheet
+    const c = cellOf(e.target); if (!c) return;
+    if (c === mkOpenCell) { clearTimeout(mkCloseTimer); return; }
+    clearTimeout(mkOpenTimer); mkOpenTimer = setTimeout(() => mkExpand(c), MK_OPEN_DELAY);
+  });
+  document.addEventListener("pointerout", e => {
+    if (e.pointerType === "touch") return;
+    const c = cellOf(e.target); if (!c || cellOf(e.relatedTarget) === c) return;     // still inside the same card
+    clearTimeout(mkOpenTimer);
+    if (c === mkOpenCell) { clearTimeout(mkCloseTimer); mkCloseTimer = setTimeout(mkCollapse, MK_CLOSE_DELAY); }
+  });
   document.addEventListener("focusin", e => {
     const c = cellOf(e.target); if (!c) return;
-    mkPlace(c);
-    try { if (e.target.matches(":focus-visible")) c.classList.add("mk-lift"); } catch (x) { /* old browser: hover only */ }
+    try { if (e.target.matches(":focus-visible")) mkExpand(c); } catch (x) { /* old browser: hover only */ }
   });
-  document.addEventListener("focusout", e => { const c = cellOf(e.target); if (c) c.classList.remove("mk-lift"); });
+  document.addEventListener("focusout", e => {
+    const c = cellOf(e.target);
+    if (c && c === mkOpenCell && cellOf(e.relatedTarget) !== c && !(c.matches && c.matches(":hover"))) mkCollapse();
+  });
 }
 
 /* ---- the full sheet (click a card): details, nutrition, documents, Get in touch ---- */

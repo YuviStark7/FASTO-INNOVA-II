@@ -883,6 +883,17 @@ function sortMarketRows(rows, o) {
   if (o.view === "viewed") return arr.sort(function (a, b) { return num(o.views, b) - num(o.views, a) || t(b) - t(a); });
   return arr.sort(function (a, b) { return t(b) - t(a); });
 }
+/* Open market: a hovered card takes TWO grid columns and the other cards are pushed along (grid reflow). Where it goes
+   depends on its place in the grid: i is its position in the list (0 first), cols how many columns the grid has right now
+   (measured while no card is expanded). A card in any column but the last just spans two columns from where it is; a card
+   in the LAST column cannot, so it starts one column earlier (and the card that was there is pushed on) and keeps the
+   same row. null: one column, nothing to widen into. */
+function marketExpandPlacement(i, cols) {
+  if (!(cols >= 2) || !(i >= 0)) return null;
+  var col = i % cols;
+  if (col < cols - 1) return { column: "span 2", row: "" };
+  return { column: (cols - 1) + " / span 2", row: String(Math.floor(i / cols) + 1) };
+}
 /* The Offers list: newest first, or by the name of the offer's first product (the card's title), A-Z or Z-A. Pure. */
 function sortOfferRows(rows, sort) {
   var arr = (rows || []).slice();
@@ -919,7 +930,7 @@ if (typeof module !== "undefined" && module.exports) {
     DASH_TILE_IDS: DASH_TILE_IDS, dashTileOrder: dashTileOrder, moveDashTile: moveDashTile, shiftDashTile: shiftDashTile, dashOrderIsDefault: dashOrderIsDefault,
     dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildBestBuyers: buildBestBuyers, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
-    sortMarketRows: sortMarketRows, sortOfferRows: sortOfferRows, clipFirstMessage: clipFirstMessage, firstMessageWords: firstMessageWords, FIRST_MSG_MAX_WORDS: FIRST_MSG_MAX_WORDS, FIRST_MSG_MAX_CHARS: FIRST_MSG_MAX_CHARS,
+    sortMarketRows: sortMarketRows, sortOfferRows: sortOfferRows, marketExpandPlacement: marketExpandPlacement, clipFirstMessage: clipFirstMessage, firstMessageWords: firstMessageWords, FIRST_MSG_MAX_WORDS: FIRST_MSG_MAX_WORDS, FIRST_MSG_MAX_CHARS: FIRST_MSG_MAX_CHARS,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }

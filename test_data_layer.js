@@ -224,7 +224,7 @@ function loadApp(root) {
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
-  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, openProductSheet, closeProductSheet, paintProductSheet, setSheetTab, productSheetBodyHTML, mkPlace, mkTitleHTML, mkSeason,
+  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, openProductSheet, closeProductSheet, paintProductSheet, setSheetTab, productSheetBodyHTML, mkExpand, mkCollapse, marketExpandPlacement, mkTitleHTML, mkSeason,
   sortMarketRows, clipFirstMessage, firstMessageWords, FIRST_MSG_MAX_WORDS, marketRows, setMarketView, cycleMarketSort, paintMarketControls, toggleBookmark, shareProduct, productShareUrl, openSharedProduct, loadMarketExtras, mkToolsHTML, ofPlace, offerMsgInput, offerMsgKey, openOfferContact, cancelOfferContact, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
@@ -3996,21 +3996,33 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("both new icons exist in the icon set", /"shopping-basket":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")) && /"tag":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")));
     check("the product sheet is the eighth sheet: listed, in the markup, closed by Escape and by its X",
       /const SHEET_IDS = \[[^\]]*"productSheet"\]/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheet"') && /id === "productSheet"\) closeProductSheet/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheetCloseBtn"'));
-    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20c/.test(html) && /js\/spotlight\.js\?v=2026-10-20c/.test(html) && !/2026-10-(18c|20a|20b)/.test(html));
+    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20d/.test(html) && /js\/spotlight\.js\?v=2026-10-20d/.test(html) && !/2026-10-(18c|20a|20b|20c)/.test(html));
     check("the spotlight uses Yuvi's settings (size 290, intensity .15, softness .7, edge .6, proximity 120, smoothing .3) and respects reduced motion",
       /intensity: 0\.15, size: 290, softness: 0\.7, edge: 0\.6, proximity: 120, smoothing: 0\.3/.test(spot) && spot.includes("prefers-reduced-motion"));
-    check("a card grows over the empty side only: it never changes the grid cell, and phones (no hover) never expand",
-      /\.mk-cell\{[^}]*height:282px/.test(mcss) && /\.mk-x-r:hover \.mk-card/.test(mcss) && /\.mk-card\{[^}]*position:absolute[^}]*width:100%/.test(mcss) && /\.mk-x-l \.mk-card\{[^}]*right:0/.test(mcss) && !/margin-left:calc\(-100cqw/.test(mcss) && !/\.mk-cell:hover \.mk-card\{/.test(mcss));
-    // where a hovered card grows: right if a whole column is free there, else left, else nowhere
-    const cellAt = (left, width, gridLeft, gridRight) => {
-      const cls = new Set();
-      return { classList: { add: x => cls.add(x), remove: (...x) => x.forEach(y => cls.delete(y)) }, has: x => cls.has(x),
-        getBoundingClientRect: () => ({ left, right: left + width, width }), parentElement: { getBoundingClientRect: () => ({ left: gridLeft, right: gridRight }) } };
-    };
-    box.window = box.window || {}; if (!box.window.getComputedStyle) box.window.getComputedStyle = () => ({ columnGap: "14px" });
-    const first = cellAt(0, 236, 0, 1000), last = cellAt(764, 236, 0, 1000), only = cellAt(0, 300, 0, 300);
-    a.mkPlace(first); a.mkPlace(last); a.mkPlace(only);
-    check("a card in the first column grows right, one in the last column grows left, a single column grows nowhere", first.has("mk-x-r") && !first.has("mk-x-l") && last.has("mk-x-l") && !last.has("mk-x-r") && !only.has("mk-x-r") && !only.has("mk-x-l"));
+    // a hovered card widens by taking two grid columns, and the grid pushes the other cards along (it never covers them)
+    check("the card fills a fixed-height cell, and a wide cell is what grows: no overlay widths or negative margins are left in the css",
+      /\.mk-cell\{[^}]*height:282px/.test(mcss) && /\.mk-card\{[^}]*position:absolute[^}]*inset:0/.test(mcss) && /\.mk-wide \.mk-art\{[^}]*opacity:1/.test(mcss) && /\.mk-wide \.mk-main\{[^}]*flex-basis:calc\(\(100cqw - var\(--mk-gap\)\) \/ 2/.test(mcss) &&
+      !/mk-x-[rl]|mk-lift|margin-left:calc\(-100cqw|width:calc\(200%/.test(mcss) && !/\.mk-cell:hover \.mk-card\{/.test(mcss));
+    const P = (i, c) => JSON.stringify(a.marketExpandPlacement(i, c));
+    check("a card in any column but the last spans two columns where it is; in the last column it starts one column earlier, on its own row; with one column it does nothing",
+      P(0, 4) === '{"column":"span 2","row":""}' && P(2, 4) === '{"column":"span 2","row":""}' && P(5, 4) === '{"column":"span 2","row":""}' &&
+      P(3, 4) === '{"column":"3 / span 2","row":"1"}' && P(7, 4) === '{"column":"3 / span 2","row":"2"}' && P(1, 2) === '{"column":"1 / span 2","row":"1"}' && P(0, 1) === "null" && P(-1, 4) === "null");
+    // the page: hovering widens one cell at a time (fake grid of six cells in four columns)
+    const mkCells = n => { const grid = { children: [] }; for (let i = 0; i < n; i++) { const cls = new Set(); grid.children.push({ isConnected: true, parentElement: grid, style: { gridColumn: "", gridRow: "" }, classList: { add: x => cls.add(x), remove: x => cls.delete(x), contains: x => cls.has(x) }, has: x => cls.has(x), getBoundingClientRect: () => ({ left: 0, top: 0, width: 236, height: 282 }) }); } return grid; };
+    box.window = box.window || {}; const realCS = box.window.getComputedStyle;
+    box.window.getComputedStyle = () => ({ gridTemplateColumns: "236px 236px 236px 236px" });
+    const g1 = mkCells(6);
+    a.mkExpand(g1.children[0]);
+    check("hovering the first card gives its cell two columns", g1.children[0].has("mk-wide") && g1.children[0].style.gridColumn === "span 2" && g1.children[0].style.gridRow === "");
+    a.mkExpand(g1.children[3]);
+    check("hovering the last-column card widens it from the column before, on its row, and closes the first (one wide card at a time)",
+      g1.children[3].has("mk-wide") && g1.children[3].style.gridColumn === "3 / span 2" && g1.children[3].style.gridRow === "1" && !g1.children[0].has("mk-wide") && g1.children[0].style.gridColumn === "");
+    a.mkCollapse();
+    check("leaving gives the columns back, and clears the placement", !g1.children[3].has("mk-wide") && g1.children[3].style.gridColumn === "" && g1.children[3].style.gridRow === "");
+    box.window.getComputedStyle = () => ({ gridTemplateColumns: "300px" });
+    const g2 = mkCells(3); a.mkExpand(g2.children[1]);
+    check("with one column (a phone) a card does not widen", !g2.children[1].has("mk-wide") && g2.children[1].style.gridColumn === "");
+    if (realCS) box.window.getComputedStyle = realCS;
   }
 
   /* ---- Market filters, bookmarks, share, pinned note, and the offer first-message limit (Yuvi, 2026-10-20, round 2) ---- */
