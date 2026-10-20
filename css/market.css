@@ -1,0 +1,111 @@
+/* ============================================================
+   FASTO INNOVA — Buyer side: Open market and Offers cards
+   ------------------------------------------------------------
+   Yuvi's card design: translucent dark fill, brick-red chips and button,
+   bold-then-light capital titles. The light that follows the pointer is
+   js/spotlight.js. A market card expands in place on hover or keyboard
+   focus (js: mkPlace decides which side has room); it never moves its
+   neighbours, because the grid cell keeps its size and the card simply
+   grows over the empty side.
+   ============================================================ */
+.buyer-body.mk-body{ max-width:none; }
+
+/* ----- the light (see js/spotlight.js) ----- */
+.spotlight-card{ position:relative; isolation:isolate; overflow:hidden; }
+.spotlight-card__light, .spotlight-card__edge{ position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0; }
+.spotlight-card__light{ z-index:-1; }
+.spotlight-card__edge{ z-index:1; inset:-1px; padding:1px;
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+
+/* ----- shared card parts ----- */
+.mk-card, .of-card{ background:rgba(0,0,0,.30); border:1px solid var(--hairline); border-radius:18px; color:var(--ink); }
+.mk-avatar{ display:block; flex:none; width:44px; height:44px; border-radius:50%; background-size:cover; background-position:center; background-color:rgba(255,255,255,.14); }
+.mk-title{ margin:0; font-size:17px; line-height:1.18; font-weight:300; letter-spacing:.01em; text-transform:uppercase; }
+.mk-title b{ font-weight:700; }
+.mk-open{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; background:none; border:0; padding:0; margin:0;
+  font:inherit; color:inherit; text-align:left; text-transform:inherit; letter-spacing:inherit; cursor:pointer; }
+.mk-open::after{ content:""; position:absolute; inset:0; border-radius:inherit; }
+.mk-open:focus-visible{ outline:none; }
+.mk-open:focus-visible::after{ outline:2px solid #fff; outline-offset:-3px; }
+.mk-cat{ margin-top:3px; font-size:12px; color:var(--ink-70); text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mk-chips{ display:flex; gap:6px; margin-top:10px; height:21px; overflow:hidden; white-space:nowrap; }
+.mk-chip{ flex:0 1 auto; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; height:21px; display:inline-flex; align-items:center; padding:0 9px; border-radius:6px; background:var(--red); color:#fff;
+  font-size:10px; font-weight:500; letter-spacing:.05em; text-transform:uppercase; }
+.mk-stats{ display:flex; gap:12px; margin:12px 0 0; }
+.mk-stat{ flex:1 1 0; min-width:0; display:flex; flex-direction:column-reverse; }
+.mk-stat dd{ margin:0; font-size:12.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mk-stat dt{ font-size:10.5px; color:var(--ink-70); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mk-act{ margin-top:auto; padding-top:12px; display:flex; flex-direction:column; gap:8px; position:relative; z-index:2; }
+.mk-get{ width:100%; height:34px; border:0; border-radius:8px; background:var(--red); color:#fff; font-size:12px; font-weight:500; letter-spacing:.07em; text-transform:uppercase; }
+.mk-get:hover{ background:var(--red-dark); }
+.mk-get:focus-visible, .mk-tab:focus-visible, .mk-doc:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.mk-get.ghost{ background:rgba(255,255,255,.14); }
+.mk-get.ghost:hover{ background:rgba(255,255,255,.22); }
+.mk-reply{ display:flex; gap:8px; }
+.mk-reply input{ flex:1 1 auto; min-width:0; }
+
+/* ----- Open market grid and the expanding card ----- */
+.mk-grid{ --mk-gap:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(236px, 1fr)); gap:var(--mk-gap); }
+.mk-cell{ position:relative; height:282px; container-type:inline-size; }
+.mk-cell:hover, .mk-cell.mk-lift{ z-index:6; }
+.mk-card{ display:flex; width:100%; height:100%; box-shadow:0 14px 30px -18px rgba(0,0,0,.7);
+  transition:width .38s cubic-bezier(.2,.8,.2,1), margin-left .38s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background-color .3s; }
+.mk-main{ flex:0 0 calc(100cqw - 2px); min-width:0; padding:16px; display:flex; flex-direction:column; }
+.mk-main > *{ flex:none; }
+.mk-main > .mk-act{ margin-top:auto; }
+.mk-art{ flex:0 0 0; width:0; min-width:0; margin:0; opacity:0; overflow:hidden; border-radius:12px; background-size:cover; background-position:center; background-color:rgba(255,255,255,.1);
+  transition:margin .38s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+.mk-main .mk-avatar{ margin-bottom:10px; transition:height .3s, margin .3s, opacity .25s; }
+.mk-extra{ max-height:0; opacity:0; overflow:hidden; margin:0; font-size:12px; line-height:1.4; color:var(--ink-70); transition:max-height .3s, opacity .3s .08s, margin .3s; }
+.mk-extra b{ color:var(--ink); font-weight:700; }
+.mk-extra span{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+
+/* expanded: the card is darker and blurs what it covers (the neighbour under it), so it stays readable */
+.mk-card{ -webkit-backdrop-filter:blur(0); backdrop-filter:blur(0); }
+/* expanded: toward the right (mk-x-r) or the left (mk-x-l), whichever has room */
+.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ width:calc(200cqw + var(--mk-gap)); box-shadow:0 22px 44px -18px rgba(0,0,0,.8); }
+.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ background:rgba(14,10,10,.95); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); }
+.mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ margin-left:calc(-100cqw - var(--mk-gap)); }
+.mk-x-r:hover .mk-art, .mk-x-r.mk-lift .mk-art, .mk-x-l:hover .mk-art, .mk-x-l.mk-lift .mk-art{ flex:1 1 0; margin:12px 0 12px 12px; opacity:1; }
+.mk-x-r:hover .mk-main .mk-avatar, .mk-x-r.mk-lift .mk-main .mk-avatar, .mk-x-l:hover .mk-main .mk-avatar, .mk-x-l.mk-lift .mk-main .mk-avatar{ height:0; margin-bottom:0; opacity:0; }
+.mk-x-r:hover .mk-extra, .mk-x-r.mk-lift .mk-extra, .mk-x-l:hover .mk-extra, .mk-x-l.mk-lift .mk-extra{ max-height:70px; opacity:1; margin-top:10px; }
+@media (hover:none){ .mk-card{ transition:none; } }
+@media (prefers-reduced-motion: reduce){ .mk-card, .mk-art, .mk-main .mk-avatar, .mk-extra{ transition:none; } }
+
+/* ----- Offers ----- */
+.of-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; }
+.of-card{ display:flex; gap:14px; padding:16px; align-items:flex-start; }
+.of-card .mk-avatar{ width:62px; height:62px; }
+.of-body{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+.of-from{ font-size:12px; color:var(--ink-70); }
+.of-body .mk-title{ margin-top:2px; }
+.of-body .mk-title span{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.of-body .mk-act{ margin-top:0; padding-top:12px; }
+
+/* ----- the full sheet ----- */
+#productSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(8,5,5,.62); }
+#productSheet.open{ display:flex; }
+#productSheet .match-panel{ max-width:640px; }
+.match-panel-head .mk-title{ font-size:24px; }
+.match-panel-head .mk-cat{ font-size:13px; }
+.mk-sheet-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.mk-sheet .mk-stats{ margin-top:18px; gap:18px; }
+.mk-sheet .mk-stat dd{ font-size:14px; white-space:normal; }
+.mk-tabs{ display:flex; gap:22px; margin-top:22px; border-bottom:1px solid var(--hairline); }
+.mk-tab{ background:none; border:0; padding:6px 0 10px; font-size:17px; font-weight:700; color:var(--ink-50); border-bottom:2px solid transparent; margin-bottom:-1px; }
+.mk-tab:hover{ color:var(--ink-70); }
+.mk-tab[aria-pressed="true"]{ color:#fff; border-bottom-color:var(--red); }
+.mk-pane{ margin-top:14px; }
+.mk-pane .buyer-facts{ grid-template-columns:minmax(96px,max-content) 1fr; gap:10px 22px; font-size:14.5px; }
+.mk-pane .buyer-facts dt{ font-size:14px; color:var(--ink); letter-spacing:0; }
+.mk-strip{ display:flex; gap:12px; overflow-x:auto; padding:2px 0 8px; margin-top:16px; }
+.mk-doc{ flex:none; width:190px; height:128px; border:0; padding:0; border-radius:12px; overflow:hidden; background-color:rgba(255,255,255,.1); background-size:cover; background-position:center; }
+.mk-doclist{ display:flex; flex-direction:column; gap:8px; }
+.mk-docrow{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 12px; border-radius:10px; background:rgba(255,255,255,.07); border:0; color:inherit; text-align:left; font-size:13.5px; }
+.mk-docrow:hover{ background:rgba(255,255,255,.13); }
+.mk-docrow small{ color:var(--ink-70); white-space:nowrap; }
+.mk-sheet-foot{ margin-top:18px; display:flex; flex-direction:column; gap:10px; }
+.mk-sheet-foot .mk-get{ height:40px; font-size:13px; }
+.mk-sheet-note{ margin:0; font-size:12px; color:var(--ink-70); }
+@media (max-width:900px){ #productSheet{ padding:10px; } #productSheet .match-panel{ max-width:100%; } .match-panel-head .mk-title{ font-size:20px; } }

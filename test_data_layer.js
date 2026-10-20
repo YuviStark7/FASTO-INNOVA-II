@@ -224,7 +224,7 @@ function loadApp(root) {
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
-  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, toggleFeedProduct, openFeedDoc,
+  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, openProductSheet, closeProductSheet, paintProductSheet, setSheetTab, productSheetBodyHTML, mkPlace, mkTitleHTML, mkSeason, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
   buildAttention, buildShopTiles, buildBestBuyers, buildGaps, buildInterest, buildTimeline, buildDocHealth,
@@ -2366,14 +2366,35 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("a buyer who is not approved reads nothing", st.productFeed.length === 0 && sb.chains.length === 0);
     st.claims = [{ status: "approved" }]; st.productFeed = [Object.assign({}, complete, { status: "active" })]; st.openFeedProductId = null;
     const closed = a.buyerProductCardHTML(st.productFeed[0]);
-    check("the buyer card shows the summary only until the sheet is opened",
-      closed.includes("Brie") && closed.includes("150 g") && !closed.includes("Ingredients") && closed.includes('aria-label="Show the full sheet of Brie"'));
-    sb.reset(); sb.router = () => ({ data: [{ id: "d1", file_name: "label.pdf", storage_path: "u1/products/x", mime_type: "application/pdf" }], error: null });
-    await a.toggleFeedProduct("p1");
-    const open = a.buyerProductCardHTML(st.productFeed[0]);
-    check("opening shows ingredients, allergens, the nutrition table and the documents, and never a producer identity",
-      open.includes("milk") && open.includes("Nutrition per 100 g") && open.includes("1.8") && open.includes('aria-label="Open document label.pdf"') && !/phone|address|VAT|u1\b/.test(open.replace("u1/products/x", "")));
-    check("a product name from the database is escaped for the buyer", a.buyerProductCardHTML(Object.assign({}, st.productFeed[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1);
+    check("the market card shows the summary only: name, category, three facts, and a title button that opens the sheet",
+      closed.includes("BRIE") === false && closed.includes("<b>Brie</b>") && closed.includes("soft cheese") && closed.includes("spotlight-card") && closed.includes('aria-label="Show the full sheet of Brie"') &&
+      closed.includes("onclick=\"openProductSheet('p1')\"") && closed.includes("Min. order") && closed.includes("Shelf life") && !closed.includes("Nutrition per 100 g") && !/rating/i.test(closed));
+    check("the title is the one stretched button; Get in touch is a second, separate button naming the product",
+      (closed.match(/<button/g) || []).length === 2 && closed.includes('aria-label="Get in touch with the producer of Brie"') && closed.includes(">Get in touch<"));
+    check("a long name keeps its first word bold and the rest light", a.mkTitleHTML("Sliced mountain cheese") === "<b>Sliced</b> mountain cheese" && a.mkTitleHTML("Brie") === "<b>Brie</b>" && a.mkTitleHTML("<b>x</b> y").indexOf("<b>x") === -1);
+    els.productSheet = fakeEl("productSheet"); els.productSheetBody = fakeEl("productSheetBody"); els.productSheetTitle = fakeEl("productSheetTitle"); els.productSheetCat = fakeEl("productSheetCat");
+    sb.reset(); sb.router = ch => ch.table === "product_documents" ? { data: [
+      { id: "d1", file_name: "label.pdf", storage_path: "u1/products/x", mime_type: "application/pdf", size_bytes: 2048 },
+      { id: "d2", file_name: "front.jpg", storage_path: "u1/products/y", mime_type: "image/jpeg", size_bytes: 4096 }], error: null } : { data: [], error: null };
+    st.viewedLogged = null;
+    await a.openProductSheet("p1");
+    const open = els.productSheetBody.innerHTML;
+    check("pressing a card opens the full sheet: title, category, details tab with ingredients and allergens, never a producer identity",
+      els.productSheet.has("open") && els.productSheetTitle.innerHTML === "<b>Brie</b>" && els.productSheetCat.textContent === "soft cheese" &&
+      open.includes("milk") && open.includes("Ingredients") && open.includes('aria-pressed="true"') && !/phone|address|VAT/i.test(open) && !/owner|u1\b/.test(open.replace(/https:\/\/signed\.example\/[^&"]*/g, "")));
+    check("opening a sheet counts one look for the farmer (counts only)", sb.chains.some(c => c.table === "product_views" && c.ops[0].op === "insert") || a.viewLogged.has("p1"));
+    check("the pictures in the documents become a strip of buttons, each with a name, once their links are fetched",
+      (open.match(/class="mk-doc"/g) || []).length === 1 && open.includes('aria-label="Open document front.jpg"') && sb.storageCalls.some(c => c.fn === "signed" && c.bucket === "farmer-files"));
+    check("a market card then uses the first picture as its tile", a.buyerProductCardHTML(st.productFeed[0]).includes("background-image:url(&quot;https://signed.example/u1/products/y"));
+    a.setSheetTab("nutrition");
+    check("the Nutrition tab shows the per-100 g table", els.productSheetBody.innerHTML.includes("Nutrition per 100 g") && els.productSheetBody.innerHTML.includes("1.8"));
+    a.setSheetTab("docs");
+    check("the Documents tab lists every file with a name and a size, as buttons that open it", els.productSheetBody.innerHTML.includes('aria-label="Open document label.pdf"') && els.productSheetBody.innerHTML.includes("PDF"));
+    check("the tabs are buttons that say which one is pressed", /<button type="button" class="mk-tab" id="mkTab-docs" aria-pressed="true"/.test(els.productSheetBody.innerHTML) && /id="mkTab-details" aria-pressed="false"/.test(els.productSheetBody.innerHTML));
+    check("a product name from the database is escaped for the buyer", a.buyerProductCardHTML(Object.assign({}, st.productFeed[0], { name: "<img src=x>" })).indexOf("<img src=x>") === -1 &&
+      (a.paintProductSheet(), els.productSheetTitle.innerHTML.indexOf("<img") === -1));
+    a.closeProductSheet();
+    check("closing the sheet clears it", !els.productSheet.has("open") && st.openFeedProductId === null);
     // documents open through a short-lived link
     let opened = null; box.open = (url) => { opened = url; };
     sb.reset();
@@ -2460,9 +2481,10 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       details: { pack_sizes: ["150 g"], shelf_life_days: 60, min_order: "10 cases", ingredients: ["milk"], allergens: [] }, nutrition: {} }];
     for (const id of ["productMsgInput", "buyerList", "buyerThreadPane", "buyerSidePanel", "buyerProductsBody"]) els[id] = els[id] || fakeEl(id);
 
-    check("the product card offers Contact, naming the product", a.productContactHTML(st.productFeed[0]).includes('aria-label="Contact the producer of Brie"'));
+    check("the product card offers Get in touch, naming the product", a.productContactHTML(st.productFeed[0], "card").includes('aria-label="Get in touch with the producer of Brie"'));
     a.openProductContact("pr1");
-    check("pressing Contact opens a message box for that product", a.productContactHTML(st.productFeed[0]).includes('id="productMsgInput"'));
+    check("on a card the button opens the sheet with the message box already open; the card itself never holds the box",
+      st.contactProductId === "pr1" && st.openFeedProductId === "pr1" && a.productContactHTML(st.productFeed[0]).includes('id="productMsgInput"') && !a.productContactHTML(st.productFeed[0], "card").includes("productMsgInput"));
     const sum = a.buildProductSummary(st.productFeed[0]);
     check("the summary a buyer thread carries is the product, with no place, name or contact",
       sum.village === null && sum.products[0].name === "Brie" && sum.product.min_order === "10 cases" && !JSON.stringify(sum).match(/uf|phone|address|vat/i));
@@ -2750,6 +2772,17 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("a buyer-started thread (no AI draft) previews its latest message instead of crashing",
       a.clientPreview({ message_it: "", messages: [{ text: "Buongiorno a tutti" }] }) === "Buongiorno a tutti" && a.clientPreview({ message_it: "x".repeat(80) }).length === 46 && a.clientPreview({}) === "");
     check("offer cards escape what the farmer typed", !a.offerCardHTML({ id: "x", village: "<img src=x>", products: [{ name: "<svg>", kg_per_week: 1 }], months: [] }).match(/<img|<svg/));
+    {
+      const oc = a.offerCardHTML({ id: "of9", village: "Pignataro", distance_km: 12, organic: "yes", months: [6, 7, 8],
+        products: [{ name: "Wild honey", category: "miele", kg_per_week: 40 }, { name: "Eggs", category: "uova", kg_per_week: 10 }] });
+      check("an offer card carries the village (never a name), the product in capitals, chips, three facts and one Get in touch button naming the offer",
+        oc.includes("spotlight-card") && oc.includes("Farmer from Pignataro") && oc.includes("<b>Wild</b> honey") && oc.includes("+1 more") && oc.includes("Distance") && oc.includes("12 km") &&
+        oc.includes("50 kg/week") && oc.includes("Season") && (oc.match(/<button/g) || []).length === 1 && oc.includes('aria-label="Get in touch with the farmer offering Wild honey"') && !/farmer_name|nickname|phone/i.test(oc));
+      check("the season reads as a range for three or more months in a row, a list otherwise, the whole year when empty",
+        a.mkSeason([6, 7, 8]) === "June\u2013August" && a.mkSeason([8, 6, 7]) === "June\u2013August" && a.mkSeason([3, 9]) === "March, September" && a.mkSeason([]) === "All year" && a.mkSeason([1,2,3,4,5,6,7,8,9,10,11,12]) === "All year");
+      check("only an organic or partly organic offer gets an organic chip; 'no' says nothing", oc.includes("Organic") && !a.offerCardHTML({ id: "of7", organic: "no", products: [{ name: "x", category: "uova" }], months: [] }).includes("Not certified"));
+      check("an offer card with nothing known shows dashes, not blanks or undefined", (() => { const h = a.offerCardHTML({ id: "of8", products: [], months: [] }); return !h.includes("undefined") && h.includes("\u2014") && h.includes("A farmer"); })());
+    }
   }
 
   /* ---- My business landing page: chips, views, stats ---- */
@@ -3941,6 +3974,34 @@ console.log("== Test 2: saveProducts and saveMatches ==");
 
     st.clients = keep.clients; st.products = keep.products; st.productDocCounts = keep.counts; st.productDocs = keep.docs; st.chats = keep.chats; st.productViews = keep.views; st.productEvents = keep.events; st.screen = keep.screen; st.activeClientId = keep.active; st.farmerId = keep.farmerId;
     delete els.dashHome;
+  }
+
+  /* ---- Buyer Market and Offers redesign (Yuvi, 2026-10-20) ---- */
+  {
+    const a = app, fs = require("fs");
+    const html = fs.readFileSync(path + "/index.html", "utf8"), mcss = fs.readFileSync(path + "/css/market.css", "utf8"), spot = fs.readFileSync(path + "/js/spotlight.js", "utf8");
+    check("the buyer's Products tab is now Market with a basket icon, and Offers has a tag icon (both languages say Market / Mercato)",
+      /data-screen="buyerProducts"><span class="ic-svg" data-icon="shopping-basket"[^>]*><\/span><span class="label" data-i18n="nav.bProducts">Market</.test(html) &&
+      /data-screen="buyerOffers"><span class="ic-svg" data-icon="tag"/.test(html) && a.STRINGS.en["nav.bProducts"] === "Market" && a.STRINGS.it["nav.bProducts"] === "Mercato" &&
+      a.STRINGS.en["buyer.productsTitle"] === "Open market" && a.STRINGS.it["buyer.productsTitle"] === "Mercato aperto");
+    check("both new icons exist in the icon set", /"shopping-basket":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")) && /"tag":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")));
+    check("the product sheet is the eighth sheet: listed, in the markup, closed by Escape and by its X",
+      /const SHEET_IDS = \[[^\]]*"productSheet"\]/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheet"') && /id === "productSheet"\) closeProductSheet/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheetCloseBtn"'));
+    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20a/.test(html) && /js\/spotlight\.js\?v=2026-10-20a/.test(html) && !/2026-10-18c/.test(html));
+    check("the spotlight uses Yuvi's settings (size 290, intensity .15, softness .7, edge .6, proximity 120, smoothing .3) and respects reduced motion",
+      /intensity: 0\.15, size: 290, softness: 0\.7, edge: 0\.6, proximity: 120, smoothing: 0\.3/.test(spot) && spot.includes("prefers-reduced-motion"));
+    check("a card grows over the empty side only: it never changes the grid cell, and phones (no hover) never expand",
+      /\.mk-cell\{[^}]*height:282px/.test(mcss) && /\.mk-x-r:hover \.mk-card/.test(mcss) && /\.mk-x-l:hover \.mk-card[^{]*\{[^}]*margin-left:calc\(-100cqw/.test(mcss) && !/\.mk-cell:hover \.mk-card\{/.test(mcss));
+    // where a hovered card grows: right if a whole column is free there, else left, else nowhere
+    const cellAt = (left, width, gridLeft, gridRight) => {
+      const cls = new Set();
+      return { classList: { add: x => cls.add(x), remove: (...x) => x.forEach(y => cls.delete(y)) }, has: x => cls.has(x),
+        getBoundingClientRect: () => ({ left, right: left + width, width }), parentElement: { getBoundingClientRect: () => ({ left: gridLeft, right: gridRight }) } };
+    };
+    box.window = box.window || {}; if (!box.window.getComputedStyle) box.window.getComputedStyle = () => ({ columnGap: "14px" });
+    const first = cellAt(0, 236, 0, 1000), last = cellAt(764, 236, 0, 1000), only = cellAt(0, 300, 0, 300);
+    a.mkPlace(first); a.mkPlace(last); a.mkPlace(only);
+    check("a card in the first column grows right, one in the last column grows left, a single column grows nowhere", first.has("mk-x-r") && !first.has("mk-x-l") && last.has("mk-x-l") && !last.has("mk-x-r") && !only.has("mk-x-r") && !only.has("mk-x-l"));
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

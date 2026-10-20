@@ -42,7 +42,9 @@ let state = {
   productDocs: {},      // product id -> the documents themselves (names, types, paths): the files in its folder
   productFeed: [],      // a buyer's view: launched products
   feedDocs: {},         // product id -> documents of a launched product (loaded when its sheet is opened)
-  openFeedProductId: null,
+  feedThumbs: {},       // document id -> short-lived link to a picture (the sheet and the market cards draw it)
+  openFeedProductId: null,   // the product whose full sheet is open
+  sheetTab: "details",       // the full sheet's tab: details | nutrition | docs
   contactProductId: null,   // the launched product whose Contact box is open
   productFilter: { kind: "", status: "open", category: "" },
   productSort: "new",     // My products order: "new" | "old" | "az"
@@ -2260,7 +2262,7 @@ async function finishWithRecs(recs, chat) {
    profile editor from the match sheet closes the match sheet on the way, so
    "put me back where I was" has to mean the button that started all of it, not
    a control inside a panel that has since been torn down and rebuilt. */
-const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet", "dialogSheet", "helpSheet"];
+const SHEET_IDS = ["matchSheet", "logisticsSheet", "profileSheet", "exportSheet", "accountSheet", "dialogSheet", "helpSheet", "productSheet"];
 const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 let sheetStack = [];
 let sheetReturnFocus = null;
@@ -2345,6 +2347,7 @@ function closeTopSheet() {
   else if (id === "accountSheet") closeAccountSheet();
   else if (id === "dialogSheet") settleDialog(false);
   else if (id === "helpSheet") closeHelp();
+  else if (id === "productSheet") closeProductSheet();
   else closeProfileEdit();
   return true;
 }
@@ -5114,22 +5117,39 @@ async function loadOfferFeed() {
   if (error) throw error;
   state.offerFeed = (data || []).map(o => Object.assign({}, o, { distance_km: o.distance_km != null ? Number(o.distance_km) : null }));
 }
+/* An offer card (Yuvi's design, 2026-10-20): a round picture, who it is from (the village, never a name), the product in
+   capitals, chips, three facts and Get in touch. The light that follows the pointer is the same as on the market cards. */
+// "June-August" for a run of three or more months, otherwise the list; nothing given (or all twelve) is the whole year.
+function mkSeason(months) {
+  const m = (months || []).map(Number).filter(n => n >= 1 && n <= 12).sort((a, b) => a - b).filter((n, i, a) => a.indexOf(n) === i);
+  if (!m.length || m.length === 12) return T("buyer.sumAllYear");
+  const run = m.length >= 3 && m[m.length - 1] - m[0] === m.length - 1;
+  return run ? monthName(m[0]) + "\u2013" + monthName(m[m.length - 1]) : monthsLabel(m);
+}
 function offerCardHTML(o) {
-  const prods = (o.products || []).map(p => esc(p.name) + (p.kg_per_week ? " (" + esc(T("buyer.sumKg", { kg: Math.round(p.kg_per_week) })) + ")" : "")).join(", ");
+  const prods = o.products || [], first = prods[0] || {};
   const thread = (state.inbox || []).find(t => t.offerId === o.id);
   const open = state.contactOfferId === o.id;
-  return `<div class="buyer-note offer-card"><b>${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}</b>
-    <dl class="buyer-facts" style="margin-top:8px">
-      <dt>${esc(T("buyer.sumProducts"))}</dt><dd>${prods || "—"}</dd>
-      <dt>${esc(T("buyer.bizDistance"))}</dt><dd>${o.distance_km != null && isFinite(o.distance_km) ? esc(T("buyer.km", { n: o.distance_km })) : "—"}</dd>
-      <dt>${esc(T("buyer.sumMonths"))}</dt><dd>${esc(monthsLabel(o.months) || T("buyer.sumAllYear"))}</dd>
-      <dt>${esc(T("offer.organic"))}</dt><dd>${esc(o.organic ? organicLabel(o.organic) : "—")}</dd>
-    </dl>
-    ${thread ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="openInboxFromOffer('${thread.id}')">${esc(T("offer.openThread"))}</button>`
-      : open ? `<div class="inbox-reply" style="margin-top:10px"><input type="text" class="input-glass" id="offerMsgInput" maxlength="2000" aria-label="${escAttr(T("offer.msgLabel"))}" placeholder="${escAttr(T("offer.msgLabel"))}">
-        <button type="button" class="btn btn-primary btn-sm" onclick="contactOffer('${o.id}')">${esc(T("buyer.replySend"))}</button></div>`
-      : `<button type="button" class="btn btn-primary btn-sm" style="margin-top:10px" onclick="openOfferContact('${o.id}')">${esc(T("offer.contact"))}</button>`}
-  </div>`;
+  const cats = prods.map(p => p.category && catLabel(p.category)).filter((c, i, a) => c && a.indexOf(c) === i).slice(0, 2);
+  const chips = cats.concat(o.organic === "yes" || o.organic === "partial" ? [organicLabel(o.organic)] : [], prods.length > 1 ? [T("mk.more", { n: prods.length - 1 })] : []);
+  const kg = prods.reduce((n, p) => n + (Number(p.kg_per_week) || 0), 0);
+  const name = first.name || MK_NONE;
+  const stats = mkStatsHTML([
+    [T("mk.statDistance"), o.distance_km != null && isFinite(o.distance_km) ? T("buyer.km", { n: o.distance_km }) : ""],
+    [T("mk.statVolume"), kg > 0 ? T("buyer.sumKg", { kg: Math.round(kg) }) : ""],
+    [T("mk.statSeason"), mkSeason(o.months)]]);
+  const act = thread ? `<button type="button" class="mk-get ghost" onclick="openInboxFromOffer('${esc(thread.id)}')">${esc(T("offer.openThread"))}</button>`
+    : open ? `<div class="mk-reply"><input type="text" class="input-glass" id="offerMsgInput" maxlength="2000" aria-label="${escAttr(T("offer.msgLabel"))}" placeholder="${escAttr(T("offer.msgLabel"))}">
+        <button type="button" class="btn btn-primary btn-sm" onclick="contactOffer('${esc(o.id)}')">${esc(T("buyer.replySend"))}</button></div>`
+    : `<button type="button" class="mk-get" aria-label="${escAttr(T("offer.contactFor", { name }))}" onclick="openOfferContact('${esc(o.id)}')">${esc(T("offer.contact"))}</button>`;
+  return `<article class="of-card spotlight-card">
+    <span class="mk-avatar" style="${mkArtStyle(first.name || o.id)}" aria-hidden="true"></span>
+    <div class="of-body">
+      <div class="of-from">${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}</div>
+      <h3 class="mk-title"><span title="${escAttr(name)}">${mkTitleHTML(name)}</span></h3>
+      ${mkChipsHTML(chips, 4)}${stats}
+      <div class="mk-act">${act}</div>
+    </div></article>`;
 }
 function renderOfferList() {
   const el = $("offersList"); if (!el) return;
@@ -5139,7 +5159,7 @@ function renderOfferList() {
 }
 function setOfferFilter(key, value) { state.offerFilter[key] = value; state.contactOfferId = null; renderOfferList(); }
 function openOfferContact(id) { state.contactOfferId = id; renderOfferList(); const i = $("offerMsgInput"); if (i && i.focus) i.focus(); }
-function openInboxFromOffer(threadId) { switchScreen("buyerInbox"); openInboxThread(threadId); }
+function openInboxFromOffer(threadId) { closeProductSheet(); switchScreen("buyerInbox"); openInboxThread(threadId); }
 // One conversation per offer per business (a database rule too). The id is made
 // here because the buyer cannot read the row back until a message is on it.
 const pendingInquiries = {};
@@ -5187,14 +5207,21 @@ function buildProductSummary(p) {
     products: [{ name: String(p.name || "").slice(0, 60), category: p.ai_category || null, kg_per_week: 0 }],
     product: { pack_sizes: (d.pack_sizes || []).slice(0, 10).map(x => String(x).slice(0, 60)), shelf_life_days: d.shelf_life_days || null, min_order: d.min_order || null } };
 }
-function productContactHTML(p) {
+// `where` is "sheet" (the full sheet: the message box opens in place) or "card" (a market card: only the
+// button; pressing it opens the sheet with the box already open).
+function productContactHTML(p, where) {
   const thread = (state.inbox || []).find(t => t.productId === p.id);
-  if (thread) return `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px;margin-right:8px" onclick="openInboxFromOffer('${esc(thread.id)}')">${esc(T("offer.openThread"))}</button>`;
-  if (state.contactProductId === p.id) return `<div class="inbox-reply" style="margin-top:10px"><input type="text" class="input-glass" id="productMsgInput" maxlength="2000" aria-label="${escAttr(T("pcontact.msgLabel"))}" placeholder="${escAttr(T("pcontact.msgLabel"))}">
+  const cardSide = where === "card";
+  if (thread) return `<button type="button" class="mk-get ghost" onclick="openInboxFromOffer('${esc(thread.id)}')">${esc(T("offer.openThread"))}</button>`;
+  if (!cardSide && state.contactProductId === p.id) return `<div class="mk-reply"><input type="text" class="input-glass" id="productMsgInput" maxlength="2000" aria-label="${escAttr(T("pcontact.msgLabel"))}" placeholder="${escAttr(T("pcontact.msgLabel"))}">
     <button type="button" class="btn btn-primary btn-sm" onclick="contactProduct('${esc(p.id)}')">${esc(T("buyer.replySend"))}</button></div>`;
-  return `<button type="button" class="btn btn-primary btn-sm" style="margin-top:10px;margin-right:8px" aria-label="${escAttr(T("pcontact.contactFor", { name: p.name }))}" onclick="openProductContact('${esc(p.id)}')">${esc(T("pcontact.contact"))}</button>`;
+  return `<button type="button" class="mk-get" aria-label="${escAttr(T("pcontact.contactFor", { name: p.name }))}" onclick="openProductContact('${esc(p.id)}')">${esc(T("pcontact.contact"))}</button>`;
 }
-function openProductContact(id) { state.contactProductId = id; renderBuyerProducts(); const i = $("productMsgInput"); if (i && i.focus) i.focus(); }
+function openProductContact(id) {
+  state.contactProductId = id;
+  if (state.openFeedProductId !== id) { openProductSheet(id, true); return; }
+  paintProductSheet(); const i = $("productMsgInput"); if (i && i.focus) i.focus();
+}
 async function contactProduct(productId) {
   const p = (state.productFeed || []).find(x => x.id === productId), biz = myBusiness(); if (!p || !biz) return;
   const input = $("productMsgInput");
@@ -5216,6 +5243,7 @@ async function contactProduct(productId) {
     state.contactProductId = null;
     await loadBuyerInbox();
     toast(T("pcontact.sent"));
+    closeProductSheet();
     switchScreen("buyerInbox"); openInboxThread(id);
   } catch (e) { saveFailedWithOwnMessage("save.message", e, T("save.messageMsg")); }
   contactBusy = false;
@@ -5232,36 +5260,156 @@ async function loadProductFeed() {
   if (error) throw error;
   state.productFeed = data || [];
 }
+/* The Open market card (Yuvi's design, 2026-10-20). A card is a grid cell that keeps its size; on hover or keyboard focus
+   the card grows over the empty side (mkPlace picks it) and shows a picture tile and the ingredients. Pressing it opens
+   the full sheet. The title is the one real button (stretched over the card with CSS), so the card is keyboard
+   reachable, and Get in touch sits above it. Only facts the producer gave are shown: there is no rating, because there
+   is no such data. */
+const MK_NONE = "\u2014";
+const mkCap = t => { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); };   // the field labels are written lowercase for use inside sentences
+function mkTitleHTML(name) {     // first word bold, the rest light, as in the design
+  const s = String(name || "").trim(), i = s.search(/\s/);
+  return i < 0 ? `<b>${esc(s)}</b>` : `<b>${esc(s.slice(0, i))}</b> ${esc(s.slice(i + 1))}`;
+}
+function mkArtStyle(seed) { return typeof gfArtStyle === "function" ? gfArtStyle(seed) : ""; }
+function mkStatsHTML(rows) {
+  return `<dl class="mk-stats">${rows.map(r => { const v = r[1] === "" || r[1] == null ? MK_NONE : String(r[1]);
+    return `<div class="mk-stat"><dt>${esc(r[0])}</dt><dd title="${escAttr(v)}">${esc(v)}</dd></div>`; }).join("")}</dl>`;
+}
+function mkChipsHTML(list, max) {
+  const items = (list || []).filter(Boolean).slice(0, max || 4);
+  return items.length ? `<div class="mk-chips">${items.map(c => `<span class="mk-chip">${esc(c)}</span>`).join("")}</div>` : `<div class="mk-chips"></div>`;
+}
+function productStatRows(p, withPacks) {
+  const d = p.details || {}, list = a => Array.isArray(a) ? a.join(", ") : "";
+  const rows = [[T("mk.statMoq"), d.min_order || ""], [T("mk.statPrice"), d.price_range || ""],
+    [T("mk.statShelf"), typeof d.shelf_life_days === "number" ? T("prod.days", { n: d.shelf_life_days }) : ""]];
+  if (withPacks) rows.push([T("mk.statPacks"), list(d.pack_sizes)]);
+  return rows;
+}
+// The first picture among a product's documents, once its short-lived link has been fetched (the sheet does that).
+function productThumbUrl(id) {
+  const doc = (state.feedDocs[id] || []).find(d => state.feedThumbs[d.id]);
+  return doc ? state.feedThumbs[doc.id] : "";
+}
 function buyerProductCardHTML(p) {
-  const d = p.details || {}, n = p.nutrition || {};
-  const open = state.openFeedProductId === p.id;
-  const list = a => Array.isArray(a) ? a.join(", ") : "";
-  const dl = (rows) => `<dl class="buyer-facts" style="margin-top:8px">${rows.filter(r => r[1] !== "" && r[1] != null).map(r => `<dt>${esc(r[0])}</dt><dd>${esc(r[1])}</dd>`).join("")}</dl>`;
-  const summary = dl([[productFieldLabel("pack_sizes"), list(d.pack_sizes)],
-    [productFieldLabel("shelf_life_days"), typeof d.shelf_life_days === "number" ? T("prod.days", { n: d.shelf_life_days }) : ""],
-    [productFieldLabel("min_order"), d.min_order || ""]]);
-  let more = "";
-  if (open) {
-    const nutr = PRODUCT_NUTRIENTS.concat(["fibre_g"]).filter(k => typeof n[k] === "number").map(k => [productFieldLabel("nutrition." + k), n[k]]);
-    const docs = (state.feedDocs[p.id] || []).map(doc =>
-      `<button type="button" class="btn btn-ghost btn-sm" aria-label="${escAttr(T("buyer.openDoc", { name: doc.file_name }))}" onclick="openFeedDoc('${esc(doc.id)}','${esc(p.id)}')">${esc(doc.file_name)}</button>`).join(" ");
-    more = dl([[productFieldLabel("ingredients"), list(d.ingredients)],
-      [productFieldLabel("allergens"), Array.isArray(d.allergens) ? (d.allergens.length ? list(d.allergens) : T("prod.noAllergens")) : ""],
-      [productFieldLabel("storage"), d.storage || ""], [productFieldLabel("certifications"), list(d.certifications)], [productFieldLabel("price_range"), d.price_range || ""]]) +
-      (nutr.length ? `<h4 style="margin:10px 0 4px">${esc(T("prod.per100"))}</h4>${dl(nutr)}` : "") +
-      `<div style="margin-top:10px">${docs || esc(T("buyer.noDocs"))}</div>`;
-  }
-  return `<div class="buyer-note offer-card"><b>${esc(p.name)}</b>${p.ai_category ? ` <span class="chip">${esc(p.ai_category)}</span>` : ""}${summary}${more}` +
-    productContactHTML(p) +
-    `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:10px" aria-expanded="${open ? "true" : "false"}" aria-label="${escAttr(T(open ? "buyer.hideSheetFor" : "buyer.showSheetFor", { name: p.name }))}" onclick="toggleFeedProduct('${esc(p.id)}')">${esc(T(open ? "buyer.hideSheet" : "buyer.showSheet"))}</button></div>`;
+  const d = p.details || {}, list = a => Array.isArray(a) ? a.join(", ") : "";
+  const thumb = productThumbUrl(p.id);
+  const artStyle = thumb ? `background-image:url(&quot;${escAttr(thumb)}&quot;)` : mkArtStyle(p.name || p.id);
+  const extra = list(d.ingredients) ? `<b>${esc(mkCap(productFieldLabel("ingredients")))}</b> ${esc(list(d.ingredients))}`
+    : d.storage ? `<b>${esc(mkCap(productFieldLabel("storage")))}</b> ${esc(d.storage)}` : "";
+  return `<div class="mk-cell" data-pid="${escAttr(p.id)}"><article class="mk-card spotlight-card">
+    <div class="mk-art" style="${artStyle}" aria-hidden="true"></div>
+    <div class="mk-main">
+      <span class="mk-avatar" style="${mkArtStyle(p.name || p.id)}" aria-hidden="true"></span>
+      <h3 class="mk-title"><button type="button" class="mk-open" title="${escAttr(p.name)}" aria-label="${escAttr(T("buyer.showSheetFor", { name: p.name }))}" onclick="openProductSheet('${esc(p.id)}')">${mkTitleHTML(p.name)}</button></h3>
+      <div class="mk-cat">${esc(p.ai_category || "")}</div>
+      ${mkChipsHTML(d.certifications, 3)}
+      <p class="mk-extra"><span>${extra}</span></p>
+      ${mkStatsHTML(productStatRows(p))}
+      <div class="mk-act">${productContactHTML(p, "card")}</div>
+    </div></article></div>`;
 }
 function renderBuyerProducts() {
   const el = $("buyerProductsBody"); if (!el) return;
   const gate = buyerGateHTML();
   if (gate) { el.innerHTML = gate; return; }
   const feed = state.productFeed || [];
-  el.innerHTML = (feed.length ? `<div class="offers-list">${feed.map(buyerProductCardHTML).join("")}</div>`
+  el.innerHTML = (feed.length ? `<div class="mk-grid">${feed.map(buyerProductCardHTML).join("")}</div>`
     : `<div class="empty-state">${esc(T("buyer.productsEmpty"))}</div>`) + `<p class="buyer-lead">${esc(T("buyer.productsFoot"))}</p>`;
+}
+/* Hover and keyboard focus grow a card toward whichever side of the grid has a free column; with none (a phone's one
+   column) the card stays as it is. Decided here, not in CSS, because only the page knows where the cell sits. */
+function mkPlace(cell) {
+  const grid = cell && cell.parentElement; if (!grid || !grid.getBoundingClientRect) return;
+  const c = cell.getBoundingClientRect(), g = grid.getBoundingClientRect();
+  const gap = parseFloat((window.getComputedStyle(grid) || {}).columnGap) || 14, step = c.width + gap;
+  cell.classList.remove("mk-x-r", "mk-x-l");
+  if (g.right - c.right + 1 >= step) cell.classList.add("mk-x-r");
+  else if (c.left - g.left + 1 >= step) cell.classList.add("mk-x-l");
+}
+function wireMarketCards() {
+  const cellOf = t => (t && t.closest ? t.closest(".mk-cell") : null);
+  document.addEventListener("pointerover", e => { const c = cellOf(e.target); if (c) mkPlace(c); });
+  document.addEventListener("focusin", e => {
+    const c = cellOf(e.target); if (!c) return;
+    mkPlace(c);
+    try { if (e.target.matches(":focus-visible")) c.classList.add("mk-lift"); } catch (x) { /* old browser: hover only */ }
+  });
+  document.addEventListener("focusout", e => { const c = cellOf(e.target); if (c) c.classList.remove("mk-lift"); });
+}
+
+/* ---- the full sheet (click a card): details, nutrition, documents, Get in touch ---- */
+function productSheetBodyHTML(p) {
+  const d = p.details || {}, n = p.nutrition || {};
+  const list = a => Array.isArray(a) ? a.join(", ") : "";
+  const dl = rows => `<dl class="buyer-facts">${rows.filter(r => r[1] !== "" && r[1] != null).map(r => `<dt>${esc(mkCap(r[0]))}</dt><dd>${esc(r[1])}</dd>`).join("")}</dl>`;
+  const docs = state.feedDocs[p.id];
+  const tab = state.sheetTab;
+  let pane;
+  if (tab === "nutrition") {
+    const nutr = PRODUCT_NUTRIENTS.concat(["fibre_g"]).filter(k => typeof n[k] === "number").map(k => [productFieldLabel("nutrition." + k), n[k]]);
+    pane = nutr.length ? `<p class="mk-sheet-note" style="margin-bottom:8px">${esc(T("prod.per100"))}</p>${dl(nutr)}` : `<p class="mk-sheet-note">${esc(T("mk.noNutrition"))}</p>`;
+  } else if (tab === "docs") {
+    pane = !docs ? `<p class="mk-sheet-note">${esc(T("mk.loading"))}</p>`
+      : docs.length ? `<div class="mk-doclist">${docs.map(doc => `<button type="button" class="mk-docrow" aria-label="${escAttr(T("buyer.openDoc", { name: doc.file_name }))}" onclick="openFeedDoc('${esc(doc.id)}','${esc(p.id)}')"><span>${esc(doc.file_name)}</span><small>${esc(docMeta(doc))}</small></button>`).join("")}</div>`
+      : `<p class="mk-sheet-note">${esc(T("buyer.noDocs"))}</p>`;
+  } else {
+    pane = dl([[productFieldLabel("ai_category"), p.ai_category || ""], [productFieldLabel("ingredients"), list(d.ingredients)],
+      [productFieldLabel("allergens"), Array.isArray(d.allergens) ? (d.allergens.length ? list(d.allergens) : T("prod.noAllergens")) : ""],
+      [productFieldLabel("shelf_life_days"), typeof d.shelf_life_days === "number" ? T("prod.days", { n: d.shelf_life_days }) : ""],
+      [productFieldLabel("storage"), d.storage || ""], [productFieldLabel("pack_sizes"), list(d.pack_sizes)], [productFieldLabel("min_order"), d.min_order || ""],
+      [productFieldLabel("certifications"), list(d.certifications)], [productFieldLabel("price_range"), d.price_range || ""]]);
+  }
+  const tabs = [["details", "mk.tabDetails"], ["nutrition", "mk.tabNutrition"], ["docs", "mk.tabDocs"]].map(t =>
+    `<button type="button" class="mk-tab" id="mkTab-${t[0]}" aria-pressed="${tab === t[0] ? "true" : "false"}" onclick="setSheetTab('${t[0]}')">${esc(T(t[1]))}</button>`).join("");
+  const pics = (docs || []).filter(doc => state.feedThumbs[doc.id]).map(doc =>
+    `<button type="button" class="mk-doc" style="background-image:url(&quot;${escAttr(state.feedThumbs[doc.id])}&quot;)" aria-label="${escAttr(T("buyer.openDoc", { name: doc.file_name }))}" onclick="openFeedDoc('${esc(doc.id)}','${esc(p.id)}')"></button>`).join("");
+  const chips = (d.certifications || []).filter(Boolean).slice(0, 8).map(c => `<span class="mk-chip">${esc(c)}</span>`).join("");
+  return (chips ? `<div class="mk-sheet-chips">${chips}</div>` : "") + mkStatsHTML(productStatRows(p, true)) +
+    `<div class="mk-tabs" role="group" aria-label="${escAttr(T("mk.tabsLabel"))}">${tabs}</div><div class="mk-pane">${pane}</div>` +
+    (pics ? `<div class="mk-strip">${pics}</div>` : "") +
+    `<div class="mk-sheet-foot">${productContactHTML(p, "sheet")}<p class="mk-sheet-note">${esc(T("buyer.productsFoot"))}</p></div>`;
+}
+function paintProductSheet() {
+  const p = (state.productFeed || []).find(x => x.id === state.openFeedProductId);
+  const body = $("productSheetBody"); if (!p || !body) return;
+  $("productSheetTitle").innerHTML = mkTitleHTML(p.name);
+  $("productSheetCat").textContent = p.ai_category || "";
+  body.innerHTML = productSheetBodyHTML(p);
+}
+function setSheetTab(tab) {
+  state.sheetTab = tab; paintProductSheet();
+  const b = $("mkTab-" + tab); if (b && b.focus) b.focus();
+}
+async function openProductSheet(id, contact) {
+  const p = (state.productFeed || []).find(x => x.id === id); if (!p) return;
+  state.openFeedProductId = id; state.sheetTab = "details"; state.contactProductId = contact ? id : null;
+  logProductView(id);
+  paintProductSheet(); openSheet("productSheet");
+  if (contact) { const i = $("productMsgInput"); if (i && i.focus) i.focus(); }
+  if (!state.feedDocs[id]) {
+    try {
+      const r = await DataStore.listProductDocuments(id);
+      if (r.error) throw r.error;
+      state.feedDocs[id] = r.data || [];
+    } catch (e) { toast(T("boot.loadFailed")); return; }
+    if (state.openFeedProductId === id) paintProductSheet();
+  }
+  // The bucket is private: each picture gets a short-lived link. A failed one just shows no picture.
+  const pics = (state.feedDocs[id] || []).filter(doc => String(doc.mime_type).indexOf("image/") === 0 && !state.feedThumbs[doc.id]).slice(0, 8);
+  await Promise.all(pics.map(async doc => {
+    try { const r = await DataStore.signedFileUrl(doc.storage_path); if (r && r.data && r.data.signedUrl) state.feedThumbs[doc.id] = r.data.signedUrl; } catch (e) { /* no picture */ }
+  }));
+  if (pics.length) {
+    if (state.openFeedProductId === id) paintProductSheet();
+    renderBuyerProducts();     // the cards pick up their picture
+  }
+}
+function closeProductSheet() {
+  if (sheetStack.indexOf("productSheet") === -1) { state.openFeedProductId = null; return; }
+  state.openFeedProductId = null; state.contactProductId = null;
+  closeSheet("productSheet");
 }
 /* A buyer opening a product sheet counts as one look for that day. The farmer only ever sees a number (Dashboard,
    "Buyer interest"): the database stores who looked but nobody can read it. Once per product per visit; a repeat on the same day
@@ -5271,19 +5419,6 @@ function logProductView(id) {
   if (viewLogged.has(id)) return;
   viewLogged.add(id);
   Promise.resolve(DataStore.logProductView(id)).catch(e => console.warn("couldn't log the view", e));
-}
-async function toggleFeedProduct(id) {
-  state.openFeedProductId = state.openFeedProductId === id ? null : id;
-  if (state.openFeedProductId === id) logProductView(id);
-  renderBuyerProducts();
-  if (state.openFeedProductId === id && !state.feedDocs[id]) {
-    try {
-      const r = await DataStore.listProductDocuments(id);
-      if (r.error) throw r.error;
-      state.feedDocs[id] = r.data || [];
-    } catch (e) { toast(T("boot.loadFailed")); return; }
-    renderBuyerProducts();
-  }
 }
 // The bucket is private: a document opens through a short-lived signed link.
 async function openFeedDoc(docId, productId) {
@@ -5307,7 +5442,7 @@ function renderBuyerOffers() {
     <div class="field"><label for="ofCat">${esc(T("offer.fCategory"))}</label><select id="ofCat"><option value="">${esc(T("offer.any"))}</option>${cats}</select></div>
     <div class="field"><label for="ofKm">${esc(T("offer.fDistance"))}</label><select id="ofKm"><option value="">${esc(T("offer.any"))}</option>${kms}</select></div>
     <div class="field"><label for="ofMonth">${esc(T("offer.fMonth"))}</label><select id="ofMonth"><option value="">${esc(T("offer.any"))}</option>${months}</select></div>
-  </div><div id="offersList" class="offers-list"></div><p class="buyer-lead">${esc(T("offer.foot"))}</p>`;
+  </div><div id="offersList" class="of-grid"></div><p class="buyer-lead">${esc(T("offer.foot"))}</p>`;
   $("ofCat").onchange = e => setOfferFilter("category", e.target.value);
   $("ofKm").onchange = e => setOfferFilter("maxKm", e.target.value);
   $("ofMonth").onchange = e => setOfferFilter("month", e.target.value);
@@ -6035,6 +6170,9 @@ function boot() {
   $("menuLogout").onclick = () => { setProfileMenu(false); signOutNow(); };
   $("helpCloseBtn").onclick = () => closeHelp();
   $("helpSheet").addEventListener("click", e => { if (e.target === $("helpSheet")) closeHelp(); });
+  $("productSheetCloseBtn").onclick = () => closeProductSheet();
+  $("productSheet").addEventListener("click", e => { if (e.target === $("productSheet")) closeProductSheet(); });
+  wireMarketCards();
   document.addEventListener("click", e => {
     if (profileMenuOpen() && $("avatarWrap") && !$("avatarWrap").contains(e.target)) setProfileMenu(false);
   });
