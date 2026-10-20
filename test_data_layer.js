@@ -202,7 +202,7 @@ function loadApp(root) {
   // Same order as index.html: i18n.js before app.js, because app.js calls T().
   const files = ["js/supabase-client.js", "js/i18n.js", "js/data.js", "js/core.js", "js/folder-card.js", "js/icons.js", "js/dashboard.js", "js/app.js"];
   const src = files.map(f => fs.readFileSync(root + "/" + f, "utf8")).join("\n;\n") + `
-;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, openRailMenu, closeRailMenu, railMenuKey, moveChatToProject, newProjectFor, createProject, renameProject, togglePinProject, deleteProject, toggleProjectOpen, toggleRailMore, groupChatRail, chatRowHTML, mapProject, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, filterOffers, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, setOfferFilter, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
+;globalThis.__t = { sortPinnedFirst, cleanChatTitle, togglePinChat, renameChat, deleteChat, openRailMenu, closeRailMenu, railMenuKey, moveChatToProject, newProjectFor, createProject, renameProject, togglePinProject, deleteProject, toggleProjectOpen, toggleRailMore, groupChatRail, chatRowHTML, mapProject, adminMapPoints: (typeof adminMapPoints !== "undefined" ? adminMapPoints : undefined), clusterMapPoints: (typeof clusterMapPoints !== "undefined" ? clusterMapPoints : undefined), villagePoint: (typeof villagePoint !== "undefined" ? villagePoint : undefined), doorAllows, isAdminEntry, loadAccountRole, get bizDraft() { return bizDraft; }, set bizDraft(v) { bizDraft = v; }, openHelp, closeHelp, helpStepsFor, toggleClientPanel, closeClientPanel, renderClientPanel, matchCardsHTML, templateDraft, monthsLabelFor, draftFor, openBuyerCard, sendCardMessage, ensureClientRow, mapHTML, mapQuery, cardMessageHTML, openMatchView, matchRowsFor, buildAccountPatch, saveAccount, openAccountSheet, setProfileMenu, profileMenuOpen, profileMenuKey, signOutNow, accountNames, accountDisplayName, accountFirstName, validateSignupNames, interviewSystem, withAccountName, onProfileRevised, greetingText, updateHeaderIdentity, renderThread, PRICE_ASSUMPTIONS, bizDirty, bizProfileHTML, saveBizDraft, toggleBizChip, setBizVolume, viewSeries, viewStats, viewGraphHTML, logBuyerView, loadBizViews, renderBuyerBusiness, showDialog, settleDialog, adjustPrice, toggleFarmerPanel, closeFarmerPanel, renderBuyerInbox, reviewDraft, inboxTitle, QUALITY_TAGS, CATEGORIES, clientPreview, buildOfferRow, offerCanPublish, offerFor, toggleOffer, contactOffer, loadOfferFeed, offerCardHTML, cycleOfferSort, sortOfferRows, renderBuyerOffers, pendingInquiries, buildOfferSummary, guardianValidateBuyerProfile,  rankMatches, unreadCount, inboxUnread, loadBuyerInbox, openInboxThread, sendBuyerReply, buildFarmerSummary, farmerSummaryHTML, myBusiness, mapThreadMessages, threadItems, tickKey, buildMessageRow, postThreadMessage, markSent, sendClientNote, claimState, currentClaim, buildClaimRow, newBuyerRowFromClaim, isBuyer, CLAIM_NOT_LISTED, state, DataStore, DB, loadFarmerData, bgSave, isLocalId, addMsg,
   saveState, flushSaveFailures, saveOk, saveFailed, explainSyncWarn, isChatUntouched, SAVE_REPEAT_MS,
   applyProfileEdit, changedProfileFields, readProfileForm, openProfileEdit, saveProfileEdit,
   addProfileProduct, removeProfileProduct, toggleProfileMonth,
@@ -2717,12 +2717,15 @@ console.log("== Test 2: saveProducts and saveMatches ==");
       { id: "f1", village: "Terelle", distance_km: 12, months: [6, 7], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] },
       { id: "f2", village: "Cassino", distance_km: 3, months: [], products: [{ name: "olio", category: "olio", kg_per_week: 20 }] },
       { id: "f3", village: "Atina", distance_km: null, months: [1], products: [{ name: "uova", category: "uova", kg_per_week: 5 }] }];
-    const ids = f => a.filterOffers(offers, f).map(o => o.id).join();
-    check("no filter shows every offer", ids({}) === "f1,f2,f3");
-    check("category filter matches any product of the offer", ids({ category: "olio" }) === "f2" && ids({ category: "vino" }) === "");
-    check("distance filter is a ceiling, and an offer with no stated distance never passes it", ids({ maxKm: "5" }) === "f2" && ids({ maxKm: "20" }) === "f1,f2");
-    check("month filter keeps offers available then, and offers with no months (all year)", ids({ month: "6" }) === "f1,f2" && ids({ month: "1" }) === "f2,f3");
-    check("filters combine", ids({ maxKm: "20", month: "7", category: "pomodori" }) === "f1");
+    // the Offers page has no filters any more, only a name sort (2026-10-20)
+    const dated = offers.map((o, i) => Object.assign({}, o, { created_at: "2026-10-0" + (i + 1) + "T00:00:00Z" }));
+    const ids = s => a.sortOfferRows(dated, s).map(o => o.id).join();
+    check("offers are newest first by default", ids("") === "f3,f2,f1");
+    check("A-Z and Z-A order offers by the name of their first product (olio, pomodori, uova; then the reverse)", ids("az") === "f2,f1,f3" && ids("za") === "f3,f1,f2");
+    check("sorting offers leaves the list alone and copes with nothing and with offers that have no product", dated[0].id === "f1" && a.sortOfferRows(null, "az").length === 0 && a.sortOfferRows([{ id: "x", products: [] }, { id: "y", products: [{ name: "a" }] }], "az").map(o => o.id).join() === "x,y");
+    check("the Offers page shows no filter menus, only a sort button; the old filter words are gone from both languages",
+      !/id="ofCat"|id="ofKm"|id="ofMonth"/.test(require("fs").readFileSync(path + "/js/app.js", "utf8")) && /id="offersSortBtn" aria-label="Sort by name"/.test(require("fs").readFileSync(path + "/index.html", "utf8")) &&
+      ["offer.fCategory", "offer.fDistance", "offer.fMonth", "offer.any", "offer.within", "offer.noMatch"].every(k => !(k in a.STRINGS.en) && !(k in a.STRINGS.it)));
 
     const chat = { id: "c1", phase: "done", candidates: [], profile: { village: "Terelle", distance_km_from_cassino: 12, organic: "yes", available_months: [6], products: [{ name: "pomodori", category: "pomodori", kg_per_week: 80 }] } };
     check("an offer can be published only from a finished, saved conversation with a product",
@@ -3993,7 +3996,7 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("both new icons exist in the icon set", /"shopping-basket":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")) && /"tag":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")));
     check("the product sheet is the eighth sheet: listed, in the markup, closed by Escape and by its X",
       /const SHEET_IDS = \[[^\]]*"productSheet"\]/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheet"') && /id === "productSheet"\) closeProductSheet/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheetCloseBtn"'));
-    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20b/.test(html) && /js\/spotlight\.js\?v=2026-10-20b/.test(html) && !/2026-10-(18c|20a)/.test(html));
+    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20c/.test(html) && /js\/spotlight\.js\?v=2026-10-20c/.test(html) && !/2026-10-(18c|20a|20b)/.test(html));
     check("the spotlight uses Yuvi's settings (size 290, intensity .15, softness .7, edge .6, proximity 120, smoothing .3) and respects reduced motion",
       /intensity: 0\.15, size: 290, softness: 0\.7, edge: 0\.6, proximity: 120, smoothing: 0\.3/.test(spot) && spot.includes("prefers-reduced-motion"));
     check("a card grows over the empty side only: it never changes the grid cell, and phones (no hover) never expand",
@@ -4107,6 +4110,17 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     a.ofPlace(o1); a.ofPlace(o2); a.ofPlace(o3);
     check("a card in the first column may grow right, one in the last column left, by at most 260 px; a single column does not grow",
       o1.has("of-x-r") && o1.v["--of-room"] === "260px" && o2.has("of-x-l") && o2.v["--of-room"] === "260px" && !o3.has("of-x-r") && !o3.has("of-x-l") && o3.v["--of-room"] === "0px");
+    // the Offers sort button: off (newest first), A-Z, Z-A
+    for (const id of ["offersSortBtn", "offersSortIcon", "offersSortLabel", "offersFoot", "buyerOffersBody", "offersList"]) els[id] = fakeEl(id);
+    st.offerFeed = [{ id: "f1", products: [{ name: "pomodori" }], created_at: "2026-10-01T00:00:00Z" }, { id: "f2", products: [{ name: "olio" }], created_at: "2026-10-02T00:00:00Z" }];
+    st.offerSort = ""; st.contactOfferId = null;
+    a.renderBuyerOffers();
+    check("Offers open newest first with the sort button off", els.offersList.innerHTML.indexOf("<b>olio</b>") < els.offersList.innerHTML.indexOf("<b>pomodori</b>") && els.offersSortLabel.textContent === "Sort");
+    a.cycleOfferSort();
+    check("pressing the Offers sort button gives A-Z, says so in words, and orders by name",
+      st.offerSort === "az" && els.offersSortLabel.textContent === "A–Z" && /Now: A to Z\./.test(els.offersSortBtn.attrs["aria-label"]) && els.offersSortIcon.innerHTML.includes("lucide-arrow-down-a-z"));
+    a.cycleOfferSort();
+    check("the next press gives Z-A, and the one after goes back to newest first", st.offerSort === "za" && els.offersList.innerHTML.indexOf("<b>pomodori</b>") < els.offersList.innerHTML.indexOf("<b>olio</b>") && (a.cycleOfferSort(), st.offerSort === ""));
     // Escape cancels, Enter sends
     let prevented = 0; a.offerMsgKey({ key: "Escape", preventDefault: () => { prevented++; }, stopPropagation() {} });
     check("Escape in the box cancels it", st.contactOfferId === null && prevented === 1);

@@ -883,6 +883,17 @@ function sortMarketRows(rows, o) {
   if (o.view === "viewed") return arr.sort(function (a, b) { return num(o.views, b) - num(o.views, a) || t(b) - t(a); });
   return arr.sort(function (a, b) { return t(b) - t(a); });
 }
+/* The Offers list: newest first, or by the name of the offer's first product (the card's title), A-Z or Z-A. Pure. */
+function sortOfferRows(rows, sort) {
+  var arr = (rows || []).slice();
+  var t = function (o) { var n = Date.parse(o && o.created_at); return isFinite(n) ? n : 0; };
+  var nm = function (o) { var p = o && o.products && o.products[0]; return String((p && p.name) || ""); };
+  if (sort === "az" || sort === "za") {
+    var dir = sort === "az" ? 1 : -1;
+    return arr.sort(function (a, b) { return dir * nm(a).localeCompare(nm(b), undefined, { sensitivity: "base" }) || t(b) - t(a); });
+  }
+  return arr.sort(function (a, b) { return t(b) - t(a); });
+}
 /* A buyer's FIRST message on an offer is a short hello: two lines of about eight words. The limit is 16 words and 120
    characters, whichever comes first; the conversation after that has no limit. clipFirstMessage cuts what is over (a space
    the buyer has just typed is kept, so typing a sentence feels normal). */
@@ -908,7 +919,7 @@ if (typeof module !== "undefined" && module.exports) {
     DASH_TILE_IDS: DASH_TILE_IDS, dashTileOrder: dashTileOrder, moveDashTile: moveDashTile, shiftDashTile: shiftDashTile, dashOrderIsDefault: dashOrderIsDefault,
     dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildBestBuyers: buildBestBuyers, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
-    sortMarketRows: sortMarketRows, clipFirstMessage: clipFirstMessage, firstMessageWords: firstMessageWords, FIRST_MSG_MAX_WORDS: FIRST_MSG_MAX_WORDS, FIRST_MSG_MAX_CHARS: FIRST_MSG_MAX_CHARS,
+    sortMarketRows: sortMarketRows, sortOfferRows: sortOfferRows, clipFirstMessage: clipFirstMessage, firstMessageWords: firstMessageWords, FIRST_MSG_MAX_WORDS: FIRST_MSG_MAX_WORDS, FIRST_MSG_MAX_CHARS: FIRST_MSG_MAX_CHARS,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }

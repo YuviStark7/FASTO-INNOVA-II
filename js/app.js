@@ -55,7 +55,7 @@ let state = {
   productViews: {},       // dashboard: { productId: ["2026-10-02", ...] }, counts only (no viewer)
   productEvents: [],      // dashboard: launched / withdrawn / archived / restored, newest first
   offerFeed: [],        // what a buyer can browse: published offers
-  offerFilter: { category: "", maxKm: "", month: "" },
+  offerSort: "",        // Offers name sort: "" (newest first) | "az" | "za"
   contactOfferId: null, // the offer whose Contact box is open
   claims: [],           // a buyer's own claims on listed businesses (buyer_claims)
   farmerProfile: {},    // the farmer's own `farmers` row — name + the business details the logistics form needs
@@ -5100,20 +5100,7 @@ async function sendBuyerReply(id) {
   t.posting = false;
 }
 /* ---------- Buyer: browse offers (ROADMAP item 29) ----------
-   Pure filter first, so the rules are testable without a page. Distance is the
-   farmer's stated km from Cassino; month matches an offer available that month
-   (an offer with no months listed is available all year). */
-function filterOffers(offers, f) {
-  f = f || {};
-  const maxKm = f.maxKm === "" || f.maxKm == null ? null : Number(f.maxKm);
-  const month = f.month === "" || f.month == null ? null : Number(f.month);
-  return (offers || []).filter(o => {
-    if (f.category && !(o.products || []).some(p => p.category === f.category)) return false;
-    if (maxKm != null && !(o.distance_km != null && Number(o.distance_km) <= maxKm)) return false;
-    if (month != null && (o.months || []).length && (o.months || []).map(Number).indexOf(month) === -1) return false;
-    return true;
-  });
-}
+   The Offers page has no filters (removed 2026-10-20 at Yuvi's request): just a name sort, A-Z / Z-A / off (newest first). */
 async function loadOfferFeed() {
   state.offerFeed = [];
   if (claimState(state.claims) !== "approved") return;
@@ -5188,11 +5175,10 @@ function offerMsgKey(e) {
 function cancelOfferContact() { state.contactOfferId = null; renderOfferList(); }
 function renderOfferList() {
   const el = $("offersList"); if (!el) return;
-  const shown = filterOffers(state.offerFeed, state.offerFilter);
-  el.innerHTML = shown.length ? shown.map(offerCardHTML).join("")
-    : `<div class="empty-state">${esc(T((state.offerFeed || []).length ? "offer.noMatch" : "buyer.offersEmpty"))}</div>`;
+  const shown = sortOfferRows(state.offerFeed, state.offerSort);
+  el.innerHTML = shown.length ? shown.map(offerCardHTML).join("") : `<div class="empty-state">${esc(T("buyer.offersEmpty"))}</div>`;
 }
-function setOfferFilter(key, value) { state.offerFilter[key] = value; state.contactOfferId = null; renderOfferList(); }
+function cycleOfferSort() { state.offerSort = MARKET_SORTS[(MARKET_SORTS.indexOf(state.offerSort) + 1) % MARKET_SORTS.length]; state.contactOfferId = null; renderBuyerOffers(); }
 function openOfferContact(id) {
   state.contactOfferId = id; renderOfferList();
   const i = $("offerMsgInput");
@@ -5324,16 +5310,18 @@ function marketRows() {
   return sortMarketRows(state.productFeed, { view: state.marketView, sort: state.marketSort, bookmarks: state.bookmarks, relevance: relevance, views: state.viewCounts });
 }
 const MARKET_VIEWS = ["recent", "relevant", "viewed", "bookmarks"], MARKET_SORTS = ["", "az", "za"];
+// The name-sort button (Open market and Offers share it): icon, short label and a spoken label that says where it stands.
+function paintSortButton(btnId, iconId, labelId, sort) {
+  const b = $(btnId); if (!b) return;
+  const az = sort === "az", za = sort === "za";
+  $(iconId).innerHTML = lucide(az ? "arrow-down-a-z" : za ? "arrow-down-z-a" : "arrow-up-down", 16);
+  $(labelId).textContent = az ? T("mk.sortAz") : za ? T("mk.sortZa") : T("mk.sortOff");
+  b.setAttribute("aria-label", T("mk.sortAria", { now: az ? T("mk.sortNowAz") : za ? T("mk.sortNowZa") : T("mk.sortNowOff") }));
+  b.classList.toggle("on", !!sort);
+}
 function paintMarketControls() {
   const sel = $("marketView"); if (sel) sel.value = state.marketView;
-  const b = $("marketSortBtn"); if (!b) return;
-  const az = state.marketSort === "az", za = state.marketSort === "za";
-  const label = az ? T("mk.sortAz") : za ? T("mk.sortZa") : T("mk.sortOff");
-  const now = az ? T("mk.sortNowAz") : za ? T("mk.sortNowZa") : T("mk.sortNowOff");
-  $("marketSortIcon").innerHTML = lucide(az ? "arrow-down-a-z" : za ? "arrow-down-z-a" : "arrow-up-down", 16);
-  $("marketSortLabel").textContent = label;
-  b.setAttribute("aria-label", T("mk.sortAria", { now: now }));
-  b.classList.toggle("on", !!state.marketSort);
+  paintSortButton("marketSortBtn", "marketSortIcon", "marketSortLabel", state.marketSort);
 }
 function setMarketView(v) { state.marketView = MARKET_VIEWS.indexOf(v) === -1 ? "recent" : v; renderBuyerProducts(); }
 function cycleMarketSort() { state.marketSort = MARKET_SORTS[(MARKET_SORTS.indexOf(state.marketSort) + 1) % MARKET_SORTS.length]; renderBuyerProducts(); }
@@ -5558,20 +5546,11 @@ async function openFeedDoc(docId, productId) {
 
 function renderBuyerOffers() {
   const el = $("buyerOffersBody"); if (!el) return;
+  paintSortButton("offersSortBtn", "offersSortIcon", "offersSortLabel", state.offerSort);
   const gate = buyerGateHTML();
+  const foot = $("offersFoot"); if (foot) foot.hidden = !!gate;
   if (gate) { el.innerHTML = gate; return; }
-  const f = state.offerFilter;
-  const cats = CATEGORIES.map(c => `<option value="${escAttr(c)}"${f.category === c ? " selected" : ""}>${esc(catLabel(c))}</option>`).join("");
-  const kms = ["5", "10", "20"].map(k => `<option value="${k}"${String(f.maxKm) === k ? " selected" : ""}>${esc(T("offer.within", { n: k }))}</option>`).join("");
-  const months = monthNames().map((n, i) => `<option value="${i + 1}"${String(f.month) === String(i + 1) ? " selected" : ""}>${esc(n)}</option>`).join("");
-  el.innerHTML = `<div class="offer-filters">
-    <div class="field"><label for="ofCat">${esc(T("offer.fCategory"))}</label><select id="ofCat"><option value="">${esc(T("offer.any"))}</option>${cats}</select></div>
-    <div class="field"><label for="ofKm">${esc(T("offer.fDistance"))}</label><select id="ofKm"><option value="">${esc(T("offer.any"))}</option>${kms}</select></div>
-    <div class="field"><label for="ofMonth">${esc(T("offer.fMonth"))}</label><select id="ofMonth"><option value="">${esc(T("offer.any"))}</option>${months}</select></div>
-  </div><div id="offersList" class="of-grid"></div><p class="buyer-lead">${esc(T("offer.foot"))}</p>`;
-  $("ofCat").onchange = e => setOfferFilter("category", e.target.value);
-  $("ofKm").onchange = e => setOfferFilter("maxKm", e.target.value);
-  $("ofMonth").onchange = e => setOfferFilter("month", e.target.value);
+  el.innerHTML = `<div id="offersList" class="of-grid"></div>`;
   renderOfferList();
 }
 /* ---------- My business: the buyer's landing page ----------
@@ -6301,6 +6280,7 @@ function boot() {
   $("productSheetCloseBtn").onclick = () => closeProductSheet();
   $("marketView").onchange = e => setMarketView(e.target.value);
   $("marketSortBtn").onclick = cycleMarketSort;
+  $("offersSortBtn").onclick = cycleOfferSort;
   $("productSheet").addEventListener("click", e => { if (e.target === $("productSheet")) closeProductSheet(); });
   wireMarketCards();
   document.addEventListener("click", e => {
