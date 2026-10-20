@@ -863,6 +863,38 @@ function shiftDashTile(order, id, delta) {
 }
 function dashOrderIsDefault(order) { return dashTileOrder(order).join() === DASH_TILE_IDS.join(); }
 
+/* ---------- Buyer side: Open market order, and the first-message limit on offers ---------- */
+/* The Open market list. o.view picks the order or the filter: "recent" (newest change first), "relevant" (how well the
+   product fits THIS buyer's business, o.relevance[id], newest first on a tie), "viewed" (o.views[id], totals only),
+   "bookmarks" (only o.bookmarks[id], newest first). o.sort "az" / "za" puts the names in order instead, whatever the view
+   (a bookmarks view stays a bookmarks filter). Pure: never changes the rows it is given. */
+function sortMarketRows(rows, o) {
+  o = o || {};
+  var arr = (rows || []).slice();
+  var t = function (p) { var n = Date.parse(p && p.updated_at); return isFinite(n) ? n : 0; };
+  var num = function (m, p) { var v = m && p ? Number(m[p.id]) : 0; return isFinite(v) ? v : 0; };
+  var nm = function (p) { return String((p && p.name) || ""); };
+  if (o.view === "bookmarks") arr = arr.filter(function (p) { return !!(o.bookmarks && o.bookmarks[p.id]); });
+  if (o.sort === "az" || o.sort === "za") {
+    var dir = o.sort === "az" ? 1 : -1;
+    return arr.sort(function (a, b) { return dir * nm(a).localeCompare(nm(b), undefined, { sensitivity: "base" }) || t(b) - t(a); });
+  }
+  if (o.view === "relevant") return arr.sort(function (a, b) { return num(o.relevance, b) - num(o.relevance, a) || t(b) - t(a); });
+  if (o.view === "viewed") return arr.sort(function (a, b) { return num(o.views, b) - num(o.views, a) || t(b) - t(a); });
+  return arr.sort(function (a, b) { return t(b) - t(a); });
+}
+/* A buyer's FIRST message on an offer is a short hello: two lines of about eight words. The limit is 16 words and 120
+   characters, whichever comes first; the conversation after that has no limit. clipFirstMessage cuts what is over (a space
+   the buyer has just typed is kept, so typing a sentence feels normal). */
+var FIRST_MSG_MAX_WORDS = 16, FIRST_MSG_MAX_CHARS = 120;
+function firstMessageWords(text) { var m = String(text == null ? "" : text).match(/\S+/g); return m ? m.length : 0; }
+function clipFirstMessage(text) {
+  var s = String(text == null ? "" : text).replace(/\s*[\r\n]+\s*/g, " ").replace(/^\s+/, "");
+  var re = /\S+\s*/g, m, n = 0, out = "";
+  while ((m = re.exec(s))) { if (++n > FIRST_MSG_MAX_WORDS) break; out += m[0].replace(/\s+$/, " "); }   // a run of spaces counts as one
+  return out.length > FIRST_MSG_MAX_CHARS ? out.slice(0, FIRST_MSG_MAX_CHARS) : out;
+}
+
 /* Node export for testing */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
@@ -876,6 +908,7 @@ if (typeof module !== "undefined" && module.exports) {
     DASH_TILE_IDS: DASH_TILE_IDS, dashTileOrder: dashTileOrder, moveDashTile: moveDashTile, shiftDashTile: shiftDashTile, dashOrderIsDefault: dashOrderIsDefault,
     dashUnread: dashUnread, docExpiryState: docExpiryState, buildAttention: buildAttention, buildShopTiles: buildShopTiles, buildBestBuyers: buildBestBuyers, buildGaps: buildGaps, buildInterest: buildInterest, buildTimeline: buildTimeline, buildDocHealth: buildDocHealth, sortProductRows: sortProductRows, productFiltersActive: productFiltersActive, filterProductRows: filterProductRows, productCategoriesOf: productCategoriesOf,
     scorePackagedBuyer: scorePackagedBuyer, rankPackaged: rankPackaged,
+    sortMarketRows: sortMarketRows, clipFirstMessage: clipFirstMessage, firstMessageWords: firstMessageWords, FIRST_MSG_MAX_WORDS: FIRST_MSG_MAX_WORDS, FIRST_MSG_MAX_CHARS: FIRST_MSG_MAX_CHARS,
     formatBytes: formatBytes, productFileLabel: productFileLabel, checkProductFile: checkProductFile, productFileType: productFileType, productFileGroup: productFileGroup, productFilePath: productFilePath, PRODUCT_FILE_MAX: PRODUCT_FILE_MAX
   };
 }

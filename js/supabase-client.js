@@ -137,6 +137,13 @@ const DataStore = {
      product_events: launched / withdrawn / archived / restored, written by a database trigger only. */
   logProductView(productId) { return sb.from("product_views").insert({ product_id: productId }); },
   listMyProductViews(productIds) { return sb.from("product_views").select("product_id, viewed_on").in("product_id", productIds); },
+  /* ---------- buyer: bookmarks and the "Most viewed" order (2026-10-20) ----------
+     product_bookmarks: a buyer's own list (RLS: own rows, approved buyers only). product_view_counts(): totals per launched
+     product for the buyer's Most viewed order; it returns counts and never who looked. */
+  listMyBookmarks() { return sb.from("product_bookmarks").select("product_id"); },
+  addBookmark(productId) { return sb.from("product_bookmarks").insert({ product_id: productId }); },
+  removeBookmark(productId) { return sb.from("product_bookmarks").delete().eq("product_id", productId); },
+  productViewCounts() { return sb.rpc("product_view_counts"); },
   listMyProductEvents(uid) { return sb.from("product_events").select("product_id, kind, created_at").eq("owner_id", uid).order("created_at", { ascending: false }).limit(60); },
   // The draft product a chat created (a chat makes at most one).
   productForChat(chatId) { return sb.from("farmer_products").select("*").eq("source_chat_id", chatId).order("created_at", { ascending: true }).limit(1); },

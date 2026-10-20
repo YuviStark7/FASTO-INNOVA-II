@@ -224,7 +224,8 @@ function loadApp(root) {
   folderCardHTML, gfArtStyle, docMeta, openMyDoc, toggleFolder, setFolderOpen,
   contactProduct, openProductContact, productContactHTML, buildProductSummary, nameProducerToBuyer, productNameFor,
   isPackagedChat, packagedProfile, chatProfile, reasonText, templateDraftProduct, scorePackagedBuyer, rankPackaged, SYSTEM_MATCH_PRODUCT,
-  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, openProductSheet, closeProductSheet, paintProductSheet, setSheetTab, productSheetBodyHTML, mkPlace, mkTitleHTML, mkSeason, openFeedDoc,
+  launchProduct, withdrawProduct, setProductStatus, loadProductFeed, buyerProductCardHTML, renderBuyerProducts, openProductSheet, closeProductSheet, paintProductSheet, setSheetTab, productSheetBodyHTML, mkPlace, mkTitleHTML, mkSeason,
+  sortMarketRows, clipFirstMessage, firstMessageWords, FIRST_MSG_MAX_WORDS, marketRows, setMarketView, cycleMarketSort, paintMarketControls, toggleBookmark, shareProduct, productShareUrl, openSharedProduct, loadMarketExtras, mkToolsHTML, ofPlace, offerMsgInput, offerMsgKey, openOfferContact, cancelOfferContact, openFeedDoc,
   productPickerRows, productPickerHTML, adoptProductHere, rememberProduct, filterProductRows, productCategoriesOf, loadProducts, renderProducts, productCardHTML, openProductChat, setProductArchived, addProduct,
   scanAttached, scanCardHTML, confirmScan, discardScan, scanContentBlocks, scanHasFindings, SYSTEM_SCAN, TOOL_SCAN, saveProductSnapshot,
   buildAttention, buildShopTiles, buildBestBuyers, buildGaps, buildInterest, buildTimeline, buildDocHealth,
@@ -2369,8 +2370,8 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the market card shows the summary only: name, category, three facts, and a title button that opens the sheet",
       closed.includes("BRIE") === false && closed.includes("<b>Brie</b>") && closed.includes("soft cheese") && closed.includes("spotlight-card") && closed.includes('aria-label="Show the full sheet of Brie"') &&
       closed.includes("onclick=\"openProductSheet('p1')\"") && closed.includes("Min. order") && closed.includes("Shelf life") && !closed.includes("Nutrition per 100 g") && !/rating/i.test(closed));
-    check("the title is the one stretched button; Get in touch is a second, separate button naming the product",
-      (closed.match(/<button/g) || []).length === 2 && closed.includes('aria-label="Get in touch with the producer of Brie"') && closed.includes(">Get in touch<"));
+    check("the title is the one stretched button; Get in touch, Share and Bookmark are separate buttons that name the product",
+      (closed.match(/<button/g) || []).length === 4 && closed.includes('aria-label="Get in touch with the producer of Brie"') && closed.includes(">Get in touch<") && closed.includes('aria-label="Share Brie"') && closed.includes('aria-label="Bookmark Brie"'));
     check("a long name keeps its first word bold and the rest light", a.mkTitleHTML("Sliced mountain cheese") === "<b>Sliced</b> mountain cheese" && a.mkTitleHTML("Brie") === "<b>Brie</b>" && a.mkTitleHTML("<b>x</b> y").indexOf("<b>x") === -1);
     els.productSheet = fakeEl("productSheet"); els.productSheetBody = fakeEl("productSheetBody"); els.productSheetTitle = fakeEl("productSheetTitle"); els.productSheetCat = fakeEl("productSheetCat");
     sb.reset(); sb.router = ch => ch.table === "product_documents" ? { data: [
@@ -2769,6 +2770,11 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("the retry sends only the message, on the same row",
       !sb.chains.some(x => x.table === "outreach" && x.ops[0].op === "insert") &&
       sb.chains.some(x => x.table === "outreach_messages" && x.ops[0].op === "insert" && x.ops[0].args[0].outreach_id === irow.id && x.ops[0].args[0].sender_role === "buyer") && !a.pendingInquiries["of1"]);
+    els.offerMsgInput.value = Array.from({ length: 20 }, (_, i) => "w" + i).join(" ");
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await a.contactOffer("of1");
+    const longMsg = sb.chains.find(x => x.table === "outreach_messages" && x.ops[0].op === "insert");
+    check("a first message over the limit is cut to 16 words before it is sent", longMsg && longMsg.ops[0].args[0].body.trim().split(/\s+/).length === 16);
     check("a buyer-started thread (no AI draft) previews its latest message instead of crashing",
       a.clientPreview({ message_it: "", messages: [{ text: "Buongiorno a tutti" }] }) === "Buongiorno a tutti" && a.clientPreview({ message_it: "x".repeat(80) }).length === 46 && a.clientPreview({}) === "");
     check("offer cards escape what the farmer typed", !a.offerCardHTML({ id: "x", village: "<img src=x>", products: [{ name: "<svg>", kg_per_week: 1 }], months: [] }).match(/<img|<svg/));
@@ -3987,11 +3993,11 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     check("both new icons exist in the icon set", /"shopping-basket":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")) && /"tag":/.test(fs.readFileSync(path + "/js/icons.js", "utf8")));
     check("the product sheet is the eighth sheet: listed, in the markup, closed by Escape and by its X",
       /const SHEET_IDS = \[[^\]]*"productSheet"\]/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheet"') && /id === "productSheet"\) closeProductSheet/.test(fs.readFileSync(path + "/js/app.js", "utf8")) && html.includes('id="productSheetCloseBtn"'));
-    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20a/.test(html) && /js\/spotlight\.js\?v=2026-10-20a/.test(html) && !/2026-10-18c/.test(html));
+    check("market.css and spotlight.js are loaded, with the same cache-bust value as the rest", /css\/market\.css\?v=2026-10-20b/.test(html) && /js\/spotlight\.js\?v=2026-10-20b/.test(html) && !/2026-10-(18c|20a)/.test(html));
     check("the spotlight uses Yuvi's settings (size 290, intensity .15, softness .7, edge .6, proximity 120, smoothing .3) and respects reduced motion",
       /intensity: 0\.15, size: 290, softness: 0\.7, edge: 0\.6, proximity: 120, smoothing: 0\.3/.test(spot) && spot.includes("prefers-reduced-motion"));
     check("a card grows over the empty side only: it never changes the grid cell, and phones (no hover) never expand",
-      /\.mk-cell\{[^}]*height:282px/.test(mcss) && /\.mk-x-r:hover \.mk-card/.test(mcss) && /\.mk-x-l:hover \.mk-card[^{]*\{[^}]*margin-left:calc\(-100cqw/.test(mcss) && !/\.mk-cell:hover \.mk-card\{/.test(mcss));
+      /\.mk-cell\{[^}]*height:282px/.test(mcss) && /\.mk-x-r:hover \.mk-card/.test(mcss) && /\.mk-card\{[^}]*position:absolute[^}]*width:100%/.test(mcss) && /\.mk-x-l \.mk-card\{[^}]*right:0/.test(mcss) && !/margin-left:calc\(-100cqw/.test(mcss) && !/\.mk-cell:hover \.mk-card\{/.test(mcss));
     // where a hovered card grows: right if a whole column is free there, else left, else nowhere
     const cellAt = (left, width, gridLeft, gridRight) => {
       const cls = new Set();
@@ -4002,6 +4008,110 @@ console.log("== Test 2: saveProducts and saveMatches ==");
     const first = cellAt(0, 236, 0, 1000), last = cellAt(764, 236, 0, 1000), only = cellAt(0, 300, 0, 300);
     a.mkPlace(first); a.mkPlace(last); a.mkPlace(only);
     check("a card in the first column grows right, one in the last column grows left, a single column grows nowhere", first.has("mk-x-r") && !first.has("mk-x-l") && last.has("mk-x-l") && !last.has("mk-x-r") && !only.has("mk-x-r") && !only.has("mk-x-l"));
+  }
+
+  /* ---- Market filters, bookmarks, share, pinned note, and the offer first-message limit (Yuvi, 2026-10-20, round 2) ---- */
+  {
+    const a = app, st = a.state, fs = require("fs");
+    const html = fs.readFileSync(path + "/index.html", "utf8"), mcss = fs.readFileSync(path + "/css/market.css", "utf8");
+    const rows = [{ id: "a", name: "Brie", updated_at: "2026-10-10T00:00:00Z" }, { id: "b", name: "apple jam", updated_at: "2026-10-12T00:00:00Z" }, { id: "c", name: "Zucchini", updated_at: "2026-10-11T00:00:00Z" }];
+    const ids = r => r.map(x => x.id).join("");
+    check("Most recent puts the newest change first", ids(a.sortMarketRows(rows, { view: "recent" })) === "bca");
+    check("A-Z and Z-A sort by name, ignoring case, over any view", ids(a.sortMarketRows(rows, { sort: "az" })) === "bac" && ids(a.sortMarketRows(rows, { sort: "za", view: "viewed" })) === "cab");
+    check("Most relevant orders by fit with the buyer's business, newest first on a tie", ids(a.sortMarketRows(rows, { view: "relevant", relevance: { a: 50, b: 10, c: 50 } })) === "cab");
+    check("Most viewed orders by the totals, newest first on a tie", ids(a.sortMarketRows(rows, { view: "viewed", views: { b: 9, c: 3, a: 3 } })) === "bca");
+    check("My bookmarks keeps only bookmarked products, and A-Z still orders them", ids(a.sortMarketRows(rows, { view: "bookmarks", bookmarks: { a: true, c: true } })) === "ca" && ids(a.sortMarketRows(rows, { view: "bookmarks", bookmarks: { a: true, c: true }, sort: "az" })) === "ac");
+    check("sorting never changes the list it is given, and copes with nothing", ids(rows) === "abc" && a.sortMarketRows(null, null).length === 0);
+
+    const words = n => Array.from({ length: n }, (_, i) => "w" + i).join(" ");
+    check("a first message is cut to 16 words and 120 characters; a space just typed is kept; line breaks become spaces",
+      a.firstMessageWords(a.clipFirstMessage(words(20))) === 16 && a.clipFirstMessage("x".repeat(200)).length === 120 && a.clipFirstMessage("hello ") === "hello " && a.clipFirstMessage("one\n\ntwo") === "one two" && a.clipFirstMessage("  hi") === "hi" && a.clipFirstMessage(words(16) + " ") === words(16) + " ");
+
+    // the two controls and the list they drive
+    const biz = a.DB.buyers[0];
+    const keep = { claims: st.claims, feed: st.productFeed, view: st.marketView, sort: st.marketSort, bm: st.bookmarks, vc: st.viewCounts };
+    st.claims = [{ status: "approved", buyer_id: biz.id }]; st.productFeed = rows.map(r => Object.assign({ status: "active", kind: "packaged", ai_category: "soft cheese", details: {}, nutrition: {} }, r));
+    for (const id of ["buyerProductsBody", "marketView", "marketSortBtn", "marketSortIcon", "marketSortLabel", "marketFoot"]) els[id] = fakeEl(id);
+    st.marketView = "recent"; st.marketSort = ""; st.bookmarks = {}; st.viewCounts = { a: 5 };
+    a.setMarketView("viewed");
+    check("choosing Most viewed redraws the market in that order", st.marketView === "viewed" && els.buyerProductsBody.innerHTML.indexOf('data-pid="a"') < els.buyerProductsBody.innerHTML.indexOf('data-pid="b"'));
+    a.setMarketView("nonsense"); check("an unknown view falls back to Most recent", st.marketView === "recent");
+    a.cycleMarketSort(); const s1 = st.marketSort; a.cycleMarketSort(); const s2 = st.marketSort; a.cycleMarketSort(); const s3 = st.marketSort; a.cycleMarketSort();
+    check("the sort button cycles off, A-Z, Z-A, off", s1 === "az" && s2 === "za" && s3 === "" && st.marketSort === "az");
+    check("the sort button says what it does now, in words, and shows an icon", /Sort by name\. Now: A to Z\./.test(els.marketSortBtn.attrs["aria-label"]) && els.marketSortLabel.textContent === "A–Z" && els.marketSortIcon.innerHTML.includes("lucide-arrow-down-a-z"));
+    st.marketSort = ""; a.setMarketView("bookmarks");
+    check("an empty My bookmarks says how to add one, not that nothing is for sale", els.buyerProductsBody.innerHTML.includes("not bookmarked anything yet"));
+    check("the pinned note is shown while the list is", els.marketFoot.hidden === false);
+
+    // bookmarks
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await a.toggleBookmark("a");
+    const bi = sb.chains.find(c => c.table === "product_bookmarks" && c.ops[0].op === "insert");
+    check("bookmarking saves at once on screen and writes only the product id (the database fills in who)", st.bookmarks.a === true && bi && eq(Object.keys(bi.ops[0].args[0]), ["product_id"]) && bi.ops[0].args[0].product_id === "a");
+    check("a bookmarked card says so to a screen reader", a.mkToolsHTML(st.productFeed[0]).includes('aria-pressed="true"') && a.mkToolsHTML(st.productFeed[1]).includes('aria-pressed="false"'));
+    sb.reset(); sb.router = () => ({ data: [], error: null });
+    await a.toggleBookmark("a");
+    const bd = sb.chains.find(c => c.table === "product_bookmarks" && c.ops.some(o => o.op === "delete"));
+    check("pressing again removes it, for that product only", st.bookmarks.a === undefined && bd && bd.ops.some(o => o.op === "eq" && o.args[0] === "product_id" && o.args[1] === "a"));
+    sb.reset(); sb.router = () => ({ data: null, error: { message: "boom", code: "42501" } });
+    await a.toggleBookmark("c");
+    check("if the database refuses, the bookmark is put back and the buyer is told", st.bookmarks.c === undefined && els.toast.textContent.includes("Could not save the bookmark"));
+    sb.reset(); sb.router = ch => ch.table === "rpc:product_view_counts" ? { data: [{ product_id: "a", views: "12" }], error: null } : ch.table === "product_bookmarks" ? { data: [{ product_id: "b" }], error: null } : { data: [], error: null };
+    await a.loadMarketExtras();
+    check("bookmarks and total looks are loaded for an approved buyer, the counts as numbers", st.bookmarks.b === true && st.viewCounts.a === 12);
+    st.claims = [{ status: "pending" }]; sb.reset();
+    await a.loadMarketExtras();
+    check("a buyer who is not approved loads neither", sb.chains.length === 0 && eq(st.bookmarks, {}) && eq(st.viewCounts, {}));
+    st.claims = [{ status: "approved", buyer_id: biz.id }];
+
+    // share: a link and a name, never the producer; a shared link opens the sheet once
+    check("the share link carries only the product id", /^.*#product=a$/.test(a.productShareUrl("a")));
+    const feedP = st.productFeed[0];
+    check("the card and the sheet header carry Share and Bookmark buttons with the product's name", a.buyerProductCardHTML(feedP).includes('class="mk-tools"') && a.mkToolsHTML(feedP).includes('aria-label="Share Brie"') && a.mkToolsHTML(feedP).includes('aria-label="Bookmark Brie"'));
+
+    // the page
+    check("the market header has the view menu (four choices) and the sort button, both named",
+      html.includes('id="marketView"') && ["recent", "relevant", "viewed", "bookmarks"].every(v => html.includes('<option value="' + v + '"')) && /id="marketSortBtn" aria-label="Sort by name"/.test(html) && /id="marketView" class="mk-select" aria-label="Show products by"/.test(html));
+    check("the note under the market and the offers sits in the panel under the scrolling list, not inside it",
+      /id="buyerProductsBody"><\/div>\s*<p class="buyer-lead mk-foot" id="marketFoot"/.test(html) && /id="buyerOffersBody"><\/div>\s*<p class="buyer-lead mk-foot" id="offersFoot"/.test(html) &&
+      /\.mk-panel\{[^}]*display:flex[^}]*flex-direction:column/.test(mcss) && /\.mk-panel \.buyer-body\{[^}]*overflow-y:auto/.test(mcss) && /\.mk-foot\{[^}]*flex:none/.test(mcss));
+    check("the share and bookmark buttons are in the sheet header, after Close in the page so Close is still the first thing focus lands on",
+      html.indexOf('id="productSheetCloseBtn"') < html.indexOf('id="productSheetTools"') && /#productSheetCloseBtn\{[^}]*order:3/.test(mcss));
+
+    // offers: wider cards, a limited first message, a card that widens sideways while you write
+    check("offer cards are wider (400 px and up) and sit in a fixed cell", /\.of-grid\{[^}]*minmax\(400px/.test(mcss) && /\.of-cell\{[^}]*height:232px/.test(mcss));
+    check("the offer card widens only sideways: its width is the cell's plus a share of the free room, and the cell never changes",
+      /\.of-card\{[^}]*position:absolute[^}]*width:calc\(100% \+ var\(--of-room, 0px\) \* var\(--of-grow, 0\)\)/.test(mcss) && /\.of-x-l \.of-card\{[^}]*right:0/.test(mcss));
+    st.offerFeed = [{ id: "of5", farmer_id: "uf", chat_id: "c1", village: "Terelle", distance_km: 12, months: [], products: [{ name: "Honey", category: "miele", kg_per_week: 5 }] }];
+    st.inbox = []; st.contactOfferId = null;
+    const rest = a.offerCardHTML(st.offerFeed[0]);
+    check("at rest an offer card has one Get in touch button and no message box", (rest.match(/<button/g) || []).length === 1 && !rest.includes("<textarea"));
+    st.contactOfferId = "of5";
+    const open = a.offerCardHTML(st.offerFeed[0]);
+    check("opened, it has a two-row box limited to 120 characters, a live word count, Send, Cancel, and Enter and Escape handlers",
+      /<textarea[^>]*rows="2"[^>]*maxlength="120"/.test(open) && open.includes("0 / 16 words") && open.includes("offerMsgInput(this)") && open.includes("offerMsgKey(event)") && open.includes(">Cancel<") && open.includes(">Send<") && open.includes("of-open"));
+    // typing: the text is clipped, the count follows, and the card's --of-grow follows the length
+    const vars = {}, cell = { style: { setProperty: (k, v) => { vars[k] = v; } } };
+    els.offerMsgCount = fakeEl("offerMsgCount");
+    const el = { value: words(20), closest: () => cell };
+    a.offerMsgInput(el);
+    check("typing past 16 words is cut, the count says 16 / 16, and the card is at full width", a.firstMessageWords(el.value) === 16 && els.offerMsgCount.textContent === "16 / 16 words" && vars["--of-grow"] === "1.000");
+    el.value = "Hello there"; a.offerMsgInput(el);
+    check("a short message keeps the card narrow, and deleting shrinks it back", Number(vars["--of-grow"]) > 0 && Number(vars["--of-grow"]) < 0.2 && els.offerMsgCount.textContent === "2 / 16 words");
+    el.value = ""; a.offerMsgInput(el);
+    check("an empty box is back to the cell's own width", Number(vars["--of-grow"]) === 0);
+    // where it may grow: right if a column is free, else left, never beyond one more card
+    const cellAt = (left, width, gl, gr) => { const cls = new Set(), v = {}; return { classList: { add: x => cls.add(x), remove: (...x) => x.forEach(y => cls.delete(y)) }, has: x => cls.has(x), v,
+      style: { setProperty: (k, val) => { v[k] = val; } }, getBoundingClientRect: () => ({ left, right: left + width, width }), parentElement: { getBoundingClientRect: () => ({ left: gl, right: gr }) } }; };
+    const o1 = cellAt(0, 400, 0, 1000), o2 = cellAt(600, 400, 0, 1000), o3 = cellAt(0, 400, 0, 400);
+    a.ofPlace(o1); a.ofPlace(o2); a.ofPlace(o3);
+    check("a card in the first column may grow right, one in the last column left, by at most 260 px; a single column does not grow",
+      o1.has("of-x-r") && o1.v["--of-room"] === "260px" && o2.has("of-x-l") && o2.v["--of-room"] === "260px" && !o3.has("of-x-r") && !o3.has("of-x-l") && o3.v["--of-room"] === "0px");
+    // Escape cancels, Enter sends
+    let prevented = 0; a.offerMsgKey({ key: "Escape", preventDefault: () => { prevented++; }, stopPropagation() {} });
+    check("Escape in the box cancels it", st.contactOfferId === null && prevented === 1);
+
+    st.claims = keep.claims; st.productFeed = keep.feed; st.marketView = keep.view; st.marketSort = keep.sort; st.bookmarks = keep.bm; st.viewCounts = keep.vc; st.contactOfferId = null;
   }
 
   console.log("\n" + pass + " passed, " + fail + " failed");

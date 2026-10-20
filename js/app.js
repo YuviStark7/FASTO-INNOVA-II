@@ -42,6 +42,10 @@ let state = {
   productDocs: {},      // product id -> the documents themselves (names, types, paths): the files in its folder
   productFeed: [],      // a buyer's view: launched products
   feedDocs: {},         // product id -> documents of a launched product (loaded when its sheet is opened)
+  marketView: "recent", // Open market: recent | relevant | viewed | bookmarks
+  marketSort: "",       // Open market name sort: "" (off) | "az" | "za"
+  bookmarks: {},        // a buyer's bookmarked product ids -> true
+  viewCounts: {},       // product id -> how many looks in total (a number only, never who)
   feedThumbs: {},       // document id -> short-lived link to a picture (the sheet and the market cards draw it)
   openFeedProductId: null,   // the product whose full sheet is open
   sheetTab: "details",       // the full sheet's tab: details | nutrition | docs
@@ -5138,19 +5142,50 @@ function offerCardHTML(o) {
     [T("mk.statDistance"), o.distance_km != null && isFinite(o.distance_km) ? T("buyer.km", { n: o.distance_km }) : ""],
     [T("mk.statVolume"), kg > 0 ? T("buyer.sumKg", { kg: Math.round(kg) }) : ""],
     [T("mk.statSeason"), mkSeason(o.months)]]);
+  // The first message is a short hello (see clipFirstMessage): a two-line box, a word count, and a card that grows
+  // sideways as it fills (offerMsgInput). Enter sends, Escape cancels.
   const act = thread ? `<button type="button" class="mk-get ghost" onclick="openInboxFromOffer('${esc(thread.id)}')">${esc(T("offer.openThread"))}</button>`
-    : open ? `<div class="mk-reply"><input type="text" class="input-glass" id="offerMsgInput" maxlength="2000" aria-label="${escAttr(T("offer.msgLabel"))}" placeholder="${escAttr(T("offer.msgLabel"))}">
-        <button type="button" class="btn btn-primary btn-sm" onclick="contactOffer('${esc(o.id)}')">${esc(T("buyer.replySend"))}</button></div>`
+    : open ? `<div class="of-compose"><textarea class="input-glass" id="offerMsgInput" rows="2" maxlength="${FIRST_MSG_MAX_CHARS}" aria-label="${escAttr(T("offer.msgLabel"))}" aria-describedby="offerMsgCount" placeholder="${escAttr(T("offer.msgHint", { n: FIRST_MSG_MAX_WORDS }))}" oninput="offerMsgInput(this)" onkeydown="offerMsgKey(event)"></textarea>
+        <div class="of-compose-side"><button type="button" class="btn btn-primary btn-sm" onclick="contactOffer('${esc(o.id)}')">${esc(T("buyer.replySend"))}</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cancelOfferContact()">${esc(T("offer.cancel"))}</button></div>
+        <span class="of-count" id="offerMsgCount">${esc(T("offer.words", { n: 0, max: FIRST_MSG_MAX_WORDS }))}</span></div>`
     : `<button type="button" class="mk-get" aria-label="${escAttr(T("offer.contactFor", { name }))}" onclick="openOfferContact('${esc(o.id)}')">${esc(T("offer.contact"))}</button>`;
-  return `<article class="of-card spotlight-card">
+  return `<div class="of-cell${open ? " of-open" : ""}"><article class="of-card spotlight-card">
     <span class="mk-avatar" style="${mkArtStyle(first.name || o.id)}" aria-hidden="true"></span>
     <div class="of-body">
       <div class="of-from">${esc(o.village ? T("buyer.convoFrom", { village: o.village }) : T("buyer.convoUnknown"))}</div>
       <h3 class="mk-title"><span title="${escAttr(name)}">${mkTitleHTML(name)}</span></h3>
       ${mkChipsHTML(chips, 4)}${stats}
       <div class="mk-act">${act}</div>
-    </div></article>`;
+    </div></article></div>`;
 }
+// Where a card that is being written in may grow: toward a free column on its right, else on its left, by at most 260 px
+// (--of-room: a full 16-word message fits in two lines of about eight words); the box then widens by --of-grow (0 to 1)
+// of that as the message gets longer, and shrinks back as it is deleted.
+const OF_GROW_MAX = 260;
+function ofPlace(cell) {
+  const grid = cell && cell.parentElement; if (!grid || !grid.getBoundingClientRect || !cell.style) return;
+  const c = cell.getBoundingClientRect(), g = grid.getBoundingClientRect();
+  const gap = parseFloat((window.getComputedStyle(grid) || {}).columnGap) || 14, step = c.width + gap;
+  const right = g.right - c.right, left = c.left - g.left;
+  cell.classList.remove("of-x-r", "of-x-l");
+  const useRight = right >= left, room = Math.max(0, Math.min(OF_GROW_MAX, step, useRight ? right : left));
+  if (room > 24) cell.classList.add(useRight ? "of-x-r" : "of-x-l");
+  cell.style.setProperty("--of-room", Math.round(room) + "px");
+}
+function offerMsgInput(el) {
+  const clipped = clipFirstMessage(el.value); if (clipped !== el.value) el.value = clipped;
+  const words = firstMessageWords(clipped), count = $("offerMsgCount");
+  if (count) count.textContent = T("offer.words", { n: words, max: FIRST_MSG_MAX_WORDS });
+  const grow = Math.min(1, Math.max(words / FIRST_MSG_MAX_WORDS, clipped.length / FIRST_MSG_MAX_CHARS));
+  const cell = el.closest ? el.closest(".of-cell") : null;
+  if (cell && cell.style) cell.style.setProperty("--of-grow", grow.toFixed(3));
+}
+function offerMsgKey(e) {
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelOfferContact(); }
+  else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (state.contactOfferId) contactOffer(state.contactOfferId); }
+}
+function cancelOfferContact() { state.contactOfferId = null; renderOfferList(); }
 function renderOfferList() {
   const el = $("offersList"); if (!el) return;
   const shown = filterOffers(state.offerFeed, state.offerFilter);
@@ -5158,7 +5193,12 @@ function renderOfferList() {
     : `<div class="empty-state">${esc(T((state.offerFeed || []).length ? "offer.noMatch" : "buyer.offersEmpty"))}</div>`;
 }
 function setOfferFilter(key, value) { state.offerFilter[key] = value; state.contactOfferId = null; renderOfferList(); }
-function openOfferContact(id) { state.contactOfferId = id; renderOfferList(); const i = $("offerMsgInput"); if (i && i.focus) i.focus(); }
+function openOfferContact(id) {
+  state.contactOfferId = id; renderOfferList();
+  const i = $("offerMsgInput");
+  if (i && i.closest) ofPlace(i.closest(".of-cell"));
+  if (i && i.focus) i.focus();
+}
 function openInboxFromOffer(threadId) { closeProductSheet(); switchScreen("buyerInbox"); openInboxThread(threadId); }
 // One conversation per offer per business (a database rule too). The id is made
 // here because the buyer cannot read the row back until a message is on it.
@@ -5170,7 +5210,7 @@ function newUuid() {
 async function contactOffer(offerId) {
   const o = (state.offerFeed || []).find(x => x.id === offerId), biz = myBusiness(); if (!o || !biz) return;
   const input = $("offerMsgInput");
-  const text = input ? input.value : "";
+  const text = clipFirstMessage(input ? input.value : "");     // the first message is a short hello: 16 words at most
   if (!buildMessageRow("x", state.farmerId, text, "buyer")) { toast(T("offer.msgEmpty")); return; }
   if (contactBusy) return; contactBusy = true;
   try {
@@ -5260,6 +5300,89 @@ async function loadProductFeed() {
   if (error) throw error;
   state.productFeed = data || [];
 }
+/* The bookmarks and the look counts behind "My bookmarks" and "Most viewed". A failure of either only leaves that order
+   empty (the list itself still shows), so each is caught on its own. */
+async function loadMarketExtras() {
+  state.bookmarks = {}; state.viewCounts = {};
+  if (claimState(state.claims) !== "approved") return;
+  try {
+    const r = await DataStore.listMyBookmarks();
+    if (r.error) throw r.error;
+    (r.data || []).forEach(x => { state.bookmarks[x.product_id] = true; });
+  } catch (e) { console.warn("couldn't load the bookmarks", e); }
+  try {
+    const r = await DataStore.productViewCounts();
+    if (r.error) throw r.error;
+    (r.data || []).forEach(x => { state.viewCounts[x.product_id] = Number(x.views) || 0; });
+  } catch (e) { console.warn("couldn't load the view counts", e); }
+}
+// The rows the Open market shows, in the order the two controls ask for. Relevance is how well the product fits THIS
+// buyer's own business (the same scoring the farmers' matching uses, from the other side).
+function marketRows() {
+  const biz = myBusiness(), relevance = {};
+  if (state.marketView === "relevant" && biz) (state.productFeed || []).forEach(p => { relevance[p.id] = scorePackagedBuyer(p, biz).score; });
+  return sortMarketRows(state.productFeed, { view: state.marketView, sort: state.marketSort, bookmarks: state.bookmarks, relevance: relevance, views: state.viewCounts });
+}
+const MARKET_VIEWS = ["recent", "relevant", "viewed", "bookmarks"], MARKET_SORTS = ["", "az", "za"];
+function paintMarketControls() {
+  const sel = $("marketView"); if (sel) sel.value = state.marketView;
+  const b = $("marketSortBtn"); if (!b) return;
+  const az = state.marketSort === "az", za = state.marketSort === "za";
+  const label = az ? T("mk.sortAz") : za ? T("mk.sortZa") : T("mk.sortOff");
+  const now = az ? T("mk.sortNowAz") : za ? T("mk.sortNowZa") : T("mk.sortNowOff");
+  $("marketSortIcon").innerHTML = lucide(az ? "arrow-down-a-z" : za ? "arrow-down-z-a" : "arrow-up-down", 16);
+  $("marketSortLabel").textContent = label;
+  b.setAttribute("aria-label", T("mk.sortAria", { now: now }));
+  b.classList.toggle("on", !!state.marketSort);
+}
+function setMarketView(v) { state.marketView = MARKET_VIEWS.indexOf(v) === -1 ? "recent" : v; renderBuyerProducts(); }
+function cycleMarketSort() { state.marketSort = MARKET_SORTS[(MARKET_SORTS.indexOf(state.marketSort) + 1) % MARKET_SORTS.length]; renderBuyerProducts(); }
+/* Bookmark: saved at once on screen, then in the database; a failure puts it back and says so. The buttons are updated in
+   place (a redraw would end the hover), except in "My bookmarks", where removing one has to remove its card. */
+async function toggleBookmark(id) {
+  const on = !state.bookmarks[id];
+  if (on) state.bookmarks[id] = true; else delete state.bookmarks[id];
+  paintBookmarkButtons(id);
+  try {
+    const r = on ? await DataStore.addBookmark(id) : await DataStore.removeBookmark(id);
+    if (r && r.error && r.error.code !== "23505") throw r.error;     // 23505: it was already saved
+  } catch (e) {
+    if (on) delete state.bookmarks[id]; else state.bookmarks[id] = true;
+    paintBookmarkButtons(id); toast(T("mk.bookmarkFailed")); return;
+  }
+  if (state.marketView === "bookmarks" && !on) renderBuyerProducts();
+}
+function paintBookmarkButtons(id) {
+  document.querySelectorAll('[data-bm="' + id + '"]').forEach(b => {
+    const on = !!state.bookmarks[id];
+    b.setAttribute("aria-pressed", on ? "true" : "false"); b.classList.toggle("on", on);
+  });
+}
+/* Share: the product's name and a link, never the producer. The link opens the product's sheet for a signed-in, approved
+   buyer (anyone else sees the sign-in page first); see openSharedProduct. */
+function productShareUrl(id) { return String(location.href).split("#")[0] + "#product=" + id; }
+async function shareProduct(id) {
+  const p = (state.productFeed || []).find(x => x.id === id); if (!p) return;
+  const data = { title: p.name, text: T("mk.shareText", { name: p.name }), url: productShareUrl(id) };
+  try { if (navigator.share) { await navigator.share(data); return; } }
+  catch (e) { if (e && e.name === "AbortError") return; }          // the buyer closed the share sheet
+  try { await navigator.clipboard.writeText(data.text + " " + data.url); toast(T("mk.shareCopied")); }
+  catch (e) { toast(T("mk.shareFailed")); }
+}
+// After sign-in, a shared link (#product=<id>) goes straight to that product's sheet, once.
+function openSharedProduct() {
+  const m = typeof location !== "undefined" ? /[#&]product=([0-9a-f-]{36})/.exec(location.hash || "") : null;
+  if (!m) return false;
+  try { history.replaceState(null, "", String(location.href).split("#")[0]); } catch (e) { /* ignore */ }
+  if (!(state.productFeed || []).some(p => p.id === m[1])) return false;
+  switchScreen("buyerProducts"); openProductSheet(m[1]);
+  return true;
+}
+function mkToolsHTML(p) {
+  const on = !!state.bookmarks[p.id];
+  return `<button type="button" class="mk-tool" aria-label="${escAttr(T("mk.shareFor", { name: p.name }))}" onclick="shareProduct('${esc(p.id)}')">${lucide("share", 16)}</button>` +
+    `<button type="button" class="mk-tool${on ? " on" : ""}" data-bm="${escAttr(p.id)}" aria-pressed="${on ? "true" : "false"}" aria-label="${escAttr(T("mk.bookmarkFor", { name: p.name }))}" onclick="toggleBookmark('${esc(p.id)}')">${lucide("bookmark", 16)}</button>`;
+}
 /* The Open market card (Yuvi's design, 2026-10-20). A card is a grid cell that keeps its size; on hover or keyboard focus
    the card grows over the empty side (mkPlace picks it) and shows a picture tile and the ingredients. Pressing it opens
    the full sheet. The title is the one real button (stretched over the card with CSS), so the card is keyboard
@@ -5308,15 +5431,17 @@ function buyerProductCardHTML(p) {
       <p class="mk-extra"><span>${extra}</span></p>
       ${mkStatsHTML(productStatRows(p))}
       <div class="mk-act">${productContactHTML(p, "card")}</div>
-    </div></article></div>`;
+    </div><div class="mk-tools">${mkToolsHTML(p)}</div></article></div>`;
 }
 function renderBuyerProducts() {
   const el = $("buyerProductsBody"); if (!el) return;
+  paintMarketControls();
   const gate = buyerGateHTML();
+  const foot = $("marketFoot"); if (foot) foot.hidden = !!gate;
   if (gate) { el.innerHTML = gate; return; }
-  const feed = state.productFeed || [];
-  el.innerHTML = (feed.length ? `<div class="mk-grid">${feed.map(buyerProductCardHTML).join("")}</div>`
-    : `<div class="empty-state">${esc(T("buyer.productsEmpty"))}</div>`) + `<p class="buyer-lead">${esc(T("buyer.productsFoot"))}</p>`;
+  const rows = marketRows();
+  el.innerHTML = rows.length ? `<div class="mk-grid">${rows.map(buyerProductCardHTML).join("")}</div>`
+    : `<div class="empty-state">${esc(T(state.marketView === "bookmarks" && (state.productFeed || []).length ? "mk.noBookmarks" : "buyer.productsEmpty"))}</div>`;
 }
 /* Hover and keyboard focus grow a card toward whichever side of the grid has a free column; with none (a phone's one
    column) the card stays as it is. Decided here, not in CSS, because only the page knows where the cell sits. */
@@ -5375,6 +5500,7 @@ function paintProductSheet() {
   const p = (state.productFeed || []).find(x => x.id === state.openFeedProductId);
   const body = $("productSheetBody"); if (!p || !body) return;
   $("productSheetTitle").innerHTML = mkTitleHTML(p.name);
+  const tools = $("productSheetTools"); if (tools) tools.innerHTML = mkToolsHTML(p);
   $("productSheetCat").textContent = p.ai_category || "";
   body.innerHTML = productSheetBodyHTML(p);
 }
@@ -5671,6 +5797,7 @@ async function enterBuyerApp() {
     await loadBuyerInbox();
     await loadOfferFeed();
     try { await loadProductFeed(); } catch (e) { console.warn("couldn't load launched products", e); }
+    await loadMarketExtras();
     try { await loadBizViews(); } catch (e) { console.warn("couldn't load business views", e); }
   } catch (e) {
     console.error("Failed to load the buyer account", e);
@@ -5681,6 +5808,7 @@ async function enterBuyerApp() {
   }
   updateHeaderIdentity();
   switchScreen("buyerBusiness");
+  openSharedProduct();
 }
 
 /* ================= ADMIN MAP (item 31 pass C) =================
@@ -6171,6 +6299,8 @@ function boot() {
   $("helpCloseBtn").onclick = () => closeHelp();
   $("helpSheet").addEventListener("click", e => { if (e.target === $("helpSheet")) closeHelp(); });
   $("productSheetCloseBtn").onclick = () => closeProductSheet();
+  $("marketView").onchange = e => setMarketView(e.target.value);
+  $("marketSortBtn").onclick = cycleMarketSort;
   $("productSheet").addEventListener("click", e => { if (e.target === $("productSheet")) closeProductSheet(); });
   wireMarketCards();
   document.addEventListener("click", e => {

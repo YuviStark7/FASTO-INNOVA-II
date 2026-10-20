@@ -44,16 +44,49 @@
 .mk-get.ghost:hover{ background:rgba(255,255,255,.22); }
 .mk-reply{ display:flex; gap:8px; }
 .mk-reply input{ flex:1 1 auto; min-width:0; }
-
 /* ----- Open market grid and the expanding card ----- */
 .mk-grid{ --mk-gap:14px; display:grid; grid-template-columns:repeat(auto-fill, minmax(236px, 1fr)); gap:var(--mk-gap); }
+/* The cell is the grid item and keeps its size always. The card is an absolutely positioned layer inside it, so nothing
+   the card does (growing, shrinking) can touch the grid: the other cards cannot move. Growing to the left anchors the card
+   to the cell's right edge (mk-x-l), growing to the right to its left edge. */
 .mk-cell{ position:relative; height:282px; container-type:inline-size; }
 .mk-cell:hover, .mk-cell.mk-lift{ z-index:6; }
-.mk-card{ display:flex; width:100%; height:100%; box-shadow:0 14px 30px -18px rgba(0,0,0,.7);
-  transition:width .38s cubic-bezier(.2,.8,.2,1), margin-left .38s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background-color .3s; }
+.mk-card{ position:absolute; top:0; bottom:0; left:0; width:100%; display:flex; box-shadow:0 14px 30px -18px rgba(0,0,0,.7);
+  transition:width .38s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background-color .3s; }
+.mk-x-l .mk-card{ left:auto; right:0; }
 .mk-main{ flex:0 0 calc(100cqw - 2px); min-width:0; padding:16px; display:flex; flex-direction:column; }
 .mk-main > *{ flex:none; }
 .mk-main > .mk-act{ margin-top:auto; }
+.mk-main .mk-title{ padding-right:64px; }       /* the share and bookmark buttons sit at the card's top right */
+
+/* ----- share and bookmark (on every market card and in the sheet's header) ----- */
+.mk-tools{ position:absolute; top:12px; right:12px; z-index:3; display:flex; gap:2px; }
+.mk-tools--sheet{ position:static; order:2; margin-right:8px; }
+#productSheetCloseBtn{ order:3; }
+.mk-tool{ width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; background:none; border:0; border-radius:8px; color:var(--ink-70); }
+.mk-tool:hover{ color:#fff; background:rgba(255,255,255,.12); }
+.mk-tool:focus-visible{ outline:2px solid #fff; outline-offset:1px; }
+.mk-tool.on{ color:#fff; }
+.mk-tool.on svg{ fill:currentColor; }
+
+/* ----- the Open market header: a view menu and a name sort ----- */
+.mk-controls{ margin-left:auto; display:flex; align-items:center; gap:6px; }
+.mk-select-wrap{ position:relative; display:inline-flex; align-items:center; }
+.mk-select{ -webkit-appearance:none; appearance:none; background:transparent; border:0; color:var(--ink); cursor:pointer; padding:8px 28px 8px 10px; border-radius:8px;
+  font-size:12.5px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; }
+.mk-select option{ color:#111; background:#fff; text-transform:none; letter-spacing:0; }
+.mk-select-chev{ position:absolute; right:8px; display:inline-flex; pointer-events:none; }
+.mk-sortbtn{ display:inline-flex; align-items:center; gap:6px; background:none; border:0; color:var(--ink); padding:8px 10px; border-radius:8px;
+  font-size:12.5px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; }
+.mk-select:hover, .mk-sortbtn:hover{ background:rgba(255,255,255,.1); }
+.mk-sortbtn.on{ background:rgba(255,255,255,.16); }
+.mk-select:focus-visible, .mk-sortbtn:focus-visible{ outline:2px solid #fff; outline-offset:1px; }
+
+/* ----- the two buyer panels: the list scrolls, the note under it stays at the bottom of the section ----- */
+.mk-panel{ display:flex; flex-direction:column; overflow:hidden; }
+.mk-panel > .research-panel-head{ flex:none; }
+.mk-panel .buyer-body{ flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 -8px; padding:6px 8px 14px; }
+.mk-foot{ flex:none; margin:0; padding:10px 0 8px; border-top:1px solid var(--hairline); }
 .mk-art{ flex:0 0 0; width:0; min-width:0; margin:0; opacity:0; overflow:hidden; border-radius:12px; background-size:cover; background-position:center; background-color:rgba(255,255,255,.1);
   transition:margin .38s cubic-bezier(.2,.8,.2,1), opacity .3s; }
 .mk-main .mk-avatar{ margin-bottom:10px; transition:height .3s, margin .3s, opacity .25s; }
@@ -64,9 +97,8 @@
 /* expanded: the card is darker and blurs what it covers (the neighbour under it), so it stays readable */
 .mk-card{ -webkit-backdrop-filter:blur(0); backdrop-filter:blur(0); }
 /* expanded: toward the right (mk-x-r) or the left (mk-x-l), whichever has room */
-.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ width:calc(200cqw + var(--mk-gap)); box-shadow:0 22px 44px -18px rgba(0,0,0,.8); }
+.mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ width:calc(200% + var(--mk-gap)); box-shadow:0 22px 44px -18px rgba(0,0,0,.8); }
 .mk-x-r:hover .mk-card, .mk-x-r.mk-lift .mk-card, .mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ background:rgba(14,10,10,.95); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); }
-.mk-x-l:hover .mk-card, .mk-x-l.mk-lift .mk-card{ margin-left:calc(-100cqw - var(--mk-gap)); }
 .mk-x-r:hover .mk-art, .mk-x-r.mk-lift .mk-art, .mk-x-l:hover .mk-art, .mk-x-l.mk-lift .mk-art{ flex:1 1 0; margin:12px 0 12px 12px; opacity:1; }
 .mk-x-r:hover .mk-main .mk-avatar, .mk-x-r.mk-lift .mk-main .mk-avatar, .mk-x-l:hover .mk-main .mk-avatar, .mk-x-l.mk-lift .mk-main .mk-avatar{ height:0; margin-bottom:0; opacity:0; }
 .mk-x-r:hover .mk-extra, .mk-x-r.mk-lift .mk-extra, .mk-x-l:hover .mk-extra, .mk-x-l.mk-lift .mk-extra{ max-height:70px; opacity:1; margin-top:10px; }
@@ -74,14 +106,29 @@
 @media (prefers-reduced-motion: reduce){ .mk-card, .mk-art, .mk-main .mk-avatar, .mk-extra{ transition:none; } }
 
 /* ----- Offers ----- */
-.of-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; }
-.of-card{ display:flex; gap:14px; padding:16px; align-items:flex-start; }
-.of-card .mk-avatar{ width:62px; height:62px; }
-.of-body{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+/* An offer card is wide (400 px and up) so its content can breathe. Like a market card it sits in a fixed-size cell and is a
+   layer inside it: while the buyer writes a first message the layer widens over the free side (never the cell, so no other
+   card moves). --of-room is how far it may grow (set by ofPlace), --of-grow (0 to 1) how much of that the message has used. */
+.of-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); gap:16px; }
+.of-cell{ position:relative; height:232px; container-type:inline-size; }
+.of-cell.of-open{ z-index:6; }
+.of-card{ position:absolute; top:0; bottom:0; left:0; width:calc(100% + var(--of-room, 0px) * var(--of-grow, 0)); display:flex; gap:18px; padding:20px 22px; align-items:flex-start;
+  transition:width .22s ease, background-color .25s; }
+.of-x-l .of-card{ left:auto; right:0; }
+.of-open .of-card{ background:rgba(14,10,10,.95); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px); }
+.of-open .mk-chips{ display:none; }                 /* the box needs the room while you write; the facts stay */
+.of-card .mk-avatar{ width:64px; height:64px; }
+.of-body{ flex:1 1 auto; min-width:0; align-self:stretch; display:flex; flex-direction:column; }
 .of-from{ font-size:12px; color:var(--ink-70); }
 .of-body .mk-title{ margin-top:2px; }
 .of-body .mk-title span{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.of-body .mk-act{ margin-top:0; padding-top:12px; }
+.of-body .mk-stats{ gap:18px; }
+.of-body .mk-act{ margin-top:auto; padding-top:12px; }
+.of-compose{ display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:6px 10px; align-items:start; }
+.of-compose textarea{ resize:none; overflow-y:auto; min-height:0; padding:8px 10px; border-radius:10px; font-size:12.5px; line-height:1.35; }
+.of-compose-side{ display:flex; flex-direction:column; gap:6px; }
+.of-count{ grid-column:1 / -1; font-size:11px; color:var(--ink-70); }
+@media (prefers-reduced-motion: reduce){ .of-card{ transition:none; } }
 
 /* ----- the full sheet ----- */
 #productSheet{ position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(8,5,5,.62); }
